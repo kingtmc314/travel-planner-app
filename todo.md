@@ -145,3 +145,19 @@
 - [x] Sync: past_flights → visited_countries (exposed as sync action in syncRouter)
 - [x] Sync: orphaned records cleanup (via syncDataIntegrity)
 - [x] Add sync status summary at top: total records (data overview grid)
+
+## Currency Conversion Feature
+- [x] Backend: currency_router.ts with frankfurter.dev v2 API (free, no key, 55 central banks)
+- [x] Backend: getHistoricalRate() — fetches HKD-based rate for a specific date; API auto-returns last trading day for weekends/holidays
+- [x] Backend: getLatestRates() — latest rates for summary display
+- [x] Backend: convertExpenses tRPC procedure — per-expense historical rate conversion, deduplicates API calls, parallel fetch
+- [x] Backend: fallback to hardcoded approximate rates if API unavailable
+- [x] Frontend: "換算" toggle button in ExpensesPage header
+- [x] Frontend: currency picker dropdown (原始貨幣 + 17 currencies)
+- [x] Frontend: per-expense converted amount with original amount shown as secondary text
+- [x] Frontend: rate date annotation per expense row (e.g. "2025-01-15 匯率")
+- [x] Frontend: fallback indicator (amber warning) vs normal (blue info) notice banner
+- [x] Frontend: charts (pie + bar) recalculate totals using converted amounts
+- [x] Frontend: summary card "總費用" updates to converted total
+- [x] Fixed TypeScript conflict: removed inline currencyRouter from routers.ts (was duplicating the import)
+- [x] 15/15 tests passing, 0 TypeScript errors

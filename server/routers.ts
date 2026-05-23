@@ -5,6 +5,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
 import * as db from "./db";
+import { currencyRouter } from "./currency_router";
 
 // ─── Country Detection Helper ────────────────────────────────────────────────
 const COUNTRY_KEYWORDS: Array<{ keywords: string[]; code: string; name: string }> = [
@@ -1547,6 +1548,7 @@ export const appRouter = router({
   passport: passportRouter,
   ai: aiRouter,
   sync: syncRouter,
+  currency: currencyRouter,
 });
 
 export type AppRouter = typeof appRouter;
