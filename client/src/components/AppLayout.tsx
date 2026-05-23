@@ -1,6 +1,6 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { Bell, Globe, LogOut, Plane } from "lucide-react";
+import { Bell, Globe, LogOut, Plane, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import NotificationsPanel from "@/components/NotificationsPanel";
@@ -9,6 +9,7 @@ const navItems = [
   { path: "/dashboard", label: "我的行程", icon: Plane, iconClass: "rotate-45" },
   { path: "/travel-history", label: "旅遊足跡", icon: Globe, iconClass: "" },
   { path: "/flight-passport", label: "飛行護照", icon: Plane, iconClass: "" },
+  { path: "/sync", label: "同步中心", icon: RefreshCw, iconClass: "" },
 ];
 
 interface AppLayoutProps {

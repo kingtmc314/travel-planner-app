@@ -14,6 +14,7 @@ import MembersPage from "./pages/trip/MembersPage";
 import FlightsPage from "./pages/trip/FlightsPage";
 import TravelHistory from "./pages/TravelHistory";
 import FlightPassport from "./pages/FlightPassport";
+import SyncPage from "./pages/SyncPage";
 
 function TripRoutes({ tripId }: { tripId: number }) {
   return (
@@ -40,6 +41,7 @@ function Router() {
       </Route>
       <Route path="/travel-history" component={TravelHistory} />
       <Route path="/flight-passport" component={FlightPassport} />
+      <Route path="/sync" component={SyncPage} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

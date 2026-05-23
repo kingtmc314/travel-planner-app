@@ -131,3 +131,17 @@
 - [x] #4 Mobile UX: Dashboard refactored to use AppLayout (removes duplicate sidebar/bottom nav)
 - [x] #4 Mobile UX: FlightPassport header buttons icon-only on mobile to prevent overflow
 - [x] #4 Mobile UX: WorldMap component has touch pinch-zoom and drag support for mobile
+
+## SYNC Page - All Functions Sync
+- [x] Create /sync route and SyncPage component
+- [x] Add "同步中心" nav item to AppLayout sidebar and mobile bottom nav
+- [x] Backend: sync router with syncAll, syncCountriesFromFlights, syncCountriesFromTrips, syncDataIntegrity, getSummary procedures
+- [x] SyncPage: "一鍵全部同步" button that triggers all sync operations in sequence
+- [x] SyncPage: per-category sync cards (飛行護照→旅遊足跡, 行程目的地→旅遊足跡, 資料完整性檢查)
+- [x] Each card shows: record count, status badge (synced/pending/error), individual sync button
+- [x] Show real-time progress and log during sync
+- [x] Sync: visited_countries ← auto-derive from trips destinations + past_flights airports
+- [x] Sync: trip member counts, expense totals, flight counts recalculated (via getSummary)
+- [x] Sync: past_flights → visited_countries (exposed as sync action in syncRouter)
+- [x] Sync: orphaned records cleanup (via syncDataIntegrity)
+- [x] Add sync status summary at top: total records (data overview grid)

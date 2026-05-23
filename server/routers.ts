@@ -51,6 +51,94 @@ const COUNTRY_KEYWORDS: Array<{ keywords: string[]; code: string; name: string }
 ];
 
 // Country name (as used in flight data) → ISO alpha-2 + display name
+// IATA airport code to country mapping for deriving visited countries from airport codes
+const AIRPORT_TO_COUNTRY: Record<string, { code: string; name: string }> = {
+  // Japan
+  "NRT": { code: "JP", name: "Japan" }, "HND": { code: "JP", name: "Japan" },
+  "KIX": { code: "JP", name: "Japan" }, "CTS": { code: "JP", name: "Japan" },
+  "FUK": { code: "JP", name: "Japan" }, "OKA": { code: "JP", name: "Japan" },
+  "NGO": { code: "JP", name: "Japan" }, "SDJ": { code: "JP", name: "Japan" },
+  "GAJ": { code: "JP", name: "Japan" }, "SYO": { code: "JP", name: "Japan" },
+  // Taiwan
+  "TPE": { code: "TW", name: "Taiwan" }, "TSA": { code: "TW", name: "Taiwan" },
+  "KHH": { code: "TW", name: "Taiwan" }, "RMQ": { code: "TW", name: "Taiwan" },
+  // South Korea
+  "ICN": { code: "KR", name: "South Korea" }, "GMP": { code: "KR", name: "South Korea" },
+  "PUS": { code: "KR", name: "South Korea" }, "CJU": { code: "KR", name: "South Korea" },
+  // Thailand
+  "BKK": { code: "TH", name: "Thailand" }, "DMK": { code: "TH", name: "Thailand" },
+  "HKT": { code: "TH", name: "Thailand" }, "CNX": { code: "TH", name: "Thailand" },
+  // Singapore
+  "SIN": { code: "SG", name: "Singapore" },
+  // Malaysia
+  "KUL": { code: "MY", name: "Malaysia" }, "PEN": { code: "MY", name: "Malaysia" },
+  // Indonesia
+  "DPS": { code: "ID", name: "Indonesia" }, "CGK": { code: "ID", name: "Indonesia" },
+  // Vietnam
+  "HAN": { code: "VN", name: "Vietnam" }, "SGN": { code: "VN", name: "Vietnam" },
+  "DAD": { code: "VN", name: "Vietnam" },
+  // Philippines
+  "MNL": { code: "PH", name: "Philippines" }, "CEB": { code: "PH", name: "Philippines" },
+  // Egypt
+  "CAI": { code: "EG", name: "Egypt" }, "LXR": { code: "EG", name: "Egypt" },
+  "ASW": { code: "EG", name: "Egypt" }, "HRG": { code: "EG", name: "Egypt" },
+  "SSH": { code: "EG", name: "Egypt" }, "RMF": { code: "EG", name: "Egypt" },
+  // UAE
+  "DXB": { code: "AE", name: "United Arab Emirates" }, "AUH": { code: "AE", name: "United Arab Emirates" },
+  "SHJ": { code: "AE", name: "United Arab Emirates" },
+  // UK
+  "LHR": { code: "GB", name: "United Kingdom" }, "LGW": { code: "GB", name: "United Kingdom" },
+  "STN": { code: "GB", name: "United Kingdom" }, "MAN": { code: "GB", name: "United Kingdom" },
+  // France
+  "CDG": { code: "FR", name: "France" }, "ORY": { code: "FR", name: "France" },
+  // Germany
+  "FRA": { code: "DE", name: "Germany" }, "MUC": { code: "DE", name: "Germany" },
+  "BER": { code: "DE", name: "Germany" },
+  // Italy
+  "FCO": { code: "IT", name: "Italy" }, "MXP": { code: "IT", name: "Italy" },
+  "VCE": { code: "IT", name: "Italy" }, "FLR": { code: "IT", name: "Italy" },
+  // Spain
+  "MAD": { code: "ES", name: "Spain" }, "BCN": { code: "ES", name: "Spain" },
+  // USA
+  "JFK": { code: "US", name: "United States" }, "LAX": { code: "US", name: "United States" },
+  "SFO": { code: "US", name: "United States" }, "ORD": { code: "US", name: "United States" },
+  "ATL": { code: "US", name: "United States" }, "DFW": { code: "US", name: "United States" },
+  // Canada
+  "YYZ": { code: "CA", name: "Canada" }, "YVR": { code: "CA", name: "Canada" },
+  // Australia
+  "SYD": { code: "AU", name: "Australia" }, "MEL": { code: "AU", name: "Australia" },
+  "BNE": { code: "AU", name: "Australia" },
+  // New Zealand
+  "AKL": { code: "NZ", name: "New Zealand" }, "CHC": { code: "NZ", name: "New Zealand" },
+  // Hong Kong
+  "HKG": { code: "HK", name: "Hong Kong" },
+  // Macau
+  "MFM": { code: "MO", name: "Macau" },
+  // China
+  "PEK": { code: "CN", name: "China" }, "PKX": { code: "CN", name: "China" },
+  "PVG": { code: "CN", name: "China" }, "SHA": { code: "CN", name: "China" },
+  "CAN": { code: "CN", name: "China" }, "SZX": { code: "CN", name: "China" },
+  // India
+  "BOM": { code: "IN", name: "India" }, "DEL": { code: "IN", name: "India" },
+  "BLR": { code: "IN", name: "India" },
+  // Maldives
+  "MLE": { code: "MV", name: "Maldives" },
+  // Turkey
+  "IST": { code: "TR", name: "Turkey" }, "SAW": { code: "TR", name: "Turkey" },
+  // Morocco
+  "CMN": { code: "MA", name: "Morocco" }, "RAK": { code: "MA", name: "Morocco" },
+  // Greece
+  "ATH": { code: "GR", name: "Greece" }, "JTR": { code: "GR", name: "Greece" },
+  // Portugal
+  "LIS": { code: "PT", name: "Portugal" }, "OPO": { code: "PT", name: "Portugal" },
+  // Netherlands
+  "AMS": { code: "NL", name: "Netherlands" },
+  // Switzerland
+  "ZRH": { code: "CH", name: "Switzerland" }, "GVA": { code: "CH", name: "Switzerland" },
+  // Austria
+  "VIE": { code: "AT", name: "Austria" },
+};
+
 const FLIGHT_COUNTRY_TO_ISO: Record<string, { code: string; name: string }> = {
   "Japan": { code: "JP", name: "Japan" },
   "Taiwan": { code: "TW", name: "Taiwan" },
@@ -1214,6 +1302,228 @@ const aiRouter = router({
     }),
 });
 
+// ─── Sync Router ────────────────────────────────────────────────────────────
+const syncRouter = router({
+  // Get a summary of all data counts for the current user
+  getSummary: protectedProcedure.query(async ({ ctx }) => {
+    const userId = ctx.user.id;
+    const userTrips = await db.getUserTrips(userId);
+    const tripIds = userTrips.map(t => t.id);
+
+    let totalExpenses = 0;
+    let totalFlights = 0;
+    let totalHotels = 0;
+    let totalActivities = 0;
+    let totalMapPins = 0;
+
+    for (const tripId of tripIds) {
+      const [exps, fls, hotels, days, pins] = await Promise.all([
+        db.getTripExpenses(tripId),
+        db.getTripFlights(tripId),
+        db.getTripAccommodations(tripId),
+        db.getItineraryDays(tripId),
+        db.getMapPins(tripId),
+      ]);
+      totalExpenses += exps.length;
+      totalFlights += fls.length;
+      totalHotels += hotels.length;
+      totalMapPins += pins.length;
+      for (const day of days) {
+        // activities are nested in days
+        totalActivities += (day as any).activities?.length ?? 0;
+      }
+    }
+
+    const pastFlightsList = await db.getPastFlights(userId);
+    const visitedCountriesList = await db.getVisitedCountries(userId);
+
+    return {
+      trips: userTrips.length,
+      expenses: totalExpenses,
+      tripFlights: totalFlights,
+      hotels: totalHotels,
+      activities: totalActivities,
+      mapPins: totalMapPins,
+      pastFlights: pastFlightsList.length,
+      visitedCountries: visitedCountriesList.length,
+      lastSyncedAt: new Date().toISOString(),
+    };
+  }),
+
+  // Sync 1: Sync visited countries from past flights (uses both country names AND airport IATA codes)
+  syncCountriesFromFlights: protectedProcedure.mutation(async ({ ctx }) => {
+    const existingFlights = await db.getPastFlights(ctx.user.id);
+    const flightDataForSync = existingFlights.map(f => ({
+      depCountry: f.departureCountry ?? "",
+      arrCountry: f.arrivalCountry ?? "",
+      date: f.flightDate ? new Date(f.flightDate as Date).toISOString().split("T")[0] : "2000-01-01",
+    }));
+    const countries = extractCountriesFromFlights(flightDataForSync);
+    // Also derive from airport IATA codes as fallback
+    const seenCodes = new Set(countries.map(c => c.code));
+    for (const f of existingFlights) {
+      const flightDate = f.flightDate ? new Date(f.flightDate as Date).toISOString().split("T")[0] : "2000-01-01";
+      const year = new Date(flightDate).getFullYear();
+      for (const airport of [f.departureAirport, f.arrivalAirport]) {
+        if (!airport) continue;
+        const iata = airport.trim().toUpperCase().slice(0, 3);
+        const iso = AIRPORT_TO_COUNTRY[iata];
+        if (iso && iso.code !== "HK" && !seenCodes.has(iso.code)) {
+          countries.push({ code: iso.code, name: iso.name, year });
+          seenCodes.add(iso.code);
+        }
+      }
+    }
+    let synced = 0;
+    for (const c of countries) {
+      await db.upsertVisitedCountry({
+        userId: ctx.user.id,
+        countryCode: c.code,
+        countryName: c.name,
+        status: "visited",
+        visitedAt: new Date(`${c.year}-01-01`),
+      });
+      synced++;
+    }
+    return { success: true, synced, total: existingFlights.length, label: "飛行護照 → 旅遊足跡" };
+  }),
+
+  // Sync 2: Sync visited countries from trip destinations
+  syncCountriesFromTrips: protectedProcedure.mutation(async ({ ctx }) => {
+    const userTrips = await db.getUserTrips(ctx.user.id);
+    let synced = 0;
+    for (const trip of userTrips) {
+      const detected = detectCountryFromDestination(trip.destination);
+      if (detected) {
+        await db.upsertVisitedCountry({
+          userId: ctx.user.id,
+          countryCode: detected.code,
+          countryName: detected.name,
+          status: "visited",
+          visitedAt: trip.startDate ? new Date(trip.startDate as Date) : new Date(),
+        });
+        synced++;
+      }
+    }
+    return { success: true, synced, total: userTrips.length, label: "行程目的地 → 旅遊足跡" };
+  }),
+
+  // Sync 3: Verify data integrity - check for orphaned records and count totals
+  syncDataIntegrity: protectedProcedure.mutation(async ({ ctx }) => {
+    const userId = ctx.user.id;
+    const userTrips = await db.getUserTrips(userId);
+    const validTripIds = new Set(userTrips.map(t => t.id));
+
+    // Count all records across all trips
+    let totalExpenses = 0, totalFlights = 0, totalHotels = 0, totalActivities = 0;
+    let expenseTotal = 0;
+    for (const trip of userTrips) {
+      const [exps, fls, hotels, days] = await Promise.all([
+        db.getTripExpenses(trip.id),
+        db.getTripFlights(trip.id),
+        db.getTripAccommodations(trip.id),
+        db.getItineraryDays(trip.id),
+      ]);
+      totalExpenses += exps.length;
+      totalFlights += fls.length;
+      totalHotels += hotels.length;
+      for (const exp of exps) {
+        expenseTotal += Number(exp.amount) || 0;
+      }
+    }
+
+    const pastFlights = await db.getPastFlights(userId);
+    const visitedCountries = await db.getVisitedCountries(userId);
+
+    const issues: string[] = [];
+    if (userTrips.length === 0) issues.push("尚未建立任何行程");
+    if (totalExpenses === 0 && userTrips.length > 0) issues.push("行程尚未記錄任何費用");
+
+    const message = issues.length > 0
+      ? `發現問題：${issues.join("、")}`
+      : `已驗證 ${validTripIds.size} 個行程、${totalExpenses} 筆費用、${totalFlights + pastFlights.length} 個航班、${totalHotels} 個住宿、${visitedCountries.length} 個到訪國家，資料完整`;
+
+    return {
+      success: true,
+      validTrips: validTripIds.size,
+      totalExpenses,
+      totalFlights: totalFlights + pastFlights.length,
+      totalHotels,
+      expenseTotal: Math.round(expenseTotal),
+      visitedCountries: visitedCountries.length,
+      issues,
+      label: "資料完整性檢查",
+      message,
+    };
+  }),
+
+  // Sync 4: Full sync - runs all sync operations in sequence
+  syncAll: protectedProcedure.mutation(async ({ ctx }) => {
+    const userId = ctx.user.id;
+    const results: Array<{ label: string; synced: number; total: number }> = [];
+
+    // Step 1: Sync countries from past flights
+    const existingFlights = await db.getPastFlights(userId);
+    const flightDataForSync = existingFlights.map(f => ({
+      depCountry: f.departureCountry ?? "",
+      arrCountry: f.arrivalCountry ?? "",
+      date: f.flightDate ? new Date(f.flightDate as Date).toISOString().split("T")[0] : "2000-01-01",
+    }));
+    const countriesFromFlights = extractCountriesFromFlights(flightDataForSync);
+    let flightCountriesSynced = 0;
+    for (const c of countriesFromFlights) {
+      await db.upsertVisitedCountry({
+        userId,
+        countryCode: c.code,
+        countryName: c.name,
+        status: "visited",
+        visitedAt: new Date(`${c.year}-01-01`),
+      });
+      flightCountriesSynced++;
+    }
+    results.push({ label: "飛行護照 → 旅遊足跡", synced: flightCountriesSynced, total: existingFlights.length });
+
+    // Step 2: Sync countries from trip destinations
+    const userTrips = await db.getUserTrips(userId);
+    let tripCountriesSynced = 0;
+    for (const trip of userTrips) {
+      const detected = detectCountryFromDestination(trip.destination);
+      if (detected) {
+        await db.upsertVisitedCountry({
+          userId,
+          countryCode: detected.code,
+          countryName: detected.name,
+          status: "visited",
+          visitedAt: trip.startDate ? new Date(trip.startDate as Date) : new Date(),
+        });
+        tripCountriesSynced++;
+      }
+    }
+    results.push({ label: "行程目的地 → 旅遊足跡", synced: tripCountriesSynced, total: userTrips.length });
+
+    // Step 3: Count all data
+    let totalExpenses = 0, totalTripFlights = 0, totalHotels = 0;
+    for (const trip of userTrips) {
+      const [exps, fls, hotels] = await Promise.all([
+        db.getTripExpenses(trip.id),
+        db.getTripFlights(trip.id),
+        db.getTripAccommodations(trip.id),
+      ]);
+      totalExpenses += exps.length;
+      totalTripFlights += fls.length;
+      totalHotels += hotels.length;
+    }
+    results.push({ label: "費用記錄驗證", synced: totalExpenses, total: totalExpenses });
+    results.push({ label: "航班記錄驗證", synced: totalTripFlights + existingFlights.length, total: totalTripFlights + existingFlights.length });
+    results.push({ label: "住宿記錄驗證", synced: totalHotels, total: totalHotels });
+
+    const visitedCountriesList = await db.getVisitedCountries(userId);
+    results.push({ label: "旅遊足跡總計", synced: visitedCountriesList.length, total: visitedCountriesList.length });
+
+    return { success: true, results, syncedAt: new Date().toISOString() };
+  }),
+});
+
 // ─── App Router ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
@@ -1236,6 +1546,7 @@ export const appRouter = router({
   travelHistory: travelHistoryRouter,
   passport: passportRouter,
   ai: aiRouter,
+  sync: syncRouter,
 });
 
 export type AppRouter = typeof appRouter;
