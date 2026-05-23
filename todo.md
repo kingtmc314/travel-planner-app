@@ -83,3 +83,14 @@
 - [x] Add seedMyFlights mutation to passport router with all 44 historical flights from Flighty
 - [x] Add "Import Historical Flights" button to FlightPassport page (shown when no flights exist)
 - [x] Create shared AppLayout component for consistent navigation across all pages
+
+## Edit/Modify Buttons - All Sections
+- [x] Trip details: Add edit button to TripLayout header (name, destination, dates, cover image, description)
+- [x] Itinerary: Activity edit already existed; day title/date edit added via TripLayout
+- [x] Expenses: Add edit button to each expense row + update mutation in router
+- [x] Trip Flights: Add edit button to each flight + update mutation in router
+- [x] Accommodations: Add edit button to each accommodation + update mutation in router
+- [x] Past Flights (Passport): Add edit button to each past flight + updateFlight mutation
+- [x] Visited Countries (Travel History): Add edit button to each country card + upsert mutation
+- [x] Add updateExpense, updateFlight, updateAccommodation, updatePastFlight, updateMapPin db helpers
+- [x] Add expenses.update, flights.update, hotels.update, passport.updateFlight, map.updatePin tRPC procedures

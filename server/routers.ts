@@ -499,6 +499,29 @@ const expensesRouter = router({
       return { expenseId: expId };
     }),
 
+  update: protectedProcedure
+    .input(z.object({
+      expenseId: z.number(),
+      tripId: z.number(),
+      title: z.string().min(1).optional(),
+      amount: z.string().optional(),
+      currency: z.string().optional(),
+      category: z.enum(["transport", "food", "accommodation", "attraction", "shopping", "other"]).optional(),
+      paidByName: z.string().optional(),
+      date: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { expenseId, tripId, date, ...rest } = input;
+      const membership = await db.getUserMembership(tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      await db.updateExpense(expenseId, {
+        ...rest,
+        ...(date ? { date: new Date(date) } : {}),
+      });
+      return { success: true };
+    }),
+
   delete: protectedProcedure
     .input(z.object({ expenseId: z.number(), tripId: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -542,6 +565,23 @@ const mapRouter = router({
         address: input.address ?? null,
       });
       return { pinId };
+    }),
+
+  updatePin: protectedProcedure
+    .input(z.object({
+      pinId: z.number(),
+      tripId: z.number(),
+      title: z.string().min(1).optional(),
+      description: z.string().optional(),
+      type: z.enum(["attraction", "hotel", "restaurant", "transport", "other"]).optional(),
+      address: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { pinId, tripId, ...rest } = input;
+      const membership = await db.getUserMembership(tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      await db.updateMapPin(pinId, rest);
+      return { success: true };
     }),
 
   deletePin: protectedProcedure
@@ -599,6 +639,30 @@ const flightsRouter = router({
       return { flightId };
     }),
 
+  update: protectedProcedure
+    .input(z.object({
+      flightId: z.number(),
+      tripId: z.number(),
+      type: z.enum(["outbound", "return", "connecting"]).optional(),
+      airline: z.string().optional(),
+      flightNumber: z.string().optional(),
+      departureAirport: z.string().optional(),
+      arrivalAirport: z.string().optional(),
+      departureTime: z.string().optional(),
+      arrivalTime: z.string().optional(),
+      departureDate: z.string().optional(),
+      arrivalDate: z.string().optional(),
+      bookingRef: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { flightId, tripId, ...rest } = input;
+      const membership = await db.getUserMembership(tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      await db.updateFlight(flightId, rest);
+      return { success: true };
+    }),
+
   delete: protectedProcedure
     .input(z.object({ flightId: z.number(), tripId: z.number() }))
     .mutation(async ({ ctx, input }) => {
@@ -644,6 +708,30 @@ const hotelsRouter = router({
         notes: input.notes ?? null,
       });
       return { accId };
+    }),
+
+  update: protectedProcedure
+    .input(z.object({
+      accId: z.number(),
+      tripId: z.number(),
+      name: z.string().min(1).optional(),
+      address: z.string().optional(),
+      checkIn: z.string().optional(),
+      checkOut: z.string().optional(),
+      bookingRef: z.string().optional(),
+      confirmationNumber: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { accId, tripId, checkIn, checkOut, ...rest } = input;
+      const membership = await db.getUserMembership(tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      await db.updateAccommodation(accId, {
+        ...rest,
+        ...(checkIn ? { checkIn: new Date(checkIn) } : {}),
+        ...(checkOut ? { checkOut: new Date(checkOut) } : {}),
+      });
+      return { success: true };
     }),
 
   delete: protectedProcedure
@@ -766,6 +854,33 @@ const passportRouter = router({
         notes: input.notes ?? null,
       });
       return { flightId };
+    }),
+
+  updateFlight: protectedProcedure
+    .input(z.object({
+      flightId: z.number(),
+      flightNumber: z.string().optional(),
+      airline: z.string().optional(),
+      airlineCode: z.string().optional(),
+      departureAirport: z.string().optional(),
+      departureCity: z.string().optional(),
+      departureCountry: z.string().optional(),
+      arrivalAirport: z.string().optional(),
+      arrivalCity: z.string().optional(),
+      arrivalCountry: z.string().optional(),
+      flightDate: z.string().optional(),
+      durationMinutes: z.number().optional(),
+      distanceKm: z.number().optional(),
+      seatClass: z.enum(["economy", "premium_economy", "business", "first"]).optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const { flightId, flightDate, ...rest } = input;
+      await db.updatePastFlight(flightId, {
+        ...rest,
+        ...(flightDate ? { flightDate: new Date(flightDate), flightYear: new Date(flightDate).getFullYear() } : {}),
+      });
+      return { success: true };
     }),
 
   deleteFlight: protectedProcedure

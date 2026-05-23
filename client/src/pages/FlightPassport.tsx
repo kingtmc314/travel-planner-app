@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plane, Plus, Trash2, Loader2, Clock, Globe, Building2, Share2 } from "lucide-react";
+import { Plane, Plus, Trash2, Loader2, Clock, Globe, Building2, Share2, Edit2 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 
@@ -122,7 +122,13 @@ export default function FlightPassport() {
     onError: () => toast.error("匯入失敗"),
   });
 
+  const updateFlight = trpc.passport.updateFlight.useMutation({
+    onSuccess: () => { refetch(); setEditingFlight(null); toast.success("航班已更新"); },
+    onError: () => toast.error("更新失敗"),
+  });
+
   const [showAdd, setShowAdd] = useState(false);
+  const [editingFlight, setEditingFlight] = useState<PastFlight | null>(null);
   const [form, setForm] = useState(defaultForm);
   const [activeYear, setActiveYear] = useState("All-Time");
 
@@ -172,6 +178,38 @@ export default function FlightPassport() {
       filtered,
     };
   }, [flights, activeYear]);
+
+  const openEditFlight = (flight: PastFlight) => {
+    setEditingFlight(flight);
+    setForm({
+      flightNumber: flight.flightNumber ?? "",
+      airline: flight.airline ?? "",
+      departureAirport: flight.departureAirport ?? "",
+      arrivalAirport: flight.arrivalAirport ?? "",
+      departureDate: flight.flightDate ? new Date(flight.flightDate).toISOString().split('T')[0] : "",
+      durationMinutes: flight.durationMinutes ? String(flight.durationMinutes) : "",
+      distanceKm: flight.distanceKm ? String(flight.distanceKm) : "",
+      seatClass: flight.seatClass ?? "economy",
+      notes: flight.notes ?? "",
+    });
+  };
+
+  const handleUpdate = () => {
+    if (!editingFlight || !form.departureAirport || !form.arrivalAirport) { toast.error("請填寫出發和抵達機場"); return; }
+    const dist = form.distanceKm ? parseInt(form.distanceKm) : estimateDistance(form.departureAirport, form.arrivalAirport);
+    updateFlight.mutate({
+      flightId: editingFlight.id,
+      flightNumber: form.flightNumber || undefined,
+      airline: form.airline || undefined,
+      departureAirport: form.departureAirport,
+      arrivalAirport: form.arrivalAirport,
+      flightDate: form.departureDate || new Date().toISOString().split('T')[0],
+      durationMinutes: form.durationMinutes ? parseInt(form.durationMinutes) : undefined,
+      distanceKm: dist || undefined,
+      seatClass: (form.seatClass as 'economy' | 'premium_economy' | 'business' | 'first') || 'economy',
+      notes: form.notes || undefined,
+    });
+  };
 
   // Auto-estimate distance when airports change
   const handleAirportChange = (field: "departureAirport" | "arrivalAirport", value: string) => {
@@ -382,12 +420,20 @@ export default function FlightPassport() {
                             )}
                           </div>
                         </div>
-                        <button
-                          onClick={() => deleteFlight.mutate({ flightId: flight.id })}
-                          className="p-1.5 rounded-lg hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-all shrink-0"
-                        >
-                          <Trash2 className="w-4 h-4 text-destructive" />
-                        </button>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                          <button
+                            onClick={() => openEditFlight(flight)}
+                            className="p-1.5 rounded-lg hover:bg-accent transition-colors"
+                          >
+                            <Edit2 className="w-4 h-4 text-muted-foreground" />
+                          </button>
+                          <button
+                            onClick={() => deleteFlight.mutate({ flightId: flight.id })}
+                            className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
+                          >
+                            <Trash2 className="w-4 h-4 text-destructive" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   );
@@ -397,6 +443,73 @@ export default function FlightPassport() {
           </>
         )}
       </div>
+
+      {/* Edit Flight Dialog */}
+      <Dialog open={!!editingFlight} onOpenChange={(o) => !o && setEditingFlight(null)}>
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>修改航班記錄</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-foreground">出發機場 * (IATA)</label>
+                <Input className="mt-1.5 uppercase" placeholder="例：HKG" value={form.departureAirport} onChange={e => handleAirportChange("departureAirport", e.target.value.toUpperCase())} maxLength={3} />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground">抵達機場 * (IATA)</label>
+                <Input className="mt-1.5 uppercase" placeholder="例：NRT" value={form.arrivalAirport} onChange={e => handleAirportChange("arrivalAirport", e.target.value.toUpperCase())} maxLength={3} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-foreground">航班號碼</label>
+                <Input className="mt-1.5" placeholder="例：CX 543" value={form.flightNumber} onChange={e => setForm({ ...form, flightNumber: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground">航空公司</label>
+                <Input className="mt-1.5" placeholder="例：Cathay Pacific" value={form.airline} onChange={e => setForm({ ...form, airline: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-foreground">出發日期</label>
+                <Input className="mt-1.5" type="date" value={form.departureDate} onChange={e => setForm({ ...form, departureDate: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground">艙等</label>
+                <Select value={form.seatClass} onValueChange={v => setForm({ ...form, seatClass: v })}>
+                  <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="economy">經濟艙</SelectItem>
+                    <SelectItem value="premium_economy">豪華經濟</SelectItem>
+                    <SelectItem value="business">商務艙</SelectItem>
+                    <SelectItem value="first">頭等艙</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-foreground">距離 (km)</label>
+                <Input className="mt-1.5" type="number" placeholder="自動估算" value={form.distanceKm} onChange={e => setForm({ ...form, distanceKm: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground">飛行時間 (分鐘)</label>
+                <Input className="mt-1.5" type="number" placeholder="例：165" value={form.durationMinutes} onChange={e => setForm({ ...form, durationMinutes: e.target.value })} />
+              </div>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground">備注</label>
+              <Input className="mt-1.5" placeholder="選填" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
+            </div>
+            <Button className="w-full bg-sky-600 hover:bg-sky-700" onClick={handleUpdate} disabled={updateFlight.isPending}>
+              {updateFlight.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              儲存變更
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Flight Dialog */}
       <Dialog open={showAdd} onOpenChange={setShowAdd}>

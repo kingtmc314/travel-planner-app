@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { Plus, Trash2, Loader2, DollarSign, TrendingUp, Users } from "lucide-react";
+import { Plus, Trash2, Loader2, DollarSign, TrendingUp, Users, Edit2 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 
@@ -21,19 +21,25 @@ const CATEGORIES = [
 
 const CURRENCIES = ["HKD","USD","EUR","GBP","JPY","CNY","TWD","SGD","AUD","CAD","KRW","THB","EGP","MYR","IDR","PHP","VND"];
 
+const emptyForm = (currency = "HKD") => ({
+  title: "", amount: "", currency,
+  category: "other", paidByName: "", date: new Date().toISOString().split("T")[0], notes: "",
+});
+
 export default function ExpensesPage({ tripId }: { tripId: number }) {
   const { data: expenses, refetch, isLoading } = trpc.expenses.list.useQuery({ tripId }, { refetchInterval: 15000 });
   const { data: trip } = trpc.trips.get.useQuery({ tripId });
-  const { data: members } = trpc.members.list.useQuery({ tripId });
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({
-    title: "", amount: "", currency: trip?.baseCurrency ?? "HKD",
-    category: "other", paidByName: "", date: new Date().toISOString().split("T")[0], notes: "",
-  });
+  const [editingExpense, setEditingExpense] = useState<any | null>(null);
+  const [form, setForm] = useState(emptyForm(trip?.baseCurrency ?? "HKD"));
 
   const addExpense = trpc.expenses.add.useMutation({
-    onSuccess: () => { refetch(); setShowAdd(false); setForm({ title: "", amount: "", currency: trip?.baseCurrency ?? "HKD", category: "other", paidByName: "", date: new Date().toISOString().split("T")[0], notes: "" }); toast.success("費用已新增"); },
+    onSuccess: () => { refetch(); setShowAdd(false); setForm(emptyForm(trip?.baseCurrency ?? "HKD")); toast.success("費用已新增"); },
     onError: () => toast.error("新增失敗"),
+  });
+  const updateExpense = trpc.expenses.update.useMutation({
+    onSuccess: () => { refetch(); setEditingExpense(null); toast.success("費用已更新"); },
+    onError: () => toast.error("更新失敗"),
   });
   const deleteExpense = trpc.expenses.delete.useMutation({
     onSuccess: () => { refetch(); toast.success("費用已刪除"); },
@@ -41,7 +47,27 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
 
   const handleAdd = () => {
     if (!form.title || !form.amount) { toast.error("請填寫必填欄位"); return; }
-    addExpense.mutate({ tripId, ...form, category: form.category as "transport" | "accommodation" | "food" | "attraction" | "shopping" | "other"});
+    addExpense.mutate({ tripId, ...form, category: form.category as any });
+  };
+
+  const handleUpdate = () => {
+    if (!editingExpense || !form.title || !form.amount) { toast.error("請填寫必填欄位"); return; }
+    updateExpense.mutate({ expenseId: editingExpense.id, tripId, ...form, category: form.category as any });
+  };
+
+  const openEdit = (expense: any) => {
+    setEditingExpense(expense);
+    setForm({
+      title: expense.title,
+      amount: String(parseFloat(expense.amount as string)),
+      currency: expense.currency,
+      category: expense.category ?? "other",
+      paidByName: expense.paidByName ?? "",
+      date: expense.date instanceof Date
+        ? expense.date.toISOString().split("T")[0]
+        : String(expense.date ?? "").split("T")[0],
+      notes: expense.notes ?? "",
+    });
   };
 
   // Stats
@@ -69,6 +95,53 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
     </div>
   );
 
+  const ExpenseForm = ({ onSubmit, loading, label }: { onSubmit: () => void; loading: boolean; label: string }) => (
+    <div className="space-y-4 mt-2">
+      <div>
+        <Label>費用名稱 *</Label>
+        <Input className="mt-1.5" placeholder="例：午餐" value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>金額 *</Label>
+          <Input className="mt-1.5" type="number" placeholder="0.00" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} />
+        </div>
+        <div>
+          <Label>貨幣</Label>
+          <Select value={form.currency} onValueChange={v => setForm({...form, currency: v})}>
+            <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+            <SelectContent>{CURRENCIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+      </div>
+      <div>
+        <Label>類別</Label>
+        <Select value={form.category} onValueChange={v => setForm({...form, category: v})}>
+          <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+          <SelectContent>{CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <Label>付款人</Label>
+          <Input className="mt-1.5" placeholder="姓名" value={form.paidByName} onChange={e => setForm({...form, paidByName: e.target.value})} />
+        </div>
+        <div>
+          <Label>日期</Label>
+          <Input className="mt-1.5" type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
+        </div>
+      </div>
+      <div>
+        <Label>備注</Label>
+        <Textarea className="mt-1.5" placeholder="備注..." value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} rows={2} />
+      </div>
+      <Button className="w-full" onClick={onSubmit} disabled={loading}>
+        {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+        {label}
+      </Button>
+    </div>
+  );
+
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
       <div className="flex items-center justify-between mb-6">
@@ -76,7 +149,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
           <h2 className="text-xl font-bold text-foreground">費用記帳</h2>
           <p className="text-muted-foreground text-sm mt-0.5">基本貨幣：{trip?.baseCurrency}</p>
         </div>
-        <Button onClick={() => setShowAdd(true)} size="sm" className="gap-1.5">
+        <Button onClick={() => { setShowAdd(true); setForm(emptyForm(trip?.baseCurrency ?? "HKD")); }} size="sm" className="gap-1.5">
           <Plus className="w-4 h-4" />新增費用
         </Button>
       </div>
@@ -158,12 +231,20 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                 <div className="text-right shrink-0">
                   <p className="font-bold text-foreground">{expense.currency} {parseFloat(expense.amount as string).toLocaleString()}</p>
                 </div>
-                <button
-                  onClick={() => deleteExpense.mutate({ expenseId: expense.id, tripId })}
-                  className="p-1.5 rounded-lg hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-all shrink-0"
-                >
-                  <Trash2 className="w-4 h-4 text-destructive" />
-                </button>
+                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                  <button
+                    onClick={() => openEdit(expense)}
+                    className="p-1.5 rounded-lg hover:bg-accent transition-colors"
+                  >
+                    <Edit2 className="w-4 h-4 text-muted-foreground" />
+                  </button>
+                  <button
+                    onClick={() => deleteExpense.mutate({ expenseId: expense.id, tripId })}
+                    className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
+                  >
+                    <Trash2 className="w-4 h-4 text-destructive" />
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -173,53 +254,16 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
       {/* Add Dialog */}
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
         <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>新增費用</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div>
-              <Label>費用名稱 *</Label>
-              <Input className="mt-1.5" placeholder="例：午餐" value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>金額 *</Label>
-                <Input className="mt-1.5" type="number" placeholder="0.00" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} />
-              </div>
-              <div>
-                <Label>貨幣</Label>
-                <Select value={form.currency} onValueChange={v => setForm({...form, currency: v})}>
-                  <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
-                  <SelectContent>{CURRENCIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div>
-              <Label>類別</Label>
-              <Select value={form.category} onValueChange={v => setForm({...form, category: v})}>
-                <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
-                <SelectContent>{CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
-              </Select>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>付款人</Label>
-                <Input className="mt-1.5" placeholder="姓名" value={form.paidByName} onChange={e => setForm({...form, paidByName: e.target.value})} />
-              </div>
-              <div>
-                <Label>日期</Label>
-                <Input className="mt-1.5" type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
-              </div>
-            </div>
-            <div>
-              <Label>備注</Label>
-              <Textarea className="mt-1.5" placeholder="備注..." value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} rows={2} />
-            </div>
-            <Button className="w-full" onClick={handleAdd} disabled={addExpense.isPending}>
-              {addExpense.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              新增費用
-            </Button>
-          </div>
+          <DialogHeader><DialogTitle>新增費用</DialogTitle></DialogHeader>
+          <ExpenseForm onSubmit={handleAdd} loading={addExpense.isPending} label="新增費用" />
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Dialog */}
+      <Dialog open={!!editingExpense} onOpenChange={(o) => !o && setEditingExpense(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader><DialogTitle>修改費用</DialogTitle></DialogHeader>
+          <ExpenseForm onSubmit={handleUpdate} loading={updateExpense.isPending} label="儲存變更" />
         </DialogContent>
       </Dialog>
     </div>

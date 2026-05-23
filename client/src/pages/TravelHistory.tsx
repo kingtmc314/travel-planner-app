@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Globe, Plus, Trash2, Loader2, MapPin, CheckCircle, Heart, Calendar } from "lucide-react";
+import { Globe, Plus, Trash2, Loader2, MapPin, CheckCircle, Heart, Calendar, Edit2 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 
@@ -204,6 +204,8 @@ export default function TravelHistory() {
   const updateStatus = trpc.travelHistory.upsertCountry.useMutation({ onSuccess: () => { refetch(); toast.success("已更新"); } });
 
   const [showAdd, setShowAdd] = useState(false);
+  const [editingCountry, setEditingCountry] = useState<any | null>(null);
+  const [editForm, setEditForm] = useState({ status: "visited" as "visited" | "planned" | "wishlist", visitedYear: "", notes: "" });
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "visited" | "planned" | "wishlist">("all");
   const [filterRegion, setFilterRegion] = useState("全部");
@@ -231,6 +233,26 @@ export default function TravelHistory() {
   }, [countries, filterStatus, filterRegion, search]);
 
   const availableToAdd = COUNTRIES.filter(c => !countryMap[c.code]);
+
+  const openEditCountry = (c: any) => {
+    setEditingCountry(c);
+    setEditForm({
+      status: c.status,
+      visitedYear: c.visitedAt ? String(new Date(c.visitedAt as Date).getFullYear()) : "",
+      notes: c.notes ?? "",
+    });
+  };
+
+  const handleEditCountry = () => {
+    if (!editingCountry) return;
+    updateStatus.mutate({
+      countryCode: editingCountry.countryCode,
+      countryName: editingCountry.countryName,
+      status: editForm.status,
+      visitedAt: editForm.visitedYear ? `${editForm.visitedYear}-01-01` : undefined,
+      notes: editForm.notes || undefined,
+    }, { onSuccess: () => { setEditingCountry(null); refetch(); toast.success("已更新"); } });
+  };
 
   const handleAdd = () => {
     if (!addForm.countryCode) { toast.error("請選擇國家"); return; }
@@ -377,6 +399,12 @@ export default function TravelHistory() {
                           </SelectContent>
                         </Select>
                         <button
+                          onClick={() => openEditCountry(c)}
+                          className="p-1.5 rounded-lg hover:bg-accent transition-colors"
+                        >
+                          <Edit2 className="w-3.5 h-3.5 text-muted-foreground" />
+                        </button>
+                        <button
                           onClick={() => removeCountry.mutate({ countryCode: c.countryCode })}
                           className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
                         >
@@ -391,6 +419,40 @@ export default function TravelHistory() {
           </div>
         )}
       </div>
+
+      {/* Edit Country Dialog */}
+      <Dialog open={!!editingCountry} onOpenChange={(o) => !o && setEditingCountry(null)}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>修改 {editingCountry?.countryName}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div>
+              <label className="text-sm font-medium text-foreground">狀態</label>
+              <Select value={editForm.status} onValueChange={v => setEditForm({ ...editForm, status: v as any })}>
+                <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Object.entries(STATUS_CONFIG).map(([k, v]) => (
+                    <SelectItem key={k} value={k}>{v.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground">到訪年份（選填）</label>
+              <Input className="mt-1.5" type="number" placeholder="例：2024" value={editForm.visitedYear} onChange={e => setEditForm({ ...editForm, visitedYear: e.target.value })} />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-foreground">備注（選填）</label>
+              <Input className="mt-1.5" placeholder="備注..." value={editForm.notes} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} />
+            </div>
+            <Button className="w-full bg-indigo-600 hover:bg-indigo-700" onClick={handleEditCountry} disabled={updateStatus.isPending}>
+              {updateStatus.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
+              儲存變更
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Country Dialog */}
       <Dialog open={showAdd} onOpenChange={setShowAdd}>

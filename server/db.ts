@@ -221,6 +221,12 @@ export async function addExpense(data: InsertExpense) {
   return (result as any).insertId as number;
 }
 
+export async function updateExpense(expenseId: number, data: Partial<InsertExpense>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(expenses).set(data).where(eq(expenses.id, expenseId));
+}
+
 export async function deleteExpense(expenseId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -239,6 +245,12 @@ export async function addMapPin(data: InsertMapPin) {
   if (!db) throw new Error("Database not available");
   const [result] = await db.insert(mapPins).values(data);
   return (result as any).insertId as number;
+}
+
+export async function updateMapPin(pinId: number, data: Partial<InsertMapPin>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(mapPins).set(data).where(eq(mapPins.id, pinId));
 }
 
 export async function deleteMapPin(pinId: number) {
@@ -261,6 +273,12 @@ export async function addFlight(data: InsertFlight) {
   return (result as any).insertId as number;
 }
 
+export async function updateFlight(flightId: number, data: Partial<InsertFlight>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(flights).set(data).where(eq(flights.id, flightId));
+}
+
 export async function deleteFlight(flightId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -279,6 +297,12 @@ export async function addAccommodation(data: InsertAccommodation) {
   if (!db) throw new Error("Database not available");
   const [result] = await db.insert(accommodations).values(data);
   return (result as any).insertId as number;
+}
+
+export async function updateAccommodation(accId: number, data: Partial<InsertAccommodation>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(accommodations).set(data).where(eq(accommodations.id, accId));
 }
 
 export async function deleteAccommodation(accId: number) {
@@ -350,6 +374,12 @@ export async function addPastFlight(data: InsertPastFlight) {
   if (!db) throw new Error("Database not available");
   const [result] = await db.insert(pastFlights).values(data);
   return (result as any).insertId as number;
+}
+
+export async function updatePastFlight(flightId: number, data: Partial<InsertPastFlight>) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  await db.update(pastFlights).set(data).where(eq(pastFlights.id, flightId));
 }
 
 export async function deletePastFlight(flightId: number) {
