@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MapView } from "@/components/Map";
 import { Plus, Trash2, Loader2, MapPin, Hotel, Utensils, Car, MoreHorizontal, Edit2 } from "lucide-react";
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 
 const PIN_TYPES = [
@@ -84,7 +84,12 @@ export default function MapPage({ tripId }: { tripId: number }) {
     if (pins.length > 0) mapRef.current!.fitBounds(bounds, 60);
   }, [pins]);
 
-  const mapKey = pins?.map(p => p.id).join(",") ?? "";
+  // Re-render markers whenever pins change, without remounting the map
+  useEffect(() => {
+    if (mapRef.current && pins) {
+      renderMarkers();
+    }
+  }, [pins, renderMarkers]);
 
   const handleAdd = () => {
     if (!form.title || !form.lat || !form.lng) { toast.error("請填寫名稱並在地圖上選擇位置"); return; }
@@ -161,11 +166,10 @@ export default function MapPage({ tripId }: { tripId: number }) {
 
       <div className="flex flex-1 min-h-0">
         {/* Map */}
-        <div className="flex-1 relative">
+        <div className="flex-1 relative min-h-0" style={{minHeight: '400px'}}>
           <MapView
-            key={mapKey}
-            onMapReady={(map) => { handleMapReady(map); setTimeout(renderMarkers, 100); }}
-            className="w-full h-full"
+            onMapReady={(map) => { handleMapReady(map); setTimeout(renderMarkers, 200); }}
+            className="w-full h-full absolute inset-0"
             initialCenter={pins && pins.length > 0
               ? { lat: parseFloat(pins[0].lat as string), lng: parseFloat(pins[0].lng as string) }
               : { lat: 30.0444, lng: 31.2357 }
