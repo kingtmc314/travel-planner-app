@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Plane, Plus, Trash2, Loader2, Clock, Globe, Building2, Share2, Edit2 } from "lucide-react";
+import { Plane, Plus, Trash2, Loader2, Clock, Globe, Building2, Share2, Edit2, RefreshCw } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 
@@ -110,16 +110,21 @@ export default function FlightPassport() {
   const deleteFlight = trpc.passport.deleteFlight.useMutation({
     onSuccess: () => { refetch(); toast.success("已刪除"); },
   });
+  const [importResult, setImportResult] = useState<{ flights: number; countries: number } | null>(null);
+
   const seedFlights = trpc.passport.seedMyFlights.useMutation({
     onSuccess: (data) => {
-      if (data.alreadySeeded) {
-        toast.info(`已有 ${data.count} 筆航班記錄`);
-      } else {
-        refetch();
-        toast.success(`成功匯入 ${data.count} 筆歷史航班！`);
-      }
+      refetch();
+      setImportResult({ flights: data.count, countries: data.countriesSynced ?? 0 });
     },
     onError: () => toast.error("匯入失敗"),
+  });
+
+  const syncCountries = trpc.passport.syncCountriesFromFlights.useMutation({
+    onSuccess: (data) => {
+      toast.success(`已同步 ${data.synced} 個國家到旅遊足跡地圖！`);
+    },
+    onError: () => toast.error("同步失敗"),
   });
 
   const updateFlight = trpc.passport.updateFlight.useMutation({
@@ -250,6 +255,39 @@ export default function FlightPassport() {
   return (
     <AppLayout>
     <div className="min-h-screen bg-background">
+      {/* Import Result Dialog */}
+      {importResult && (
+        <Dialog open onOpenChange={() => setImportResult(null)}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-sky-100 flex items-center justify-center">
+                  <Plane className="w-4 h-4 text-sky-600" />
+                </div>
+                匯入完成！
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 pt-2">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-sky-50 rounded-xl p-4 text-center">
+                  <p className="text-3xl font-bold text-sky-600">{importResult.flights}</p>
+                  <p className="text-xs text-muted-foreground mt-1">筆航班已匯入</p>
+                </div>
+                <div className="bg-emerald-50 rounded-xl p-4 text-center">
+                  <p className="text-3xl font-bold text-emerald-600">{importResult.countries}</p>
+                  <p className="text-xs text-muted-foreground mt-1">個國家已加入地圖</p>
+                </div>
+              </div>
+              <p className="text-sm text-muted-foreground text-center">
+                前往<span className="font-medium text-foreground">旅遊足跡</span>查看世界地圖上已高亮的國家 🌍
+              </p>
+              <Button className="w-full bg-sky-600 hover:bg-sky-700" onClick={() => setImportResult(null)}>
+                太好了！
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border px-4 sm:px-6 py-4">
         <div className="max-w-3xl mx-auto flex items-center justify-between">
@@ -263,7 +301,7 @@ export default function FlightPassport() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {(!flights || flights.length === 0) && (
+            {(!flights || flights.length === 0) ? (
               <Button
                 variant="outline"
                 size="sm"
@@ -273,6 +311,18 @@ export default function FlightPassport() {
               >
                 {seedFlights.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plane className="w-4 h-4" />}
                 <span className="hidden sm:inline">匯入歷史航班</span>
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 border-emerald-300 text-emerald-600 hover:bg-emerald-50"
+                onClick={() => syncCountries.mutate()}
+                disabled={syncCountries.isPending}
+                title="從航班記錄同步到旅遊足跡地圖"
+              >
+                {syncCountries.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+                <span className="hidden sm:inline">同步地圖</span>
               </Button>
             )}
             <Button variant="outline" size="sm" className="gap-1.5" onClick={() => toast.info("分享功能即將推出")}>

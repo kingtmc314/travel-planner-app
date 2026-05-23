@@ -104,3 +104,10 @@
 - [x] Integrate WorldMap into TravelHistory page replacing old placeholder map
 - [x] Add color legend (visited=green, planned=blue, wishlist=amber)
 - [x] Click unvisited country on map to open add-country dialog pre-filled
+
+## Flight Import → Auto-sync Visited Countries
+- [x] Expand FLIGHT_COUNTRY_TO_ISO map covering all 44 seeded flights (Japan, Taiwan, Thailand, Egypt, UAE, UK, HK, etc.)
+- [x] After seedMyFlights, auto-upsert visited countries for each unique destination country
+- [x] Return countriesSynced count in seedMyFlights mutation response
+- [x] Show post-import summary dialog: "X flights imported, Y new countries added to map"
+- [x] Add "Sync Map" button for users who already imported flights (syncCountriesFromFlights mutation)

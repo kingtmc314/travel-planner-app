@@ -50,6 +50,78 @@ const COUNTRY_KEYWORDS: Array<{ keywords: string[]; code: string; name: string }
   { keywords: ["mexico", "mexico city", "cancun", "墨西哥", "墨西哥城", "坎昆"], code: "MX", name: "Mexico" },
 ];
 
+// Country name (as used in flight data) → ISO alpha-2 + display name
+const FLIGHT_COUNTRY_TO_ISO: Record<string, { code: string; name: string }> = {
+  "Japan": { code: "JP", name: "Japan" },
+  "Taiwan": { code: "TW", name: "Taiwan" },
+  "South Korea": { code: "KR", name: "South Korea" },
+  "Korea": { code: "KR", name: "South Korea" },
+  "Thailand": { code: "TH", name: "Thailand" },
+  "Singapore": { code: "SG", name: "Singapore" },
+  "Malaysia": { code: "MY", name: "Malaysia" },
+  "Indonesia": { code: "ID", name: "Indonesia" },
+  "Vietnam": { code: "VN", name: "Vietnam" },
+  "Philippines": { code: "PH", name: "Philippines" },
+  "Cambodia": { code: "KH", name: "Cambodia" },
+  "China": { code: "CN", name: "China" },
+  "Egypt": { code: "EG", name: "Egypt" },
+  "UK": { code: "GB", name: "United Kingdom" },
+  "United Kingdom": { code: "GB", name: "United Kingdom" },
+  "France": { code: "FR", name: "France" },
+  "Germany": { code: "DE", name: "Germany" },
+  "Italy": { code: "IT", name: "Italy" },
+  "Spain": { code: "ES", name: "Spain" },
+  "USA": { code: "US", name: "United States" },
+  "United States": { code: "US", name: "United States" },
+  "Canada": { code: "CA", name: "Canada" },
+  "Australia": { code: "AU", name: "Australia" },
+  "New Zealand": { code: "NZ", name: "New Zealand" },
+  "UAE": { code: "AE", name: "United Arab Emirates" },
+  "United Arab Emirates": { code: "AE", name: "United Arab Emirates" },
+  "Greece": { code: "GR", name: "Greece" },
+  "Portugal": { code: "PT", name: "Portugal" },
+  "Netherlands": { code: "NL", name: "Netherlands" },
+  "Switzerland": { code: "CH", name: "Switzerland" },
+  "Austria": { code: "AT", name: "Austria" },
+  "Czech Republic": { code: "CZ", name: "Czech Republic" },
+  "Hungary": { code: "HU", name: "Hungary" },
+  "Poland": { code: "PL", name: "Poland" },
+  "India": { code: "IN", name: "India" },
+  "Maldives": { code: "MV", name: "Maldives" },
+  "Sri Lanka": { code: "LK", name: "Sri Lanka" },
+  "Nepal": { code: "NP", name: "Nepal" },
+  "Morocco": { code: "MA", name: "Morocco" },
+  "Turkey": { code: "TR", name: "Turkey" },
+  "Russia": { code: "RU", name: "Russia" },
+  "Brazil": { code: "BR", name: "Brazil" },
+  "Argentina": { code: "AR", name: "Argentina" },
+  "Mexico": { code: "MX", name: "Mexico" },
+  "Hong Kong": { code: "HK", name: "Hong Kong" },
+  "Macau": { code: "MO", name: "Macau" },
+};
+
+/** Derive unique visited countries from a list of flights, excluding the user's home (Hong Kong). */
+function extractCountriesFromFlights(
+  flights: Array<{ depCountry: string; arrCountry: string; date: string }>,
+  excludeCountry = "Hong Kong"
+): Array<{ code: string; name: string; year: number }> {
+  const seen = new Map<string, { code: string; name: string; year: number }>();
+  for (const f of flights) {
+    for (const countryName of [f.depCountry, f.arrCountry]) {
+      if (!countryName || countryName === excludeCountry) continue;
+      const iso = FLIGHT_COUNTRY_TO_ISO[countryName];
+      if (!iso) continue;
+      const year = new Date(f.date).getFullYear();
+      const existing = seen.get(iso.code);
+      // Keep the earliest year visited
+      if (!existing || year < existing.year) {
+        seen.set(iso.code, { code: iso.code, name: iso.name, year });
+      }
+    }
+  }
+  return Array.from(seen.values());
+}
+
 function detectCountryFromDestination(destination: string): { code: string; name: string } | null {
   const lower = destination.toLowerCase();
   for (const entry of COUNTRY_KEYWORDS) {
@@ -980,12 +1052,50 @@ const passportRouter = router({
         seatClass: f.seatClass,
         notes: null,
       });
-      count++;
+            count++;
     }
-    return { success: true, count };
+
+    // Auto-sync visited countries from all imported flights
+    const flightDataForSync = flights.map(f => ({ depCountry: f.depCountry, arrCountry: f.arrCountry, date: f.date }));
+    const countries = extractCountriesFromFlights(flightDataForSync);
+    let countriesSynced = 0;
+    for (const c of countries) {
+      await db.upsertVisitedCountry({
+        userId: ctx.user.id,
+        countryCode: c.code,
+        countryName: c.name,
+        status: "visited",
+        visitedAt: new Date(`${c.year}-01-01`),
+      });
+      countriesSynced++;
+    }
+
+    return { success: true, count, countriesSynced };
+  }),
+
+  syncCountriesFromFlights: protectedProcedure.mutation(async ({ ctx }) => {
+    // Re-derive visited countries from all existing past flights in the database
+    const existingFlights = await db.getPastFlights(ctx.user.id);
+    const flightDataForSync = existingFlights.map(f => ({
+      depCountry: f.departureCountry ?? "",
+      arrCountry: f.arrivalCountry ?? "",
+      date: f.flightDate ? new Date(f.flightDate as Date).toISOString().split("T")[0] : "2000-01-01",
+    }));
+    const countries = extractCountriesFromFlights(flightDataForSync);
+    let synced = 0;
+    for (const c of countries) {
+      await db.upsertVisitedCountry({
+        userId: ctx.user.id,
+        countryCode: c.code,
+        countryName: c.name,
+        status: "visited",
+        visitedAt: new Date(`${c.year}-01-01`),
+      });
+      synced++;
+    }
+    return { success: true, synced, total: existingFlights.length };
   }),
 });
-
 // ─── AI Router ────────────────────────────────────────────────────────────────
 const aiRouter = router({
   chat: protectedProcedure
