@@ -119,3 +119,15 @@
 - [x] Add WorldMap component to FlightPassport page (same as TravelHistory)
 - [x] Highlight visited countries on passport map based on past flights' countries
 - [x] Draw flight route arcs on the map between departure and arrival airports (quadratic bezier, deduplicated)
+
+## 6 Improvements (Round 3)
+- [x] #1 Auto-link: addFlight/updateFlight/deleteFlight mutations now auto-upsert/re-sync visited_countries
+- [x] #1 Auto-link: seedMyFlights already syncs on import; add/edit/delete mutations also trigger sync
+- [x] #2 Per-country detail map: click a country in TravelHistory to open a detail sheet with Google Map zoomed to that country
+- [x] #2 Place search in country detail: bilingual search (Chinese + English) using Google Places Autocomplete
+- [x] #3 Visited country percentage: show "X / 195 countries (Y%)" in TravelHistory stats header
+- [x] #5 Year filter real-time update: flightRoutes and mapCountries now derived from stats.filtered (year-filtered subset)
+- [x] #6 Bilingual place search: Google Places Autocomplete supports both Chinese and English natively
+- [x] #4 Mobile UX: Dashboard refactored to use AppLayout (removes duplicate sidebar/bottom nav)
+- [x] #4 Mobile UX: FlightPassport header buttons icon-only on mobile to prevent overflow
+- [x] #4 Mobile UX: WorldMap component has touch pinch-zoom and drag support for mobile

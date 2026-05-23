@@ -2,12 +2,14 @@ import { trpc } from "@/lib/trpc";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Globe, Plus, Trash2, Loader2, MapPin, CheckCircle, Heart, Calendar, Edit2 } from "lucide-react";
+import { Globe, Plus, Trash2, Loader2, MapPin, CheckCircle, Heart, Calendar, Edit2, Search, X } from "lucide-react";
 import WorldMap from "@/components/WorldMap";
-import { useState, useMemo } from "react";
+import { MapView } from "@/components/Map";
+import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 
 // Comprehensive list of countries with ISO codes and regions
@@ -79,6 +81,7 @@ const COUNTRIES = [
   { code: "GY", name: "Guyana", region: "South America" },
   { code: "HT", name: "Haiti", region: "North America" },
   { code: "HN", name: "Honduras", region: "North America" },
+  { code: "HK", name: "Hong Kong", region: "Asia" },
   { code: "HU", name: "Hungary", region: "Europe" },
   { code: "IS", name: "Iceland", region: "Europe" },
   { code: "IN", name: "India", region: "Asia" },
@@ -93,8 +96,6 @@ const COUNTRIES = [
   { code: "JO", name: "Jordan", region: "Asia" },
   { code: "KZ", name: "Kazakhstan", region: "Asia" },
   { code: "KE", name: "Kenya", region: "Africa" },
-  { code: "KP", name: "North Korea", region: "Asia" },
-  { code: "KR", name: "South Korea", region: "Asia" },
   { code: "KW", name: "Kuwait", region: "Asia" },
   { code: "KG", name: "Kyrgyzstan", region: "Asia" },
   { code: "LA", name: "Laos", region: "Asia" },
@@ -106,6 +107,8 @@ const COUNTRIES = [
   { code: "LI", name: "Liechtenstein", region: "Europe" },
   { code: "LT", name: "Lithuania", region: "Europe" },
   { code: "LU", name: "Luxembourg", region: "Europe" },
+  { code: "MO", name: "Macau", region: "Asia" },
+  { code: "MK", name: "North Macedonia", region: "Europe" },
   { code: "MG", name: "Madagascar", region: "Africa" },
   { code: "MW", name: "Malawi", region: "Africa" },
   { code: "MY", name: "Malaysia", region: "Asia" },
@@ -129,7 +132,6 @@ const COUNTRIES = [
   { code: "NI", name: "Nicaragua", region: "North America" },
   { code: "NE", name: "Niger", region: "Africa" },
   { code: "NG", name: "Nigeria", region: "Africa" },
-  { code: "MK", name: "North Macedonia", region: "Europe" },
   { code: "NO", name: "Norway", region: "Europe" },
   { code: "OM", name: "Oman", region: "Asia" },
   { code: "PK", name: "Pakistan", region: "Asia" },
@@ -153,12 +155,13 @@ const COUNTRIES = [
   { code: "SI", name: "Slovenia", region: "Europe" },
   { code: "SO", name: "Somalia", region: "Africa" },
   { code: "ZA", name: "South Africa", region: "Africa" },
+  { code: "KR", name: "South Korea", region: "Asia" },
   { code: "SS", name: "South Sudan", region: "Africa" },
   { code: "ES", name: "Spain", region: "Europe" },
   { code: "LK", name: "Sri Lanka", region: "Asia" },
   { code: "SD", name: "Sudan", region: "Africa" },
   { code: "SR", name: "Suriname", region: "South America" },
-  { code: "SZ", name: "Swaziland", region: "Africa" },
+  { code: "SZ", name: "Eswatini", region: "Africa" },
   { code: "SE", name: "Sweden", region: "Europe" },
   { code: "CH", name: "Switzerland", region: "Europe" },
   { code: "SY", name: "Syria", region: "Asia" },
@@ -184,19 +187,42 @@ const COUNTRIES = [
   { code: "YE", name: "Yemen", region: "Asia" },
   { code: "ZM", name: "Zambia", region: "Africa" },
   { code: "ZW", name: "Zimbabwe", region: "Africa" },
-  { code: "HK", name: "Hong Kong", region: "Asia" },
-  { code: "MO", name: "Macau", region: "Asia" },
 ];
 
 const STATUS_CONFIG = {
-  visited: { label: "已到訪", color: "bg-indigo-500", textColor: "text-indigo-600", icon: CheckCircle, mapColor: "#6366f1" },
-  planned: { label: "計劃前往", color: "bg-violet-400", textColor: "text-violet-600", icon: Calendar, mapColor: "#a78bfa" },
-  wishlist: { label: "心願清單", color: "bg-pink-400", textColor: "text-pink-600", icon: Heart, mapColor: "#f472b6" },
+  visited: { label: "已到訪", color: "bg-emerald-500", mapColor: "#10b981", icon: CheckCircle },
+  planned: { label: "計劃中", color: "bg-blue-500", mapColor: "#3b82f6", icon: Calendar },
+  wishlist: { label: "心願清單", color: "bg-amber-500", mapColor: "#f59e0b", icon: Heart },
 };
 
 const REGIONS = ["全部", "Asia", "Europe", "Africa", "North America", "South America", "Oceania"];
 
-const TOTAL_COUNTRIES = 203;
+const TOTAL_COUNTRIES = 195;
+
+// Country code → approximate center coordinates for map zoom
+const COUNTRY_CENTERS: Record<string, { lat: number; lng: number; zoom: number }> = {
+  JP: { lat: 36.2, lng: 138.3, zoom: 5 }, TW: { lat: 23.7, lng: 121.0, zoom: 7 },
+  KR: { lat: 36.5, lng: 127.8, zoom: 6 }, TH: { lat: 13.0, lng: 101.0, zoom: 6 },
+  SG: { lat: 1.35, lng: 103.82, zoom: 11 }, MY: { lat: 4.2, lng: 108.0, zoom: 5 },
+  ID: { lat: -2.5, lng: 118.0, zoom: 4 }, VN: { lat: 16.0, lng: 107.8, zoom: 5 },
+  PH: { lat: 12.9, lng: 122.0, zoom: 5 }, KH: { lat: 12.6, lng: 104.9, zoom: 7 },
+  CN: { lat: 35.9, lng: 104.2, zoom: 4 }, EG: { lat: 26.8, lng: 30.8, zoom: 6 },
+  GB: { lat: 55.4, lng: -3.4, zoom: 5 }, FR: { lat: 46.2, lng: 2.2, zoom: 5 },
+  DE: { lat: 51.2, lng: 10.5, zoom: 5 }, IT: { lat: 41.9, lng: 12.6, zoom: 5 },
+  ES: { lat: 40.5, lng: -3.7, zoom: 5 }, US: { lat: 37.1, lng: -95.7, zoom: 4 },
+  CA: { lat: 56.1, lng: -106.3, zoom: 3 }, AU: { lat: -25.3, lng: 133.8, zoom: 4 },
+  NZ: { lat: -41.3, lng: 172.5, zoom: 5 }, AE: { lat: 24.0, lng: 54.0, zoom: 7 },
+  GR: { lat: 39.1, lng: 22.0, zoom: 6 }, PT: { lat: 39.6, lng: -8.0, zoom: 6 },
+  NL: { lat: 52.3, lng: 5.3, zoom: 7 }, CH: { lat: 46.8, lng: 8.2, zoom: 7 },
+  AT: { lat: 47.5, lng: 14.6, zoom: 7 }, CZ: { lat: 49.8, lng: 15.5, zoom: 7 },
+  HU: { lat: 47.2, lng: 19.5, zoom: 7 }, PL: { lat: 51.9, lng: 19.1, zoom: 6 },
+  IN: { lat: 20.6, lng: 78.9, zoom: 4 }, MV: { lat: 3.2, lng: 73.2, zoom: 7 },
+  LK: { lat: 7.9, lng: 80.8, zoom: 7 }, NP: { lat: 28.4, lng: 84.1, zoom: 7 },
+  MA: { lat: 31.8, lng: -7.1, zoom: 6 }, TR: { lat: 39.1, lng: 35.2, zoom: 5 },
+  RU: { lat: 61.5, lng: 105.3, zoom: 3 }, BR: { lat: -14.2, lng: -51.9, zoom: 4 },
+  AR: { lat: -38.4, lng: -63.6, zoom: 4 }, MX: { lat: 23.6, lng: -102.6, zoom: 5 },
+  HK: { lat: 22.35, lng: 114.13, zoom: 10 }, MO: { lat: 22.2, lng: 113.55, zoom: 12 },
+};
 
 export default function TravelHistory() {
   const { data: countries, refetch, isLoading } = trpc.travelHistory.getCountries.useQuery();
@@ -213,6 +239,17 @@ export default function TravelHistory() {
   const [addForm, setAddForm] = useState({ countryCode: "", countryName: "", status: "visited" as "visited" | "planned" | "wishlist", visitedYear: "" });
   const [activeTab, setActiveTab] = useState<"map" | "list">("map");
 
+  // Country detail sheet state
+  const [detailCountry, setDetailCountry] = useState<{ code: string; name: string } | null>(null);
+  const [placeSearch, setPlaceSearch] = useState("");
+  const [placeSuggestions, setPlaceSuggestions] = useState<Array<{ placeId: string; description: string }>>([]);
+  const [savedPlaces, setSavedPlaces] = useState<Array<{ name: string; lat: number; lng: number }>>([]);
+  const detailMapRef = useRef<google.maps.Map | null>(null);
+  const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
+  const autocompleteServiceRef = useRef<google.maps.places.AutocompleteService | null>(null);
+  const geocoderRef = useRef<google.maps.Geocoder | null>(null);
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   const countryMap = useMemo(() => {
     const m: Record<string, { status: string; visitedYear?: number | null }> = {};
     countries?.forEach(c => { m[c.countryCode] = { status: c.status, visitedYear: c.visitedAt ? new Date(c.visitedAt).getFullYear() : null }; });
@@ -222,6 +259,7 @@ export default function TravelHistory() {
   const visitedCount = countries?.filter(c => c.status === "visited").length ?? 0;
   const plannedCount = countries?.filter(c => c.status === "planned").length ?? 0;
   const wishlistCount = countries?.filter(c => c.status === "wishlist").length ?? 0;
+  const visitedPct = TOTAL_COUNTRIES > 0 ? ((visitedCount / TOTAL_COUNTRIES) * 100).toFixed(1) : "0.0";
 
   const filteredCountries = useMemo(() => {
     return (countries ?? []).filter(c => {
@@ -266,52 +304,140 @@ export default function TravelHistory() {
     });
   };
 
+  // Open country detail sheet
+  const openDetail = (code: string, name: string) => {
+    setDetailCountry({ code, name });
+    setPlaceSearch("");
+    setPlaceSuggestions([]);
+    setSavedPlaces([]);
+  };
+
+  // Initialize detail map and zoom to country
+  const handleDetailMapReady = useCallback((map: google.maps.Map) => {
+    detailMapRef.current = map;
+    autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
+    geocoderRef.current = new window.google.maps.Geocoder();
+    if (detailCountry) {
+      const center = COUNTRY_CENTERS[detailCountry.code];
+      if (center) {
+        map.setCenter({ lat: center.lat, lng: center.lng });
+        map.setZoom(center.zoom);
+      } else {
+        // Geocode the country name to find its center
+        geocoderRef.current?.geocode({ address: detailCountry.name }, (results, status) => {
+          if (status === "OK" && results?.[0]) {
+            map.fitBounds(results[0].geometry.viewport);
+          }
+        });
+      }
+    }
+  }, [detailCountry]);
+
+  // Bilingual place search with debounce
+  useEffect(() => {
+    if (!placeSearch.trim() || !autocompleteServiceRef.current) {
+      setPlaceSuggestions([]);
+      return;
+    }
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    searchTimeoutRef.current = setTimeout(() => {
+      const countryName = detailCountry?.name ?? "";
+      autocompleteServiceRef.current?.getPlacePredictions(
+        {
+          input: placeSearch,
+          // Restrict to the selected country using its name as component restriction
+          componentRestrictions: detailCountry ? { country: detailCountry.code.toLowerCase() } : undefined,
+          language: "zh-TW", // Returns Chinese names when available, falls back to English
+        },
+        (predictions, status) => {
+          if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
+            setPlaceSuggestions(predictions.map(p => ({ placeId: p.place_id, description: p.description })));
+          } else {
+            setPlaceSuggestions([]);
+          }
+        }
+      );
+    }, 300);
+  }, [placeSearch, detailCountry]);
+
+  // Select a place from suggestions → geocode and add marker
+  const selectPlace = useCallback((suggestion: { placeId: string; description: string }) => {
+    setPlaceSearch(suggestion.description);
+    setPlaceSuggestions([]);
+    if (!geocoderRef.current || !detailMapRef.current) return;
+    geocoderRef.current.geocode({ placeId: suggestion.placeId }, (results, status) => {
+      if (status === "OK" && results?.[0]) {
+        const loc = results[0].geometry.location;
+        detailMapRef.current!.panTo(loc);
+        detailMapRef.current!.setZoom(14);
+        // Add marker
+        const marker = new window.google.maps.marker.AdvancedMarkerElement({
+          map: detailMapRef.current!,
+          position: loc,
+          title: suggestion.description,
+        });
+        markersRef.current.push(marker);
+        setSavedPlaces(prev => [...prev, { name: suggestion.description, lat: loc.lat(), lng: loc.lng() }]);
+        setPlaceSearch("");
+      }
+    });
+  }, []);
+
+  // Clear markers when detail sheet closes
+  const closeDetail = () => {
+    markersRef.current.forEach(m => { m.map = null; });
+    markersRef.current = [];
+    setDetailCountry(null);
+  };
+
   return (
     <AppLayout>
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border px-4 sm:px-6 py-4">
+      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border px-4 sm:px-6 py-3">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
               <Globe className="w-5 h-5 text-white" />
             </div>
             <div>
               <h1 className="font-bold text-foreground text-lg leading-tight">旅遊足跡</h1>
-              <p className="text-muted-foreground text-xs">{visitedCount}/{TOTAL_COUNTRIES} 個國家</p>
+              <p className="text-muted-foreground text-xs">{visitedCount} / {TOTAL_COUNTRIES} 個國家 · {visitedPct}%</p>
             </div>
           </div>
-          <Button onClick={() => setShowAdd(true)} size="sm" className="gap-1.5 bg-indigo-600 hover:bg-indigo-700">
+          <Button onClick={() => setShowAdd(true)} size="sm" className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 shrink-0">
             <Plus className="w-4 h-4" />
-            新增
+            <span className="hidden sm:inline">新增</span>
           </Button>
         </div>
       </div>
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 pb-24 sm:pb-6">
         {/* Stats Cards */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4">
           {(Object.entries(STATUS_CONFIG) as [string, typeof STATUS_CONFIG["visited"]][]).map(([key, cfg]) => {
             const count = key === "visited" ? visitedCount : key === "planned" ? plannedCount : wishlistCount;
             const Icon = cfg.icon;
+            const pct = TOTAL_COUNTRIES > 0 ? ((count / TOTAL_COUNTRIES) * 100).toFixed(0) : "0";
             return (
               <button
                 key={key}
                 onClick={() => setFilterStatus(filterStatus === key ? "all" : key as any)}
-                className={`bg-card rounded-2xl border p-4 text-left transition-all ${filterStatus === key ? "border-indigo-300 shadow-md" : "border-border hover:border-indigo-200"}`}
+                className={`bg-card rounded-2xl border p-3 sm:p-4 text-left transition-all ${filterStatus === key ? "border-indigo-300 shadow-md" : "border-border hover:border-indigo-200"}`}
               >
-                <div className={`w-8 h-8 rounded-full ${cfg.color} flex items-center justify-center mb-2`}>
-                  <Icon className="w-4 h-4 text-white" />
+                <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full ${cfg.color} flex items-center justify-center mb-1.5`}>
+                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
                 </div>
-                <p className="text-2xl font-bold text-foreground">{count}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{cfg.label}</p>
+                <p className="text-xl sm:text-2xl font-bold text-foreground">{count}</p>
+                <p className="text-xs text-muted-foreground leading-tight">{cfg.label}</p>
+                {key === "visited" && <p className="text-xs text-indigo-500 font-medium mt-0.5">{pct}%</p>}
               </button>
             );
           })}
         </div>
 
         {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={v => setActiveTab(v as any)} className="mb-6">
+        <Tabs value={activeTab} onValueChange={v => setActiveTab(v as any)} className="mb-4">
           <TabsList>
             <TabsTrigger value="map" className="gap-2"><Globe className="w-4 h-4" />地圖</TabsTrigger>
             <TabsTrigger value="list" className="gap-2"><MapPin className="w-4 h-4" />清單</TabsTrigger>
@@ -321,9 +447,9 @@ export default function TravelHistory() {
         {activeTab === "map" ? (
           /* World Map View */
           <div className="bg-card rounded-2xl border border-border overflow-hidden">
-            <div className="p-4 border-b border-border flex items-center justify-between">
+            <div className="p-3 sm:p-4 border-b border-border flex flex-wrap items-center justify-between gap-2">
               <p className="text-sm font-medium text-foreground">世界地圖</p>
-              <div className="flex items-center gap-3 text-xs text-muted-foreground">
+              <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-muted-foreground">
                 {(Object.entries(STATUS_CONFIG) as [string, typeof STATUS_CONFIG["visited"]][]).map(([key, cfg]) => (
                   <div key={key} className="flex items-center gap-1">
                     <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cfg.mapColor }} />
@@ -339,20 +465,24 @@ export default function TravelHistory() {
             <WorldMap
               visitedCountries={(countries ?? []).map(c => ({ countryCode: c.countryCode, status: c.status as "visited" | "planned" | "wishlist" }))}
               onCountryClick={(code, name) => {
-                // If country not yet added, open the add dialog pre-filled
-                if (!countryMap[code]) {
+                if (countryMap[code]) {
+                  // Already visited → open detail map
+                  openDetail(code, name);
+                } else {
+                  // Not yet added → open add dialog pre-filled
                   setAddForm({ countryCode: code, countryName: name, status: "visited", visitedYear: "" });
                   setShowAdd(true);
                 }
               }}
               className="w-full"
             />
+            <p className="text-xs text-muted-foreground text-center py-2">點擊已到訪國家查看詳細地圖 · 點擊未到訪國家快速新增</p>
           </div>
         ) : (
           /* List View */
           <div>
             {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-3 mb-4">
+            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
               <Input
                 placeholder="搜尋國家..."
                 value={search}
@@ -390,25 +520,20 @@ export default function TravelHistory() {
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <p className="font-medium text-foreground text-sm">{c.countryName}</p>
-                          {c.visitedAt && <span className="text-xs text-muted-foreground">{new Date(c.visitedAt as Date).getFullYear()}</span>}
+                          <p className="font-medium text-foreground text-sm truncate">{c.countryName}</p>
+                          {c.visitedAt && <span className="text-xs text-muted-foreground shrink-0">{new Date(c.visitedAt as Date).getFullYear()}</span>}
                         </div>
                         <p className="text-xs text-muted-foreground">{country?.region ?? ""}</p>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <Select
-                          value={c.status}
-                          onValueChange={v => updateStatus.mutate({ countryCode: c.countryCode, countryName: c.countryName, status: v as any })}
+                      <div className="flex items-center gap-1 shrink-0">
+                        {/* Detail map button */}
+                        <button
+                          onClick={() => openDetail(c.countryCode, c.countryName)}
+                          className="p-1.5 rounded-lg hover:bg-accent transition-colors"
+                          title="查看詳細地圖"
                         >
-                          <SelectTrigger className={`h-7 text-xs px-2 border-0 ${cfg?.color ?? "bg-muted"} text-white`}>
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(STATUS_CONFIG).map(([k, v]) => (
-                              <SelectItem key={k} value={k}>{v.label}</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                          <MapPin className="w-3.5 h-3.5 text-indigo-500" />
+                        </button>
                         <button
                           onClick={() => openEditCountry(c)}
                           className="p-1.5 rounded-lg hover:bg-accent transition-colors"
@@ -430,6 +555,81 @@ export default function TravelHistory() {
           </div>
         )}
       </div>
+
+      {/* Country Detail Sheet */}
+      <Sheet open={!!detailCountry} onOpenChange={o => !o && closeDetail()}>
+        <SheetContent side="right" className="w-full sm:max-w-lg p-0 flex flex-col">
+          <SheetHeader className="px-4 pt-4 pb-3 border-b border-border shrink-0">
+            <div className="flex items-center justify-between">
+              <SheetTitle className="text-lg font-bold">{detailCountry?.name}</SheetTitle>
+              <button onClick={closeDetail} className="p-1.5 rounded-lg hover:bg-accent transition-colors">
+                <X className="w-4 h-4 text-muted-foreground" />
+              </button>
+            </div>
+            {/* Bilingual place search */}
+            <div className="relative mt-2">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+              <Input
+                className="pl-9 pr-4"
+                placeholder="搜尋地點（中文或英文）..."
+                value={placeSearch}
+                onChange={e => setPlaceSearch(e.target.value)}
+              />
+              {placeSearch && (
+                <button
+                  className="absolute right-3 top-1/2 -translate-y-1/2"
+                  onClick={() => { setPlaceSearch(""); setPlaceSuggestions([]); }}
+                >
+                  <X className="w-3.5 h-3.5 text-muted-foreground" />
+                </button>
+              )}
+              {/* Autocomplete dropdown */}
+              {placeSuggestions.length > 0 && (
+                <div className="absolute top-full left-0 right-0 z-50 bg-popover border border-border rounded-xl shadow-lg mt-1 overflow-hidden">
+                  {placeSuggestions.map(s => (
+                    <button
+                      key={s.placeId}
+                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-accent transition-colors flex items-center gap-2"
+                      onClick={() => selectPlace(s)}
+                    >
+                      <MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                      <span className="truncate">{s.description}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </SheetHeader>
+
+          {/* Map */}
+          <div className="flex-1 min-h-0 relative">
+            {detailCountry && (
+              <MapView
+                key={detailCountry.code}
+                className="w-full h-full"
+                initialCenter={COUNTRY_CENTERS[detailCountry.code] ? { lat: COUNTRY_CENTERS[detailCountry.code].lat, lng: COUNTRY_CENTERS[detailCountry.code].lng } : { lat: 0, lng: 0 }}
+                initialZoom={COUNTRY_CENTERS[detailCountry.code]?.zoom ?? 5}
+                onMapReady={handleDetailMapReady}
+              />
+            )}
+          </div>
+
+          {/* Saved places list */}
+          {savedPlaces.length > 0 && (
+            <div className="shrink-0 border-t border-border px-4 py-3 max-h-40 overflow-y-auto">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">已標記地點</p>
+              <div className="space-y-1.5">
+                {savedPlaces.map((p, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                    <span className="truncate text-foreground">{p.name}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </SheetContent>
+      </Sheet>
 
       {/* Edit Country Dialog */}
       <Dialog open={!!editingCountry} onOpenChange={(o) => !o && setEditingCountry(null)}>
@@ -519,128 +719,5 @@ export default function TravelHistory() {
       </Dialog>
     </div>
     </AppLayout>
-  );
-}
-
-// Simplified World Map SVG Component
-function WorldMapSVG({ countryMap }: { countryMap: Record<string, { status: string }> }) {
-  const getColor = (code: string) => {
-    const entry = countryMap[code];
-    if (!entry) return "#e5e7eb";
-    return STATUS_CONFIG[entry.status as keyof typeof STATUS_CONFIG]?.mapColor ?? "#e5e7eb";
-  };
-
-  // Simplified rectangular world map using country blocks
-  const regions = [
-    {
-      name: "North America",
-      countries: ["US", "CA", "MX", "GT", "BZ", "HN", "SV", "NI", "CR", "PA", "CU", "JM", "HT", "DO", "TT", "BS"],
-      x: 30, y: 80, w: 160, h: 120
-    },
-    {
-      name: "South America",
-      countries: ["BR", "AR", "CL", "PE", "CO", "VE", "EC", "BO", "PY", "UY", "GY", "SR"],
-      x: 90, y: 210, w: 120, h: 130
-    },
-    {
-      name: "Europe",
-      countries: ["GB", "FR", "DE", "IT", "ES", "PT", "NL", "BE", "CH", "AT", "PL", "CZ", "SK", "HU", "RO", "BG", "GR", "SE", "NO", "DK", "FI", "IE", "HR", "RS", "BA", "SI", "ME", "MK", "AL", "LT", "LV", "EE", "BY", "UA", "MD", "LU", "IS", "MT", "CY", "LI", "MC", "AD"],
-      x: 240, y: 50, w: 130, h: 100
-    },
-    {
-      name: "Africa",
-      countries: ["NG", "EG", "ZA", "KE", "ET", "TZ", "GH", "CM", "CI", "SN", "MZ", "MG", "AO", "ZM", "ZW", "RW", "UG", "SD", "LY", "TN", "MA", "DZ", "ML", "NE", "BF", "TD", "SO", "ER", "DJ", "BJ", "TG", "GN", "SL", "LR", "GM", "GW", "CV", "MR", "CF", "CG", "GA", "GQ", "BI", "MW", "LS", "SZ", "BW", "NA", "SS"],
-      x: 240, y: 160, w: 130, h: 160
-    },
-    {
-      name: "Asia",
-      countries: ["CN", "IN", "JP", "KR", "TH", "VN", "MY", "ID", "PH", "SG", "TW", "HK", "MO", "BD", "PK", "AF", "IR", "IQ", "SA", "AE", "TR", "RU", "KZ", "UZ", "TM", "TJ", "KG", "MN", "KP", "LA", "KH", "MM", "BT", "NP", "LK", "MV", "BN", "TL", "AZ", "AM", "GE", "IL", "JO", "LB", "SY", "YE", "OM", "KW", "QA", "BH"],
-      x: 380, y: 50, w: 200, h: 170
-    },
-    {
-      name: "Oceania",
-      countries: ["AU", "NZ", "FJ", "PG"],
-      x: 460, y: 230, w: 120, h: 80
-    },
-  ];
-
-  return (
-    <div className="p-4 overflow-x-auto">
-      <svg viewBox="0 0 600 360" className="w-full" style={{ minWidth: 320 }}>
-        {/* Background */}
-        <rect width="600" height="360" fill="#f0f4f8" rx="12" />
-
-        {/* Ocean */}
-        <rect x="10" y="10" width="580" height="340" fill="#dbeafe" rx="10" />
-
-        {regions.map(region => {
-          // Calculate dominant color for region
-          const regionCountries = region.countries;
-          const visitedInRegion = regionCountries.filter(c => countryMap[c]?.status === "visited").length;
-          const plannedInRegion = regionCountries.filter(c => countryMap[c]?.status === "planned").length;
-          const wishlistInRegion = regionCountries.filter(c => countryMap[c]?.status === "wishlist").length;
-
-          // Draw individual country cells within region
-          const cols = Math.ceil(Math.sqrt(regionCountries.length));
-          const rows = Math.ceil(regionCountries.length / cols);
-          const cellW = region.w / cols;
-          const cellH = region.h / rows;
-
-          return (
-            <g key={region.name}>
-              {/* Region border */}
-              <rect x={region.x} y={region.y} width={region.w} height={region.h} fill="none" stroke="#94a3b8" strokeWidth="1" rx="4" />
-
-              {/* Country cells */}
-              {regionCountries.map((code, i) => {
-                const col = i % cols;
-                const row = Math.floor(i / cols);
-                const cx = region.x + col * cellW;
-                const cy = region.y + row * cellH;
-                const color = getColor(code);
-                return (
-                  <rect
-                    key={code}
-                    x={cx + 0.5}
-                    y={cy + 0.5}
-                    width={cellW - 1}
-                    height={cellH - 1}
-                    fill={color}
-                    rx="2"
-                  />
-                );
-              })}
-
-              {/* Region label */}
-              <text
-                x={region.x + region.w / 2}
-                y={region.y + region.h + 12}
-                textAnchor="middle"
-                fontSize="8"
-                fill="#64748b"
-                fontFamily="sans-serif"
-              >
-                {region.name}
-              </text>
-
-              {/* Stats badge */}
-              {(visitedInRegion + plannedInRegion + wishlistInRegion) > 0 && (
-                <g>
-                  <rect x={region.x + region.w - 22} y={region.y - 8} width={22} height={14} fill="#6366f1" rx="7" />
-                  <text x={region.x + region.w - 11} y={region.y + 1} textAnchor="middle" fontSize="7" fill="white" fontFamily="sans-serif" fontWeight="bold">
-                    {visitedInRegion + plannedInRegion + wishlistInRegion}
-                  </text>
-                </g>
-              )}
-            </g>
-          );
-        })}
-
-        {/* Title */}
-        <text x="300" y="350" textAnchor="middle" fontSize="9" fill="#94a3b8" fontFamily="sans-serif">
-          World Map — {Object.keys(countryMap).length} countries tracked
-        </text>
-      </svg>
-    </div>
   );
 }

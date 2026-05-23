@@ -1,4 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
+import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -13,8 +14,6 @@ import {
   MapPin,
   Plus,
   Plane,
-  LogOut,
-  Bell,
   Sparkles,
   Users,
   Wallet,
@@ -25,10 +24,9 @@ import {
   MoreVertical,
 } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
-import NotificationsPanel from "@/components/NotificationsPanel";
 
 const CURRENCIES = ["HKD", "USD", "EUR", "GBP", "JPY", "CNY", "AUD", "CAD", "SGD", "TWD", "KRW", "THB", "EGP"];
 
@@ -103,10 +101,9 @@ function TripCard({ trip, onClick, onEdit, onDelete }: { trip: any; onClick: () 
 }
 
 export default function Dashboard() {
-  const { user, loading: authLoading, logout } = useAuth();
-  const [currentPath, setLocation] = useLocation();
+  const { user, loading: authLoading } = useAuth();
+  const [, setLocation] = useLocation();
   const [showCreate, setShowCreate] = useState(false);
-  const [showNotifications, setShowNotifications] = useState(false);
   const [editingTrip, setEditingTrip] = useState<any | null>(null);
   const [editForm, setEditForm] = useState({ name: "", destination: "", startDate: "", endDate: "", baseCurrency: "HKD", coverImage: "", description: "" });
   const [form, setForm] = useState({
@@ -121,10 +118,6 @@ export default function Dashboard() {
 
   const { data: trips, isLoading: tripsLoading, refetch } = trpc.trips.list.useQuery(undefined, {
     enabled: !!user,
-  });
-  const { data: unreadCount } = trpc.notifications.unreadCount.useQuery(undefined, {
-    enabled: !!user,
-    refetchInterval: 30000,
   });
   const updateTrip = trpc.trips.update.useMutation({
     onSuccess: () => { toast.success("行程已更新"); setEditingTrip(null); refetch(); },
@@ -207,97 +200,9 @@ export default function Dashboard() {
     createTrip.mutate(form);
   };
 
-    const navItems = [
-    { path: "/dashboard", label: "我的行程", icon: Plane },
-    { path: "/travel-history", label: "旅遊足跡", icon: Globe },
-    { path: "/flight-passport", label: "飛行護照", icon: Plane },
-  ];
   return (
-    <div className="min-h-screen bg-background flex">
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col w-56 shrink-0 border-r border-border bg-card/50 sticky top-0 h-screen">
-        <div className="flex items-center gap-3 px-5 h-16 border-b border-border">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <Plane className="w-4 h-4 text-primary-foreground rotate-45" />
-          </div>
-          <span className="font-bold text-foreground text-base">WanderPlan</span>
-        </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {navItems.map(item => {
-            const Icon = item.icon;
-            const active = currentPath === item.path;
-            return (
-              <button
-                key={item.path}
-                onClick={() => setLocation(item.path)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                  active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                }`}
-              >
-                <Icon className={`w-4 h-4 ${item.path === "/dashboard" ? "rotate-45" : ""}`} />
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
-        <div className="px-3 py-4 border-t border-border space-y-1">
-          <button
-            onClick={() => setShowNotifications(true)}
-            className="relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          >
-            <Bell className="w-4 h-4" />
-            通知
-            {unreadCount && unreadCount.count > 0 ? (
-              <span className="ml-auto w-5 h-5 rounded-full bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center font-bold">
-                {unreadCount.count > 9 ? "9+" : unreadCount.count}
-              </span>
-            ) : null}
-          </button>
-          <div className="flex items-center gap-3 px-3 py-2.5">
-            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs">
-              {user.name?.charAt(0).toUpperCase() ?? "U"}
-            </div>
-            <span className="text-sm text-foreground flex-1 truncate">{user.name ?? "旅人"}</span>
-            <button onClick={logout} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-accent transition-colors">
-              <LogOut className="w-3.5 h-3.5 text-muted-foreground" />
-            </button>
-          </div>
-        </div>
-      </aside>
-
-      <div className="flex-1 flex flex-col min-w-0">
-      {/* Mobile Header */}
-      <header className="lg:hidden sticky top-0 z-40 glass border-b border-border">
-        <div className="px-4 sm:px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-              <Plane className="w-4 h-4 text-primary-foreground rotate-45" />
-            </div>
-            <span className="font-bold text-foreground text-lg">WanderPlan</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowNotifications(true)}
-              className="relative w-9 h-9 rounded-lg flex items-center justify-center hover:bg-accent transition-colors"
-            >
-              <Bell className="w-5 h-5 text-muted-foreground" />
-              {unreadCount && unreadCount.count > 0 ? (
-                <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-destructive" />
-              ) : null}
-            </button>
-            <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
-              {user.name?.charAt(0).toUpperCase() ?? "U"}
-            </div>
-            <button
-              onClick={logout}
-              className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-accent transition-colors"
-            >
-              <LogOut className="w-4 h-4 text-muted-foreground" />
-            </button>
-          </div>
-        </div>
-      </header>
-      <main className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-8">
+    <AppLayout>
+      <main className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-8 pb-24 lg:pb-8">
         {/* Welcome */}
         <div className="mb-8">
           <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-1">
@@ -381,9 +286,8 @@ export default function Dashboard() {
             </Button>
           </div>
         )}
-      </main>
 
-      {/* Create Trip Dialog */}
+        {/* Create Trip Dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -544,33 +448,7 @@ export default function Dashboard() {
           </div>
         </DialogContent>
       </Dialog>
-
-      {/* Notifications Panel */}
-      <NotificationsPanel open={showNotifications} onClose={() => setShowNotifications(false)} />
-
-      {/* Bottom Navigation (mobile) */}
-      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 glass border-t border-border">
-        <div className="flex items-center justify-around h-16">
-          <button onClick={() => setLocation("/dashboard")} className="flex flex-col items-center gap-1 px-4 py-2 text-primary">
-            <Plane className="w-5 h-5 rotate-45" />
-            <span className="text-[10px] font-medium">行程</span>
-          </button>
-          <button onClick={() => setLocation("/travel-history")} className="flex flex-col items-center gap-1 px-4 py-2 text-muted-foreground hover:text-foreground transition-colors">
-            <Globe className="w-5 h-5" />
-            <span className="text-[10px] font-medium">旅遊足跡</span>
-          </button>
-          <button onClick={() => setLocation("/flight-passport")} className="flex flex-col items-center gap-1 px-4 py-2 text-muted-foreground hover:text-foreground transition-colors">
-            <Plane className="w-5 h-5" />
-            <span className="text-[10px] font-medium">飛行護照</span>
-          </button>
-          <button onClick={() => setShowNotifications(true)} className="relative flex flex-col items-center gap-1 px-4 py-2 text-muted-foreground hover:text-foreground transition-colors">
-            <Bell className="w-5 h-5" />
-            {unreadCount && unreadCount.count > 0 ? <span className="absolute top-1 right-3 w-2 h-2 rounded-full bg-destructive" /> : null}
-            <span className="text-[10px] font-medium">通知</span>
-          </button>
-        </div>
-      </nav>
-      </div>
-    </div>
+      </main>
+    </AppLayout>
   );
 }

@@ -82,6 +82,8 @@ type PastFlight = {
   airline: string | null;
   departureAirport: string | null;
   arrivalAirport: string | null;
+  departureCountry: string | null;
+  arrivalCountry: string | null;
   flightDate: Date | null;
   flightYear: number | null;
   durationMinutes: number | null;
@@ -256,11 +258,12 @@ export default function FlightPassport() {
   }, [flights]);
 
   // Build unique flight routes for map arcs (deduplicated by dep+arr pair)
+  // Derived from stats.filtered so year filter updates the map in real-time
   const flightRoutes = useMemo(() => {
-    if (!flights) return [];
+    if (!stats) return [];
     const seen = new Set<string>();
     const routes: { dep: string; arr: string }[] = [];
-    flights.forEach(f => {
+    stats.filtered.forEach(f => {
       const dep = (f.departureAirport ?? "").toUpperCase();
       const arr = (f.arrivalAirport ?? "").toUpperCase();
       if (!dep || !arr || dep === arr) return;
@@ -268,7 +271,7 @@ export default function FlightPassport() {
       if (!seen.has(key)) { seen.add(key); routes.push({ dep, arr }); }
     });
     return routes;
-  }, [flights]);
+  }, [stats]);
 
   // Country name → ISO alpha-2 (mirrors FLIGHT_COUNTRY_TO_ISO on the server)
   const COUNTRY_NAME_TO_ISO: Record<string, string> = {
@@ -286,11 +289,12 @@ export default function FlightPassport() {
     "Hong Kong": "HK", "Macau": "MO",
   };
 
+  // Derive visited countries from filtered flights so year filter updates map in real-time
   const mapCountries = useMemo(() => {
-    if (!flights) return [];
+    if (!stats) return [];
     const seen = new Set<string>();
     const result: { countryCode: string; status: "visited" }[] = [];
-    flights.forEach(f => {
+    stats.filtered.forEach(f => {
       for (const name of [f.arrivalCountry, f.departureCountry]) {
         if (!name || name === "Hong Kong") continue;
         const iso = COUNTRY_NAME_TO_ISO[name];
@@ -301,7 +305,7 @@ export default function FlightPassport() {
       }
     });
     return result;
-  }, [flights]);
+  }, [stats]);
 
   return (
     <AppLayout>
@@ -351,14 +355,15 @@ export default function FlightPassport() {
               <p className="text-muted-foreground text-xs">Flight Passport</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {(!flights || flights.length === 0) ? (
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-1.5 border-sky-300 text-sky-600 hover:bg-sky-50"
+                className="gap-1.5 border-sky-300 text-sky-600 hover:bg-sky-50 px-2 sm:px-3"
                 onClick={() => seedFlights.mutate()}
                 disabled={seedFlights.isPending}
+                title="匯入歷史航班"
               >
                 {seedFlights.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plane className="w-4 h-4" />}
                 <span className="hidden sm:inline">匯入歷史航班</span>
@@ -367,7 +372,7 @@ export default function FlightPassport() {
               <Button
                 variant="outline"
                 size="sm"
-                className="gap-1.5 border-emerald-300 text-emerald-600 hover:bg-emerald-50"
+                className="gap-1.5 border-emerald-300 text-emerald-600 hover:bg-emerald-50 px-2 sm:px-3"
                 onClick={() => syncCountries.mutate()}
                 disabled={syncCountries.isPending}
                 title="從航班記錄同步到旅遊足跡地圖"
@@ -376,19 +381,20 @@ export default function FlightPassport() {
                 <span className="hidden sm:inline">同步地圖</span>
               </Button>
             )}
-            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => toast.info("分享功能即將推出")}>
+            {/* Share button: icon-only on mobile */}
+            <Button variant="outline" size="sm" className="gap-1.5 hidden sm:flex" onClick={() => toast.info("分享功能即將推出")}>
               <Share2 className="w-4 h-4" />
-              <span className="hidden sm:inline">分享</span>
+              分享
             </Button>
-            <Button onClick={() => setShowAdd(true)} size="sm" className="gap-1.5 bg-sky-600 hover:bg-sky-700">
+            <Button onClick={() => setShowAdd(true)} size="sm" className="gap-1.5 bg-sky-600 hover:bg-sky-700 px-2 sm:px-3">
               <Plus className="w-4 h-4" />
-              記錄
+              <span className="hidden sm:inline">記錄</span>
             </Button>
           </div>
         </div>
       </div>
 
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6 pb-8">
         {/* Year Tabs */}
         <div className="overflow-x-auto mb-6 -mx-4 px-4">
           <div className="flex gap-2 min-w-max">
@@ -437,35 +443,35 @@ export default function FlightPassport() {
                 </div>
                 <p className="text-xs opacity-50 mb-4 tracking-wider">PASSPORT • PASS • PASAPORTE</p>
 
-                <div className="grid grid-cols-2 gap-4 mb-4">
+                <div className="grid grid-cols-2 gap-3 mb-4">
                   <div>
-                    <p className="text-xs opacity-60 uppercase tracking-wider mb-0.5">Flights</p>
-                    <p className="text-4xl font-bold">{stats.totalFlights}</p>
+                    <p className="text-[10px] opacity-60 uppercase tracking-wider mb-0.5">Flights</p>
+                    <p className="text-3xl sm:text-4xl font-bold">{stats.totalFlights}</p>
                     {stats.longHaul > 0 && (
-                      <p className="text-xs opacity-60 mt-0.5">{stats.longHaul} Long Haul</p>
+                      <p className="text-[10px] opacity-60 mt-0.5">{stats.longHaul} Long Haul</p>
                     )}
                   </div>
                   <div>
-                    <p className="text-xs opacity-60 uppercase tracking-wider mb-0.5">Distance</p>
-                    <p className="text-3xl font-bold">{stats.totalDistKm.toLocaleString()} km</p>
+                    <p className="text-[10px] opacity-60 uppercase tracking-wider mb-0.5">Distance</p>
+                    <p className="text-xl sm:text-3xl font-bold break-all">{stats.totalDistKm.toLocaleString()} km</p>
                     {stats.earthWraps > 0 && (
-                      <p className="text-xs opacity-60 mt-0.5">{stats.earthWraps.toFixed(1)}x around the world</p>
+                      <p className="text-[10px] opacity-60 mt-0.5">{stats.earthWraps.toFixed(1)}× around the world</p>
                     )}
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-3 pt-4 border-t border-white/20">
+                <div className="grid grid-cols-3 gap-2 pt-4 border-t border-white/20">
                   <div>
-                    <p className="text-xs opacity-60 uppercase tracking-wider mb-0.5">Flight Time</p>
-                    <p className="text-lg font-bold">{formatHours(stats.totalHours)}</p>
+                    <p className="text-[10px] opacity-60 uppercase tracking-wider mb-0.5">Flight Time</p>
+                    <p className="text-sm sm:text-lg font-bold">{formatHours(stats.totalHours)}</p>
                   </div>
                   <div>
-                    <p className="text-xs opacity-60 uppercase tracking-wider mb-0.5">Airports</p>
-                    <p className="text-lg font-bold">{stats.airports}</p>
+                    <p className="text-[10px] opacity-60 uppercase tracking-wider mb-0.5">Airports</p>
+                    <p className="text-sm sm:text-lg font-bold">{stats.airports}</p>
                   </div>
                   <div>
-                    <p className="text-xs opacity-60 uppercase tracking-wider mb-0.5">Airlines</p>
-                    <p className="text-lg font-bold">{stats.airlines}</p>
+                    <p className="text-[10px] opacity-60 uppercase tracking-wider mb-0.5">Airlines</p>
+                    <p className="text-sm sm:text-lg font-bold">{stats.airlines}</p>
                   </div>
                 </div>
               </div>

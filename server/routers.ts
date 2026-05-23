@@ -928,11 +928,25 @@ const passportRouter = router({
         durationMinutes: input.durationMinutes ?? null,
         distanceKm: input.distanceKm ?? null,
         seatClass: input.seatClass,
-        notes: input.notes ?? null,
+                notes: input.notes ?? null,
       });
+      // Auto-sync: if arrivalCountry is known, upsert it as visited
+      for (const countryName of [input.arrivalCountry, input.departureCountry]) {
+        if (!countryName || countryName === "Hong Kong") continue;
+        const iso = FLIGHT_COUNTRY_TO_ISO[countryName];
+        if (iso) {
+          await db.upsertVisitedCountry({
+            userId: ctx.user.id,
+            countryCode: iso.code,
+            countryName: iso.name,
+            status: "visited",
+            visitedAt: flightDate,
+            notes: null,
+          });
+        }
+      }
       return { flightId };
     }),
-
   updateFlight: protectedProcedure
     .input(z.object({
       flightId: z.number(),
@@ -953,13 +967,28 @@ const passportRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { flightId, flightDate, ...rest } = input;
-      await db.updatePastFlight(flightId, {
+            await db.updatePastFlight(flightId, {
         ...rest,
         ...(flightDate ? { flightDate: new Date(flightDate), flightYear: new Date(flightDate).getFullYear() } : {}),
       });
+      // Auto-sync: if country fields are being updated, upsert visited countries
+      const date = flightDate ? new Date(flightDate) : new Date();
+      for (const countryName of [input.arrivalCountry, input.departureCountry]) {
+        if (!countryName || countryName === "Hong Kong") continue;
+        const iso = FLIGHT_COUNTRY_TO_ISO[countryName];
+        if (iso) {
+          await db.upsertVisitedCountry({
+            userId: ctx.user.id,
+            countryCode: iso.code,
+            countryName: iso.name,
+            status: "visited",
+            visitedAt: date,
+            notes: null,
+          });
+        }
+      }
       return { success: true };
     }),
-
   deleteFlight: protectedProcedure
     .input(z.object({ flightId: z.number() }))
     .mutation(async ({ ctx, input }) => {

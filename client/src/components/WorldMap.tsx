@@ -155,6 +155,44 @@ export default function WorldMap({ visitedCountries, flightRoutes = [], onCountr
 
   const handleMouseUp = useCallback(() => { isDragging.current = false; }, []);
 
+  // Touch support for mobile (single-finger drag + two-finger pinch-zoom)
+  const lastTouchDist = useRef<number | null>(null);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    if (e.touches.length === 1) {
+      isDragging.current = true;
+      dragStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, tx: transform.x, ty: transform.y };
+      lastTouchDist.current = null;
+    } else if (e.touches.length === 2) {
+      isDragging.current = false;
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      lastTouchDist.current = Math.sqrt(dx * dx + dy * dy);
+    }
+  }, [transform]);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    e.preventDefault();
+    if (e.touches.length === 1 && isDragging.current) {
+      const dx = e.touches[0].clientX - dragStart.current.x;
+      const dy = e.touches[0].clientY - dragStart.current.y;
+      setTransform(t => ({ ...t, x: dragStart.current.tx + dx, y: dragStart.current.ty + dy }));
+    } else if (e.touches.length === 2 && lastTouchDist.current !== null) {
+      const dx = e.touches[0].clientX - e.touches[1].clientX;
+      const dy = e.touches[0].clientY - e.touches[1].clientY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const ratio = dist / lastTouchDist.current;
+      lastTouchDist.current = dist;
+      setTransform(t => ({ ...t, scale: Math.min(Math.max(t.scale * ratio, 1), 8) }));
+    }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    isDragging.current = false;
+    lastTouchDist.current = null;
+  }, []);
+
   const handleReset = () => setTransform({ x: 0, y: 0, scale: 1 });
 
   if (!geoData) {
@@ -205,6 +243,9 @@ export default function WorldMap({ visitedCountries, flightRoutes = [], onCountr
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
       >
         {/* Ocean */}
         <rect width={WIDTH} height={HEIGHT} fill="oklch(0.22 0.02 240)" />
