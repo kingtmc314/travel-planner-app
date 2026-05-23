@@ -36,6 +36,30 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+
+  // Maps JS SDK proxy - uses server-side key to bypass Origin restriction
+  app.get("/api/maps/js", async (req, res) => {
+    try {
+      const baseUrl = (process.env.BUILT_IN_FORGE_API_URL || "https://forge.manus.ai").replace(/\/+$/, "");
+      const apiKey = process.env.BUILT_IN_FORGE_API_KEY || "";
+      const libraries = (req.query.libraries as string) || "marker,places,geocoding,geometry";
+      const v = (req.query.v as string) || "weekly";
+      const mapsUrl = `${baseUrl}/v1/maps/proxy/maps/api/js?key=${apiKey}&v=${v}&libraries=${libraries}&callback=__mapsCallback`;
+      const response = await fetch(mapsUrl, {
+        headers: { "Origin": `${req.protocol}://${req.hostname}` },
+      });
+      if (!response.ok) {
+        res.status(response.status).send("Maps proxy error");
+        return;
+      }
+      const text = await response.text();
+      res.setHeader("Content-Type", "application/javascript");
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.send(text);
+    } catch (e) {
+      res.status(500).send("Maps proxy failed");
+    }
+  });
   // tRPC API
   app.use(
     "/api/trpc",

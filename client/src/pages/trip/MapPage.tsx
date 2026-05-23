@@ -4,10 +4,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { MapView } from "@/components/Map";
+import { MapView, type LeafletMap } from "@/components/Map";
 import { Plus, Trash2, Loader2, MapPin, Hotel, Utensils, Car, MoreHorizontal, Edit2 } from "lucide-react";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
+import L from "leaflet";
 
 const PIN_TYPES = [
   { value: "attraction", label: "景點", icon: MapPin, color: "#22c55e" },
@@ -19,16 +20,24 @@ const PIN_TYPES = [
 
 const defaultForm = { title: "", notes: "", lat: "", lng: "", category: "attraction", address: "" };
 
+function createColoredIcon(color: string) {
+  return L.divIcon({
+    html: `<div style="width:20px;height:20px;border-radius:50%;background:${color};border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,0.3)"></div>`,
+    className: "",
+    iconSize: [20, 20],
+    iconAnchor: [10, 10],
+    popupAnchor: [0, -14],
+  });
+}
+
 export default function MapPage({ tripId }: { tripId: number }) {
-  const { data: pins, refetch, isLoading } = trpc.map.getPins.useQuery({ tripId }, { refetchInterval: 15000 });
-  const { data: trip } = trpc.trips.get.useQuery({ tripId });
+  const { data: pins, refetch, isLoading } = trpc.map.getPins.useQuery({ tripId });
   const [showAdd, setShowAdd] = useState(false);
   const [editingPin, setEditingPin] = useState<any | null>(null);
   const [selectedPin, setSelectedPin] = useState<any>(null);
   const [form, setForm] = useState(defaultForm);
-  const mapRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<google.maps.Marker[]>([]);
-  const infoWindowRef = useRef<google.maps.InfoWindow | null>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
+  const markersRef = useRef<L.Marker[]>([]);
 
   const addPin = trpc.map.addPin.useMutation({
     onSuccess: () => { refetch(); setShowAdd(false); setForm(defaultForm); toast.success("地點已新增"); },
@@ -42,49 +51,47 @@ export default function MapPage({ tripId }: { tripId: number }) {
     onSuccess: () => { refetch(); setSelectedPin(null); toast.success("地點已刪除"); },
   });
 
-  const handleMapReady = useCallback((map: google.maps.Map) => {
+  const handleMapReady = useCallback((map: LeafletMap) => {
     mapRef.current = map;
-    infoWindowRef.current = new google.maps.InfoWindow();
-    map.addListener("click", (e: google.maps.MapMouseEvent) => {
-      if (e.latLng) {
-        setForm(prev => ({ ...prev, lat: e.latLng!.lat().toFixed(7), lng: e.latLng!.lng().toFixed(7) }));
-        setShowAdd(true);
-      }
+    map.on("click", (e: L.LeafletMouseEvent) => {
+      setForm(prev => ({ ...prev, lat: e.latlng.lat.toFixed(7), lng: e.latlng.lng.toFixed(7) }));
+      setShowAdd(true);
     });
   }, []);
 
   const renderMarkers = useCallback(() => {
     if (!mapRef.current || !pins) return;
-    markersRef.current.forEach(m => m.setMap(null));
+    // Remove old markers
+    markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
-    const bounds = new google.maps.LatLngBounds();
+
+    const latLngs: L.LatLng[] = [];
     pins.forEach(pin => {
       const pinType = PIN_TYPES.find(t => t.value === pin.category) ?? PIN_TYPES[0];
-      const marker = new google.maps.Marker({
-        position: { lat: parseFloat(pin.lat as string), lng: parseFloat(pin.lng as string) },
-        map: mapRef.current!,
-        title: pin.title,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 10,
-          fillColor: pinType.color,
-          fillOpacity: 1,
-          strokeColor: "#fff",
-          strokeWeight: 2,
-        },
-      });
-      marker.addListener("click", () => {
+      const lat = parseFloat(pin.lat as string);
+      const lng = parseFloat(pin.lng as string);
+      if (isNaN(lat) || isNaN(lng)) return;
+
+      const marker = L.marker([lat, lng], { icon: createColoredIcon(pinType.color) })
+        .addTo(mapRef.current!)
+        .bindPopup(`<div style="font-weight:600;padding:2px 0">${pin.title}</div>${pin.notes ? `<div style="color:#666;font-size:12px;margin-top:2px">${pin.notes}</div>` : ""}`);
+
+      marker.on("click", () => {
         setSelectedPin(pin);
-        infoWindowRef.current?.setContent(`<div style="padding:4px 8px;font-weight:600">${pin.title}</div>${pin.notes ? `<div style="padding:0 8px 4px;color:#666;font-size:12px">${pin.notes}</div>` : ""}`);  
-        infoWindowRef.current?.open(mapRef.current!, marker);
+        marker.openPopup();
       });
-      bounds.extend({ lat: parseFloat(pin.lat as string), lng: parseFloat(pin.lng as string) });
+
+      latLngs.push(L.latLng(lat, lng));
       markersRef.current.push(marker);
     });
-    if (pins.length > 0) mapRef.current!.fitBounds(bounds, 60);
+
+    if (latLngs.length > 0) {
+      const bounds = L.latLngBounds(latLngs);
+      mapRef.current!.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+    }
   }, [pins]);
 
-  // Re-render markers whenever pins change, without remounting the map
+  // Re-render markers whenever pins change
   useEffect(() => {
     if (mapRef.current && pins) {
       renderMarkers();
@@ -152,7 +159,7 @@ export default function MapPage({ tripId }: { tripId: number }) {
   );
 
   return (
-    <div className="flex flex-col h-full" style={{height:"calc(100vh - 120px)"}}>
+    <div className="flex flex-col" style={{height:"calc(100vh - 120px)"}}>
       {/* Toolbar */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-background shrink-0">
         <div>
@@ -168,7 +175,7 @@ export default function MapPage({ tripId }: { tripId: number }) {
         {/* Map */}
         <div className="flex-1 relative min-h-0" style={{minHeight: '400px'}}>
           <MapView
-            onMapReady={(map) => { handleMapReady(map); setTimeout(renderMarkers, 200); }}
+            onMapReady={(map) => { handleMapReady(map); setTimeout(renderMarkers, 300); }}
             className="w-full h-full absolute inset-0"
             initialCenter={pins && pins.length > 0
               ? { lat: parseFloat(pins[0].lat as string), lng: parseFloat(pins[0].lng as string) }
@@ -198,7 +205,9 @@ export default function MapPage({ tripId }: { tripId: number }) {
                     className={`p-3 flex items-start gap-3 group cursor-pointer hover:bg-accent/50 transition-colors ${selectedPin?.id === pin.id ? "bg-accent" : ""}`}
                     onClick={() => {
                       setSelectedPin(pin);
-                      if (mapRef.current) mapRef.current.panTo({ lat: parseFloat(pin.lat as string), lng: parseFloat(pin.lng as string) });
+                      if (mapRef.current) {
+                        mapRef.current.panTo([parseFloat(pin.lat as string), parseFloat(pin.lng as string)]);
+                      }
                     }}>
                     <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{background:`${pinType.color}20`, color: pinType.color}}>
                       <Icon className="w-4 h-4" />
@@ -249,7 +258,7 @@ export default function MapPage({ tripId }: { tripId: number }) {
           <PinFormFields showCoords={false} />
           <Button className="w-full mt-4" onClick={handleUpdate} disabled={updatePin.isPending}>
             {updatePin.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-            儲存變更
+            儲存修改
           </Button>
         </DialogContent>
       </Dialog>

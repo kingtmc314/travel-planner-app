@@ -8,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Globe, Plus, Trash2, Loader2, MapPin, CheckCircle, Heart, Calendar, Edit2, Search, X } from "lucide-react";
 import WorldMap from "@/components/WorldMap";
-import { MapView } from "@/components/Map";
+import { MapView, type LeafletMap } from "@/components/Map";
+import L from "leaflet";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 
@@ -242,12 +243,10 @@ export default function TravelHistory() {
   // Country detail sheet state
   const [detailCountry, setDetailCountry] = useState<{ code: string; name: string } | null>(null);
   const [placeSearch, setPlaceSearch] = useState("");
-  const [placeSuggestions, setPlaceSuggestions] = useState<Array<{ placeId: string; description: string }>>([]);
+  const [placeSuggestions, setPlaceSuggestions] = useState<Array<{ placeId: string; description: string; lat?: number; lng?: number }>>([]);
   const [savedPlaces, setSavedPlaces] = useState<Array<{ name: string; lat: number; lng: number }>>([]);
-  const detailMapRef = useRef<google.maps.Map | null>(null);
-  const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
-  const autocompleteServiceRef = useRef<google.maps.places.AutocompleteService | null>(null);
-  const geocoderRef = useRef<google.maps.Geocoder | null>(null);
+  const detailMapRef = useRef<LeafletMap | null>(null);
+  const markersRef = useRef<L.Marker[]>([]);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const countryMap = useMemo(() => {
@@ -313,79 +312,54 @@ export default function TravelHistory() {
   };
 
   // Initialize detail map and zoom to country
-  const handleDetailMapReady = useCallback((map: google.maps.Map) => {
+  const handleDetailMapReady = useCallback((map: LeafletMap) => {
     detailMapRef.current = map;
-    autocompleteServiceRef.current = new window.google.maps.places.AutocompleteService();
-    geocoderRef.current = new window.google.maps.Geocoder();
     if (detailCountry) {
       const center = COUNTRY_CENTERS[detailCountry.code];
       if (center) {
-        map.setCenter({ lat: center.lat, lng: center.lng });
-        map.setZoom(center.zoom);
-      } else {
-        // Geocode the country name to find its center
-        geocoderRef.current?.geocode({ address: detailCountry.name }, (results, status) => {
-          if (status === "OK" && results?.[0]) {
-            map.fitBounds(results[0].geometry.viewport);
-          }
-        });
+        map.setView([center.lat, center.lng], center.zoom);
       }
     }
   }, [detailCountry]);
 
-  // Bilingual place search with debounce
+  // Place search using Nominatim (OpenStreetMap)
   useEffect(() => {
-    if (!placeSearch.trim() || !autocompleteServiceRef.current) {
+    if (!placeSearch.trim()) {
       setPlaceSuggestions([]);
       return;
     }
     if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
     searchTimeoutRef.current = setTimeout(() => {
-      const countryName = detailCountry?.name ?? "";
-      autocompleteServiceRef.current?.getPlacePredictions(
-        {
-          input: placeSearch,
-          // Restrict to the selected country using its name as component restriction
-          componentRestrictions: detailCountry ? { country: detailCountry.code.toLowerCase() } : undefined,
-          language: "zh-TW", // Returns Chinese names when available, falls back to English
-        },
-        (predictions, status) => {
-          if (status === window.google.maps.places.PlacesServiceStatus.OK && predictions) {
-            setPlaceSuggestions(predictions.map(p => ({ placeId: p.place_id, description: p.description })));
-          } else {
-            setPlaceSuggestions([]);
-          }
-        }
-      );
-    }, 300);
+      const countryCode = detailCountry?.code?.toLowerCase() ?? "";
+      fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(placeSearch)}&countrycodes=${countryCode}&format=json&limit=5&accept-language=zh-TW,en`)
+        .then(r => r.json())
+        .then((results: any[]) => {
+          setPlaceSuggestions(results.map((r: any) => ({ placeId: String(r.place_id), description: r.display_name, lat: parseFloat(r.lat), lng: parseFloat(r.lon) })));
+        })
+        .catch(() => setPlaceSuggestions([]));
+    }, 400);
   }, [placeSearch, detailCountry]);
 
-  // Select a place from suggestions → geocode and add marker
-  const selectPlace = useCallback((suggestion: { placeId: string; description: string }) => {
-    setPlaceSearch(suggestion.description);
+  // Select a place from suggestions → add Leaflet marker
+  const selectPlace = useCallback((suggestion: { placeId: string; description: string; lat?: number; lng?: number }) => {
+    setPlaceSearch("");
     setPlaceSuggestions([]);
-    if (!geocoderRef.current || !detailMapRef.current) return;
-    geocoderRef.current.geocode({ placeId: suggestion.placeId }, (results, status) => {
-      if (status === "OK" && results?.[0]) {
-        const loc = results[0].geometry.location;
-        detailMapRef.current!.panTo(loc);
-        detailMapRef.current!.setZoom(14);
-        // Add marker
-        const marker = new window.google.maps.marker.AdvancedMarkerElement({
-          map: detailMapRef.current!,
-          position: loc,
-          title: suggestion.description,
-        });
-        markersRef.current.push(marker);
-        setSavedPlaces(prev => [...prev, { name: suggestion.description, lat: loc.lat(), lng: loc.lng() }]);
-        setPlaceSearch("");
-      }
-    });
+    if (!detailMapRef.current || suggestion.lat === undefined || suggestion.lng === undefined) return;
+    const lat = suggestion.lat;
+    const lng = suggestion.lng;
+    detailMapRef.current.panTo([lat, lng]);
+    detailMapRef.current.setZoom(14);
+    const marker = L.marker([lat, lng])
+      .addTo(detailMapRef.current)
+      .bindPopup(suggestion.description)
+      .openPopup();
+    markersRef.current.push(marker);
+    setSavedPlaces(prev => [...prev, { name: suggestion.description, lat, lng }]);
   }, []);
 
   // Clear markers when detail sheet closes
   const closeDetail = () => {
-    markersRef.current.forEach(m => { m.map = null; });
+    markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
     setDetailCountry(null);
   };
