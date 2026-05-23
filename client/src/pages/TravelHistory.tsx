@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -243,6 +244,7 @@ export default function TravelHistory() {
   };
 
   return (
+    <AppLayout>
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border px-4 sm:px-6 py-4">
@@ -443,6 +445,7 @@ export default function TravelHistory() {
         </DialogContent>
       </Dialog>
     </div>
+    </AppLayout>
   );
 }
 

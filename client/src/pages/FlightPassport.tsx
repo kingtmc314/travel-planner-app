@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -109,6 +110,17 @@ export default function FlightPassport() {
   const deleteFlight = trpc.passport.deleteFlight.useMutation({
     onSuccess: () => { refetch(); toast.success("已刪除"); },
   });
+  const seedFlights = trpc.passport.seedMyFlights.useMutation({
+    onSuccess: (data) => {
+      if (data.alreadySeeded) {
+        toast.info(`已有 ${data.count} 筆航班記錄`);
+      } else {
+        refetch();
+        toast.success(`成功匯入 ${data.count} 筆歷史航班！`);
+      }
+    },
+    onError: () => toast.error("匯入失敗"),
+  });
 
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState(defaultForm);
@@ -198,6 +210,7 @@ export default function FlightPassport() {
   }, [flights]);
 
   return (
+    <AppLayout>
     <div className="min-h-screen bg-background">
       {/* Header */}
       <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border px-4 sm:px-6 py-4">
@@ -212,6 +225,18 @@ export default function FlightPassport() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {(!flights || flights.length === 0) && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5 border-sky-300 text-sky-600 hover:bg-sky-50"
+                onClick={() => seedFlights.mutate()}
+                disabled={seedFlights.isPending}
+              >
+                {seedFlights.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plane className="w-4 h-4" />}
+                <span className="hidden sm:inline">匯入歷史航班</span>
+              </Button>
+            )}
             <Button variant="outline" size="sm" className="gap-1.5" onClick={() => toast.info("分享功能即將推出")}>
               <Share2 className="w-4 h-4" />
               <span className="hidden sm:inline">分享</span>
@@ -464,6 +489,7 @@ export default function FlightPassport() {
         </DialogContent>
       </Dialog>
     </div>
+    </AppLayout>
   );
 }
 

@@ -68,3 +68,18 @@
 - [x] Flight Passport: flight route lines on map/globe
 - [x] Wire both new pages into sidebar/bottom navigation
 - [x] Add DB tables: visited_countries, past_flights
+
+## Bug Fixes Round 2
+- [x] Fix: No procedure found on path "travelHistory.getCountries" (router not registered or wrong path)
+- [x] Fix: db.getUnreadNotificationCount is not a function (wrong function name called)
+- [x] Fix: value.toISOString is not a function (date handling in demo import mutation)
+
+## Auto-import Trip Destinations to Travel History
+- [x] When a trip is created with a destination, auto-detect country and upsert to visited_countries as "visited"
+- [x] Add country detection helper (map destination/location string to ISO country code + country name)
+- [x] Fix: TravelHistory and FlightPassport pages have no navigation bar (bottom nav on mobile, sidebar on desktop)
+
+## Flight History Seed
+- [x] Add seedMyFlights mutation to passport router with all 44 historical flights from Flighty
+- [x] Add "Import Historical Flights" button to FlightPassport page (shown when no flights exist)
+- [x] Create shared AppLayout component for consistent navigation across all pages

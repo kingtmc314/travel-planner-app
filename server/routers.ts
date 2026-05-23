@@ -6,6 +6,60 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
 import * as db from "./db";
 
+// ─── Country Detection Helper ────────────────────────────────────────────────
+const COUNTRY_KEYWORDS: Array<{ keywords: string[]; code: string; name: string }> = [
+  { keywords: ["japan", "tokyo", "osaka", "kyoto", "fukuoka", "sapporo", "naha", "okinawa", "nagoya", "日本", "東京", "大阪", "京都", "福岡", "札幌", "沖繩"], code: "JP", name: "Japan" },
+  { keywords: ["taiwan", "taipei", "taichung", "kaohsiung", "tainan", "台灣", "台北", "台中", "高雄", "台南"], code: "TW", name: "Taiwan" },
+  { keywords: ["korea", "seoul", "busan", "jeju", "韓國", "首爾", "釜山", "濟州"], code: "KR", name: "South Korea" },
+  { keywords: ["thailand", "bangkok", "phuket", "chiang mai", "泰國", "曼谷", "普吉", "清邁"], code: "TH", name: "Thailand" },
+  { keywords: ["singapore", "新加坡"], code: "SG", name: "Singapore" },
+  { keywords: ["malaysia", "kuala lumpur", "kl", "penang", "馬來西亞", "吉隆坡", "檳城"], code: "MY", name: "Malaysia" },
+  { keywords: ["indonesia", "bali", "jakarta", "印尼", "峇里", "雅加達"], code: "ID", name: "Indonesia" },
+  { keywords: ["vietnam", "hanoi", "ho chi minh", "saigon", "da nang", "越南", "河內", "胡志明", "峴港"], code: "VN", name: "Vietnam" },
+  { keywords: ["philippines", "manila", "cebu", "菲律賓", "馬尼拉", "宿霧"], code: "PH", name: "Philippines" },
+  { keywords: ["cambodia", "siem reap", "phnom penh", "柬埔寨", "暹粒", "金邊"], code: "KH", name: "Cambodia" },
+  { keywords: ["china", "beijing", "shanghai", "guangzhou", "shenzhen", "中國", "北京", "上海", "廣州", "深圳"], code: "CN", name: "China" },
+  { keywords: ["egypt", "cairo", "luxor", "aswan", "hurghada", "埃及", "開羅", "盧克索", "亞斯文"], code: "EG", name: "Egypt" },
+  { keywords: ["uk", "united kingdom", "london", "england", "scotland", "wales", "英國", "倫敦"], code: "GB", name: "United Kingdom" },
+  { keywords: ["france", "paris", "法國", "巴黎"], code: "FR", name: "France" },
+  { keywords: ["germany", "berlin", "munich", "德國", "柏林", "慕尼黑"], code: "DE", name: "Germany" },
+  { keywords: ["italy", "rome", "milan", "venice", "florence", "意大利", "羅馬", "米蘭", "威尼斯", "佛羅倫斯"], code: "IT", name: "Italy" },
+  { keywords: ["spain", "madrid", "barcelona", "西班牙", "馬德里", "巴塞隆拿"], code: "ES", name: "Spain" },
+  { keywords: ["usa", "united states", "new york", "los angeles", "san francisco", "美國", "紐約", "洛杉磯", "三藩市"], code: "US", name: "United States" },
+  { keywords: ["canada", "toronto", "vancouver", "加拿大", "多倫多", "溫哥華"], code: "CA", name: "Canada" },
+  { keywords: ["australia", "sydney", "melbourne", "澳洲", "悉尼", "墨爾本"], code: "AU", name: "Australia" },
+  { keywords: ["new zealand", "auckland", "新西蘭", "奧克蘭"], code: "NZ", name: "New Zealand" },
+  { keywords: ["uae", "dubai", "abu dhabi", "阿聯酋", "杜拜", "阿布扎比"], code: "AE", name: "United Arab Emirates" },
+  { keywords: ["greece", "athens", "santorini", "希臘", "雅典", "聖托里尼"], code: "GR", name: "Greece" },
+  { keywords: ["portugal", "lisbon", "porto", "葡萄牙", "里斯本", "波爾圖"], code: "PT", name: "Portugal" },
+  { keywords: ["netherlands", "amsterdam", "荷蘭", "阿姆斯特丹"], code: "NL", name: "Netherlands" },
+  { keywords: ["switzerland", "zurich", "geneva", "瑞士", "蘇黎世", "日內瓦"], code: "CH", name: "Switzerland" },
+  { keywords: ["austria", "vienna", "奧地利", "維也納"], code: "AT", name: "Austria" },
+  { keywords: ["czech", "prague", "捷克", "布拉格"], code: "CZ", name: "Czech Republic" },
+  { keywords: ["hungary", "budapest", "匈牙利", "布達佩斯"], code: "HU", name: "Hungary" },
+  { keywords: ["poland", "warsaw", "krakow", "波蘭", "華沙", "克拉科夫"], code: "PL", name: "Poland" },
+  { keywords: ["india", "mumbai", "delhi", "印度", "孟買", "德里"], code: "IN", name: "India" },
+  { keywords: ["maldives", "馬爾代夫"], code: "MV", name: "Maldives" },
+  { keywords: ["sri lanka", "colombo", "斯里蘭卡", "可倫坡"], code: "LK", name: "Sri Lanka" },
+  { keywords: ["nepal", "kathmandu", "尼泊爾", "加德滿都"], code: "NP", name: "Nepal" },
+  { keywords: ["morocco", "marrakech", "casablanca", "摩洛哥", "馬拉喀什", "卡薩布蘭卡"], code: "MA", name: "Morocco" },
+  { keywords: ["turkey", "istanbul", "ankara", "土耳其", "伊斯坦堡", "安卡拉"], code: "TR", name: "Turkey" },
+  { keywords: ["russia", "moscow", "st petersburg", "俄羅斯", "莫斯科", "聖彼得堡"], code: "RU", name: "Russia" },
+  { keywords: ["brazil", "rio", "sao paulo", "巴西", "里約", "聖保羅"], code: "BR", name: "Brazil" },
+  { keywords: ["argentina", "buenos aires", "阿根廷", "布宜諾斯艾利斯"], code: "AR", name: "Argentina" },
+  { keywords: ["mexico", "mexico city", "cancun", "墨西哥", "墨西哥城", "坎昆"], code: "MX", name: "Mexico" },
+];
+
+function detectCountryFromDestination(destination: string): { code: string; name: string } | null {
+  const lower = destination.toLowerCase();
+  for (const entry of COUNTRY_KEYWORDS) {
+    if (entry.keywords.some(kw => lower.includes(kw.toLowerCase()))) {
+      return { code: entry.code, name: entry.name };
+    }
+  }
+  return null;
+}
+
 // ─── Trips Router ─────────────────────────────────────────────────────────────
 const tripsRouter = router({
   list: protectedProcedure.query(async ({ ctx }) => {
@@ -54,6 +108,20 @@ const tripsRouter = router({
           title: `Day ${dayNum - 1}`,
         });
       }
+      // Auto-import destination country to travel history
+      try {
+        const detectedCountry = detectCountryFromDestination(input.destination);
+        if (detectedCountry) {
+          await db.upsertVisitedCountry({
+            userId: ctx.user.id,
+            countryCode: detectedCountry.code,
+            countryName: detectedCountry.name,
+            status: "visited",
+            visitedAt: new Date(input.startDate),
+            notes: `Auto-imported from trip: ${input.name}`,
+          });
+        }
+      } catch (_) { /* ignore auto-import errors */ }
       return { tripId };
     }),
 
@@ -706,6 +774,96 @@ const passportRouter = router({
       await db.deletePastFlight(input.flightId);
       return { success: true };
     }),
+
+  seedMyFlights: protectedProcedure.mutation(async ({ ctx }) => {
+    // Check if user already has seeded flights
+    const existing = await db.getPastFlights(ctx.user.id);
+    if (existing.length > 0) return { alreadySeeded: true, count: existing.length };
+
+    // Historical flight data from Flighty
+    const flights: Array<{ flightNumber: string; airline: string; airlineCode: string; dep: string; depCity: string; depCountry: string; arr: string; arrCity: string; arrCountry: string; date: string; seatClass: "economy" | "business" }> = [
+      // 2026
+      { flightNumber: "EK380", airline: "Emirates", airlineCode: "EK", dep: "DXB", depCity: "Dubai", depCountry: "UAE", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2026-04-07", seatClass: "economy" },
+      { flightNumber: "EK926", airline: "Emirates", airlineCode: "EK", dep: "CAI", depCity: "Cairo", depCountry: "Egypt", arr: "DXB", arrCity: "Dubai", arrCountry: "UAE", date: "2026-04-07", seatClass: "economy" },
+      { flightNumber: "MS86", airline: "EgyptAir", airlineCode: "MS", dep: "CAI", depCity: "Cairo", depCountry: "Egypt", arr: "ASW", arrCity: "Aswan", arrCountry: "Egypt", date: "2026-03-28", seatClass: "economy" },
+      { flightNumber: "EK927", airline: "Emirates", airlineCode: "EK", dep: "DXB", depCity: "Dubai", depCountry: "UAE", arr: "CAI", arrCity: "Cairo", arrCountry: "Egypt", date: "2026-03-28", seatClass: "economy" },
+      { flightNumber: "EK381", airline: "Emirates", airlineCode: "EK", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "DXB", arrCity: "Dubai", arrCountry: "UAE", date: "2026-03-28", seatClass: "economy" },
+      { flightNumber: "JL735", airline: "Japan Airlines", airlineCode: "JL", dep: "NRT", depCity: "Tokyo", depCountry: "Japan", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2026-02-25", seatClass: "economy" },
+      { flightNumber: "JL736", airline: "Japan Airlines", airlineCode: "JL", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "NRT", arrCity: "Tokyo", arrCountry: "Japan", date: "2026-02-15", seatClass: "economy" },
+      { flightNumber: "CX589", airline: "Cathay Pacific", airlineCode: "CX", dep: "FUK", depCity: "Fukuoka", depCountry: "Japan", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2026-01-04", seatClass: "economy" },
+      { flightNumber: "JL3626", airline: "Japan Airlines", airlineCode: "JL", dep: "KMI", depCity: "Miyazaki", depCountry: "Japan", arr: "FUK", arrCity: "Fukuoka", arrCountry: "Japan", date: "2026-01-02", seatClass: "economy" },
+      // 2025
+      { flightNumber: "CX564", airline: "Cathay Pacific", airlineCode: "CX", dep: "TPE", depCity: "Taipei", depCountry: "Taiwan", arr: "KIX", arrCity: "Osaka", arrCountry: "Japan", date: "2025-12-23", seatClass: "economy" },
+      { flightNumber: "CX402", airline: "Cathay Pacific", airlineCode: "CX", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "TPE", arrCity: "Taipei", arrCountry: "Taiwan", date: "2025-12-19", seatClass: "economy" },
+      { flightNumber: "UO613", airline: "HK Express", airlineCode: "UO", dep: "FUK", depCity: "Fukuoka", depCountry: "Japan", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2025-07-01", seatClass: "economy" },
+      { flightNumber: "UO638", airline: "HK Express", airlineCode: "UO", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "FUK", arrCity: "Fukuoka", arrCountry: "Japan", date: "2025-06-28", seatClass: "economy" },
+      { flightNumber: "CX521", airline: "Cathay Pacific", airlineCode: "CX", dep: "NRT", depCity: "Tokyo", depCountry: "Japan", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2025-04-24", seatClass: "economy" },
+      { flightNumber: "JL482", airline: "Japan Airlines", airlineCode: "JL", dep: "TAK", depCity: "Takamatsu", depCountry: "Japan", arr: "HND", arrCity: "Tokyo", arrCountry: "Japan", date: "2025-04-22", seatClass: "economy" },
+      { flightNumber: "JL481", airline: "Japan Airlines", airlineCode: "JL", dep: "HND", depCity: "Tokyo", depCountry: "Japan", arr: "TAK", arrCity: "Takamatsu", arrCountry: "Japan", date: "2025-04-18", seatClass: "economy" },
+      { flightNumber: "CX530", airline: "Cathay Pacific", airlineCode: "CX", dep: "TPE", depCity: "Taipei", depCountry: "Taiwan", arr: "NGO", arrCity: "Nagoya", arrCountry: "Japan", date: "2025-04-12", seatClass: "economy" },
+      { flightNumber: "CX564", airline: "Cathay Pacific", airlineCode: "CX", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "TPE", arrCity: "Taipei", arrCountry: "Taiwan", date: "2025-04-12", seatClass: "economy" },
+      { flightNumber: "CX531", airline: "Cathay Pacific", airlineCode: "CX", dep: "TPE", depCity: "Taipei", depCountry: "Taiwan", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2025-01-02", seatClass: "economy" },
+      // 2024
+      { flightNumber: "CX530", airline: "Cathay Pacific", airlineCode: "CX", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "TPE", arrCity: "Taipei", arrCountry: "Taiwan", date: "2024-12-21", seatClass: "economy" },
+      { flightNumber: "CX369", airline: "Cathay Pacific", airlineCode: "CX", dep: "PVG", depCity: "Shanghai", depCountry: "China", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2024-11-16", seatClass: "economy" },
+      { flightNumber: "CX366", airline: "Cathay Pacific", airlineCode: "CX", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "PVG", arrCity: "Shanghai", arrCountry: "China", date: "2024-11-13", seatClass: "economy" },
+      { flightNumber: "CX256", airline: "Cathay Pacific", airlineCode: "CX", dep: "LHR", depCity: "London", depCountry: "UK", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2024-08-13", seatClass: "economy" },
+      { flightNumber: "CX251", airline: "Cathay Pacific", airlineCode: "CX", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "LHR", arrCity: "London", arrCountry: "UK", date: "2024-07-31", seatClass: "economy" },
+      { flightNumber: "CX507", airline: "Cathay Pacific", airlineCode: "CX", dep: "KIX", depCity: "Osaka", depCountry: "Japan", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2024-03-28", seatClass: "economy" },
+      { flightNumber: "CX564", airline: "Cathay Pacific", airlineCode: "CX", dep: "TPE", depCity: "Taipei", depCountry: "Taiwan", arr: "KIX", arrCity: "Osaka", arrCountry: "Japan", date: "2024-03-23", seatClass: "economy" },
+      { flightNumber: "CX564", airline: "Cathay Pacific", airlineCode: "CX", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "TPE", arrCity: "Taipei", arrCountry: "Taiwan", date: "2024-03-23", seatClass: "economy" },
+      { flightNumber: "MM67", airline: "Peach Aviation", airlineCode: "MM", dep: "KIX", depCity: "Osaka", depCountry: "Japan", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2024-02-11", seatClass: "economy" },
+      { flightNumber: "MM64", airline: "Peach Aviation", airlineCode: "MM", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "KIX", arrCity: "Osaka", arrCountry: "Japan", date: "2024-02-03", seatClass: "economy" },
+      // 2023
+      { flightNumber: "UO871", airline: "HK Express", airlineCode: "UO", dep: "NRT", depCity: "Tokyo", depCountry: "Japan", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2023-08-10", seatClass: "economy" },
+      { flightNumber: "MM589", airline: "Peach Aviation", airlineCode: "MM", dep: "NRT", depCity: "Tokyo", depCountry: "Japan", arr: "CTS", arrCity: "Sapporo", arrCountry: "Japan", date: "2023-07-29", seatClass: "economy" },
+      { flightNumber: "UO848", airline: "HK Express", airlineCode: "UO", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "NRT", arrCity: "Tokyo", arrCountry: "Japan", date: "2023-07-26", seatClass: "economy" },
+      // 2019
+      { flightNumber: "HX253", airline: "Hong Kong Airlines", airlineCode: "HX", dep: "TPE", depCity: "Taipei", depCountry: "Taiwan", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2019-11-18", seatClass: "economy" },
+      { flightNumber: "HX254", airline: "Hong Kong Airlines", airlineCode: "HX", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "TPE", arrCity: "Taipei", arrCountry: "Taiwan", date: "2019-11-15", seatClass: "economy" },
+      { flightNumber: "HX6758", airline: "Hong Kong Airlines", airlineCode: "HX", dep: "BKK", depCity: "Bangkok", depCountry: "Thailand", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2019-06-09", seatClass: "economy" },
+      { flightNumber: "HX775", airline: "Hong Kong Airlines", airlineCode: "HX", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "BKK", arrCity: "Bangkok", arrCountry: "Thailand", date: "2019-06-06", seatClass: "economy" },
+      { flightNumber: "UO689", airline: "HK Express", airlineCode: "UO", dep: "KIX", depCity: "Osaka", depCountry: "Japan", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2019-03-19", seatClass: "economy" },
+      { flightNumber: "UO898", airline: "HK Express", airlineCode: "UO", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "KIX", arrCity: "Osaka", arrCountry: "Japan", date: "2019-03-12", seatClass: "economy" },
+      // 2018
+      { flightNumber: "UO871", airline: "HK Express", airlineCode: "UO", dep: "NRT", depCity: "Tokyo", depCountry: "Japan", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2018-11-16", seatClass: "economy" },
+      { flightNumber: "UO870", airline: "HK Express", airlineCode: "UO", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "NRT", arrCity: "Tokyo", arrCountry: "Japan", date: "2018-11-07", seatClass: "economy" },
+      // 2017
+      { flightNumber: "UO141", airline: "HK Express", airlineCode: "UO", dep: "RMQ", depCity: "Taichung", depCountry: "Taiwan", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2017-07-31", seatClass: "economy" },
+      { flightNumber: "UO140", airline: "HK Express", airlineCode: "UO", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "RMQ", arrCity: "Taichung", arrCountry: "Taiwan", date: "2017-07-27", seatClass: "economy" },
+      { flightNumber: "CI937", airline: "China Airlines", airlineCode: "CI", dep: "KHH", depCity: "Kaohsiung", depCountry: "Taiwan", arr: "HKG", arrCity: "Hong Kong", arrCountry: "Hong Kong", date: "2017-06-26", seatClass: "economy" },
+      { flightNumber: "CI934", airline: "China Airlines", airlineCode: "CI", dep: "HKG", depCity: "Hong Kong", depCountry: "Hong Kong", arr: "KHH", arrCity: "Kaohsiung", arrCountry: "Taiwan", date: "2017-06-22", seatClass: "economy" },
+    ];
+
+    let count = 0;
+    for (const f of flights) {
+      const flightDate = new Date(f.date);
+      await db.addPastFlight({
+        userId: ctx.user.id,
+        flightNumber: f.flightNumber,
+        airline: f.airline,
+        airlineCode: f.airlineCode,
+        departureAirport: f.dep,
+        departureCity: f.depCity,
+        departureCountry: f.depCountry,
+        departureLat: null,
+        departureLng: null,
+        arrivalAirport: f.arr,
+        arrivalCity: f.arrCity,
+        arrivalCountry: f.arrCountry,
+        arrivalLat: null,
+        arrivalLng: null,
+        flightDate,
+        flightYear: flightDate.getFullYear(),
+        durationMinutes: null,
+        distanceKm: null,
+        seatClass: f.seatClass,
+        notes: null,
+      });
+      count++;
+    }
+    return { success: true, count };
+  }),
 });
 
 // ─── AI Router ────────────────────────────────────────────────────────────────
