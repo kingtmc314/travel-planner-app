@@ -35,12 +35,12 @@ export default function MembersPage({ tripId }: { tripId: number }) {
     onError: (e) => toast.error(e.message || "移除失敗"),
   });
 
-  const myRole = trip?.memberRole;
+  const myRole = trip?.userRole;
   const canManage = myRole === "owner";
 
   const handleAdd = () => {
     if (!form.name) { toast.error("請填寫成員姓名"); return; }
-    addMember.mutate({ tripId, ...form });
+    addMember.mutate({ tripId, displayName: form.name, email: form.email || undefined, role: form.role as "editor" | "viewer" });
   };
 
   if (isLoading) return (
@@ -96,11 +96,11 @@ export default function MembersPage({ tripId }: { tripId: number }) {
             return (
               <div key={member.id} className="bg-card rounded-xl border border-border p-4 flex items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold shrink-0">
-                  {member.name.charAt(0).toUpperCase()}
+                  {member.displayName.charAt(0).toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="font-medium text-foreground text-sm">{member.name}</p>
+                    <p className="font-medium text-foreground text-sm">{member.displayName}</p>
                     {isMe && <span className="px-1.5 py-0.5 rounded text-[10px] bg-primary/10 text-primary font-medium">你</span>}
                   </div>
                   {member.email && <p className="text-xs text-muted-foreground mt-0.5">{member.email}</p>}

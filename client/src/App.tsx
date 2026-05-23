@@ -12,6 +12,8 @@ import ExpensesPage from "./pages/trip/ExpensesPage";
 import MapPage from "./pages/trip/MapPage";
 import MembersPage from "./pages/trip/MembersPage";
 import FlightsPage from "./pages/trip/FlightsPage";
+import TravelHistory from "./pages/TravelHistory";
+import FlightPassport from "./pages/FlightPassport";
 
 function TripRoutes({ tripId }: { tripId: number }) {
   return (
@@ -36,6 +38,8 @@ function Router() {
       <Route path="/trips/:tripId/:tab?">
         {(params) => <TripRoutes tripId={Number(params.tripId)} />}
       </Route>
+      <Route path="/travel-history" component={TravelHistory} />
+      <Route path="/flight-passport" component={FlightPassport} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>

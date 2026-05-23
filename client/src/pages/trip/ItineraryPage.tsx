@@ -67,12 +67,12 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
 
   const handleAdd = () => {
     if (!addingDayId || !form.title) { toast.error("請填寫活動名稱"); return; }
-    addActivity.mutate({ dayId: addingDayId, tripId, ...form, category: form.category as "transport" | "accommodation" | "food" | "attraction" | "shopping" | "other", sortOrder: 0 });
+    addActivity.mutate({ dayId: addingDayId, tripId, ...form, category: (form.category === "accommodation" ? "hotel" : form.category) as "transport" | "food" | "attraction" | "hotel" | "shopping" | "other", sortOrder: 0 });
   };
 
   const handleUpdate = () => {
     if (!editingActivity || !form.title) return;
-    updateActivity.mutate({ activityId: editingActivity.id, tripId, ...form, category: form.category as "transport" | "accommodation" | "food" | "attraction" | "shopping" | "other" });
+    updateActivity.mutate({ activityId: editingActivity.id, tripId, ...form, category: (form.category === "accommodation" ? "hotel" : form.category) as "transport" | "food" | "attraction" | "hotel" | "shopping" | "other" });
   };
 
   const handleAISuggest = (day: any) => {
@@ -80,7 +80,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
     setAiSuggestions([]);
     suggestActivities.mutate({
       destination: trip?.destination ?? "",
-      date: day.dayDate,
+      date: day.date,
       dayNumber: day.dayNumber,
       existingActivities: day.activities?.map((a: any) => a.title) ?? [],
     });
@@ -95,7 +95,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
       startTime: suggestion.startTime ?? "",
       endTime: suggestion.endTime ?? "",
       notes: suggestion.notes ?? "",
-      category: (suggestion.category ?? "other") as "transport" | "accommodation" | "food" | "attraction" | "shopping" | "other",
+      category: (suggestion.category === "accommodation" ? "hotel" : (suggestion.category ?? "other")) as "transport" | "food" | "attraction" | "hotel" | "shopping" | "other",
       sortOrder: 99,
     });
     toast.success(`已新增：${suggestion.title}`);
@@ -127,7 +127,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                   <span className="font-semibold text-foreground">{day.title ?? `第 ${day.dayNumber} 天`}</span>
                 </div>
                 <p className="text-muted-foreground text-xs mt-0.5 ml-9">
-                  {day.dayDate ? format(new Date(day.dayDate), "M月d日 (EEEE)", { locale: zhTW }) : ""}
+                  {day.date ? format(new Date(day.date), "M月d日 (EEEE)", { locale: zhTW }) : ""}
                 </p>
               </div>
               <div className="flex items-center gap-1">

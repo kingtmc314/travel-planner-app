@@ -25,7 +25,7 @@ const typeColor: Record<string, string> = {
 
 export default function NotificationsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { data: notifications, refetch } = trpc.notifications.list.useQuery(undefined, { enabled: open });
-  const markRead = trpc.notifications.markRead.useMutation({ onSuccess: () => refetch() });
+  const markAllRead = trpc.notifications.markAllRead.useMutation({ onSuccess: () => refetch() });
 
   return (
     <Sheet open={open} onOpenChange={onClose}>
@@ -33,7 +33,7 @@ export default function NotificationsPanel({ open, onClose }: { open: boolean; o
         <SheetHeader className="px-6 py-4 border-b border-border flex-row items-center justify-between">
           <SheetTitle className="text-lg font-semibold">通知</SheetTitle>
           {notifications && notifications.some(n => !n.isRead) && (
-            <Button variant="ghost" size="sm" onClick={() => markRead.mutate()} className="gap-1.5 text-muted-foreground">
+            <Button variant="ghost" size="sm" onClick={() => markAllRead.mutate()} className="gap-1.5 text-muted-foreground">
               <CheckCheck className="w-4 h-4" />
               全部已讀
             </Button>
@@ -50,8 +50,8 @@ export default function NotificationsPanel({ open, onClose }: { open: boolean; o
           ) : (
             <div className="divide-y divide-border">
               {notifications.map((n) => {
-                const Icon = typeIcon[n.type] ?? Bell;
-                const color = typeColor[n.type] ?? "bg-muted text-muted-foreground";
+                const Icon = (n.type ? typeIcon[n.type] : null) ?? Bell;
+                const color = (n.type ? typeColor[n.type] : null) ?? "bg-muted text-muted-foreground";
                 return (
                   <div key={n.id} className={`px-6 py-4 flex gap-3 ${!n.isRead ? "bg-primary/5" : ""}`}>
                     <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${color}`}>

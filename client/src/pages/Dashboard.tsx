@@ -239,7 +239,7 @@ export default function Dashboard() {
               className="relative w-9 h-9 rounded-lg flex items-center justify-center hover:bg-accent transition-colors"
             >
               <Bell className="w-5 h-5 text-muted-foreground" />
-              {unreadCount && unreadCount > 0 ? (
+              {unreadCount && unreadCount.count > 0 ? (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-destructive" />
               ) : null}
             </button>
@@ -503,6 +503,29 @@ export default function Dashboard() {
 
       {/* Notifications Panel */}
       <NotificationsPanel open={showNotifications} onClose={() => setShowNotifications(false)} />
+
+      {/* Bottom Navigation (mobile) */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 glass border-t border-border">
+        <div className="flex items-center justify-around h-16">
+          <button onClick={() => setLocation("/dashboard")} className="flex flex-col items-center gap-1 px-4 py-2 text-primary">
+            <Plane className="w-5 h-5 rotate-45" />
+            <span className="text-[10px] font-medium">行程</span>
+          </button>
+          <button onClick={() => setLocation("/travel-history")} className="flex flex-col items-center gap-1 px-4 py-2 text-muted-foreground hover:text-foreground transition-colors">
+            <Globe className="w-5 h-5" />
+            <span className="text-[10px] font-medium">旅遊足跡</span>
+          </button>
+          <button onClick={() => setLocation("/flight-passport")} className="flex flex-col items-center gap-1 px-4 py-2 text-muted-foreground hover:text-foreground transition-colors">
+            <Plane className="w-5 h-5" />
+            <span className="text-[10px] font-medium">飛行護照</span>
+          </button>
+          <button onClick={() => setShowNotifications(true)} className="relative flex flex-col items-center gap-1 px-4 py-2 text-muted-foreground hover:text-foreground transition-colors">
+            <Bell className="w-5 h-5" />
+            {unreadCount && unreadCount.count > 0 ? <span className="absolute top-1 right-3 w-2 h-2 rounded-full bg-destructive" /> : null}
+            <span className="text-[10px] font-medium">通知</span>
+          </button>
+        </div>
+      </nav>
     </div>
   );
 }

@@ -1,198 +1,216 @@
 import {
-  pgTable,
-  serial,
+  int,
+  mysqlEnum,
+  mysqlTable,
   text,
-  varchar,
-  integer,
-  boolean,
   timestamp,
-  pgEnum,
-  numeric,
-  date,
-  jsonb,
-} from "drizzle-orm/pg-core";
+  varchar,
+  boolean,
+  decimal,
+  json,
+} from "drizzle-orm/mysql-core";
 
-// ─── Enums ────────────────────────────────────────────────────────────────────
-export const roleEnum = pgEnum("role", ["admin", "user"]);
-export const memberRoleEnum = pgEnum("member_role", ["owner", "editor", "viewer"]);
-export const activityCategoryEnum = pgEnum("activity_category", [
-  "transport", "accommodation", "food", "attraction", "shopping", "other",
-]);
-export const pinTypeEnum = pgEnum("pin_type", [
-  "attraction", "hotel", "restaurant", "transport", "other",
-]);
-export const notificationTypeEnum = pgEnum("notification_type", [
-  "expense_added", "itinerary_updated", "member_joined", "member_left", "trip_updated", "general",
-]);
-
-// ─── Users ────────────────────────────────────────────────────────────────────
-export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  openId: varchar("open_id", { length: 64 }).notNull().unique(),
+// ─── Users ───────────────────────────────────────────────────────────────────
+export const users = mysqlTable("users", {
+  id: int("id").autoincrement().primaryKey(),
+  openId: varchar("openId", { length: 64 }).notNull().unique(),
   name: text("name"),
   email: varchar("email", { length: 320 }),
-  loginMethod: varchar("login_method", { length: 64 }),
-  role: roleEnum("role").default("user").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-  lastSignedIn: timestamp("last_signed_in").defaultNow().notNull(),
+  loginMethod: varchar("loginMethod", { length: 64 }),
+  role: mysqlEnum("role", ["user", "admin"]).default("user").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+  lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull(),
 });
-
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
 // ─── Trips ────────────────────────────────────────────────────────────────────
-export const trips = pgTable("trips", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  destination: text("destination").notNull(),
+export const trips = mysqlTable("trips", {
+  id: int("id").autoincrement().primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  destination: varchar("destination", { length: 500 }).notNull(),
   description: text("description"),
-  startDate: date("start_date").notNull(),
-  endDate: date("end_date").notNull(),
-  baseCurrency: varchar("base_currency", { length: 10 }).default("HKD").notNull(),
-  coverImage: text("cover_image"),
-  isDemoTrip: boolean("is_demo_trip").default(false).notNull(),
-  createdBy: integer("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  startDate: timestamp("startDate").notNull(),
+  endDate: timestamp("endDate").notNull(),
+  baseCurrency: varchar("baseCurrency", { length: 10 }).default("HKD").notNull(),
+  coverImage: text("coverImage"),
+  createdBy: int("createdBy").notNull(),
+  isDemoTrip: boolean("isDemoTrip").default(false),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
-
 export type Trip = typeof trips.$inferSelect;
 export type InsertTrip = typeof trips.$inferInsert;
 
 // ─── Trip Members ─────────────────────────────────────────────────────────────
-export const tripMembers = pgTable("trip_members", {
-  id: serial("id").primaryKey(),
-  tripId: integer("trip_id").references(() => trips.id, { onDelete: "cascade" }).notNull(),
-  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }),
-  name: text("name").notNull(),
+export const tripMembers = mysqlTable("trip_members", {
+  id: int("id").autoincrement().primaryKey(),
+  tripId: int("tripId").notNull(),
+  userId: int("userId").notNull(),
+  role: mysqlEnum("role", ["owner", "editor", "viewer"]).default("viewer").notNull(),
+  displayName: varchar("displayName", { length: 255 }),
   email: varchar("email", { length: 320 }),
-  role: memberRoleEnum("role").default("viewer").notNull(),
-  joinedAt: timestamp("joined_at").defaultNow().notNull(),
+  joinedAt: timestamp("joinedAt").defaultNow().notNull(),
 });
-
 export type TripMember = typeof tripMembers.$inferSelect;
 export type InsertTripMember = typeof tripMembers.$inferInsert;
 
 // ─── Itinerary Days ───────────────────────────────────────────────────────────
-export const itineraryDays = pgTable("itinerary_days", {
-  id: serial("id").primaryKey(),
-  tripId: integer("trip_id").references(() => trips.id, { onDelete: "cascade" }).notNull(),
-  dayDate: date("day_date").notNull(),
-  dayNumber: integer("day_number").notNull(),
-  title: text("title"),
+export const itineraryDays = mysqlTable("itinerary_days", {
+  id: int("id").autoincrement().primaryKey(),
+  tripId: int("tripId").notNull(),
+  date: timestamp("date").notNull(),
+  dayNumber: int("dayNumber").notNull(),
+  title: varchar("title", { length: 255 }),
   notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
-
 export type ItineraryDay = typeof itineraryDays.$inferSelect;
 export type InsertItineraryDay = typeof itineraryDays.$inferInsert;
 
-// ─── Itinerary Activities ─────────────────────────────────────────────────────
-export const activities = pgTable("activities", {
-  id: serial("id").primaryKey(),
-  dayId: integer("day_id").references(() => itineraryDays.id, { onDelete: "cascade" }).notNull(),
-  tripId: integer("trip_id").references(() => trips.id, { onDelete: "cascade" }).notNull(),
-  title: text("title").notNull(),
-  location: text("location"),
-  startTime: varchar("start_time", { length: 10 }),
-  endTime: varchar("end_time", { length: 10 }),
+// ─── Activities ───────────────────────────────────────────────────────────────
+export const activities = mysqlTable("activities", {
+  id: int("id").autoincrement().primaryKey(),
+  dayId: int("dayId").notNull(),
+  tripId: int("tripId").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  location: varchar("location", { length: 500 }),
+  startTime: varchar("startTime", { length: 10 }),
+  endTime: varchar("endTime", { length: 10 }),
+  category: mysqlEnum("category", ["transport", "food", "attraction", "hotel", "shopping", "other"]).default("other"),
   notes: text("notes"),
-  category: activityCategoryEnum("category").default("other").notNull(),
-  sortOrder: integer("sort_order").default(0).notNull(),
-  lat: numeric("lat", { precision: 10, scale: 7 }),
-  lng: numeric("lng", { precision: 10, scale: 7 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  cost: decimal("cost", { precision: 10, scale: 2 }),
+  currency: varchar("currency", { length: 10 }),
+  sortOrder: int("sortOrder").default(0),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
-
 export type Activity = typeof activities.$inferSelect;
 export type InsertActivity = typeof activities.$inferInsert;
 
 // ─── Expenses ─────────────────────────────────────────────────────────────────
-export const expenses = pgTable("expenses", {
-  id: serial("id").primaryKey(),
-  tripId: integer("trip_id").references(() => trips.id, { onDelete: "cascade" }).notNull(),
-  title: text("title").notNull(),
-  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+export const expenses = mysqlTable("expenses", {
+  id: int("id").autoincrement().primaryKey(),
+  tripId: int("tripId").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   currency: varchar("currency", { length: 10 }).notNull(),
-  category: activityCategoryEnum("category").default("other").notNull(),
-  paidBy: integer("paid_by").references(() => tripMembers.id),
-  paidByName: text("paid_by_name"),
-  splitAmong: jsonb("split_among").$type<number[]>().default([]),
-  date: date("date").notNull(),
+  category: mysqlEnum("category", ["transport", "food", "accommodation", "attraction", "shopping", "other"]).default("other"),
+  paidBy: int("paidBy").notNull(),
+  paidByName: varchar("paidByName", { length: 255 }),
+  splitAmong: json("splitAmong"),
+  date: timestamp("date").notNull(),
   notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
-
 export type Expense = typeof expenses.$inferSelect;
 export type InsertExpense = typeof expenses.$inferInsert;
 
 // ─── Map Pins ─────────────────────────────────────────────────────────────────
-export const mapPins = pgTable("map_pins", {
-  id: serial("id").primaryKey(),
-  tripId: integer("trip_id").references(() => trips.id, { onDelete: "cascade" }).notNull(),
-  title: text("title").notNull(),
+export const mapPins = mysqlTable("map_pins", {
+  id: int("id").autoincrement().primaryKey(),
+  tripId: int("tripId").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
   description: text("description"),
-  lat: numeric("lat", { precision: 10, scale: 7 }).notNull(),
-  lng: numeric("lng", { precision: 10, scale: 7 }).notNull(),
-  type: pinTypeEnum("type").default("attraction").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lat: decimal("lat", { precision: 10, scale: 7 }).notNull(),
+  lng: decimal("lng", { precision: 10, scale: 7 }).notNull(),
+  type: mysqlEnum("type", ["attraction", "hotel", "restaurant", "transport", "other"]).default("attraction"),
+  address: text("address"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
-
 export type MapPin = typeof mapPins.$inferSelect;
 export type InsertMapPin = typeof mapPins.$inferInsert;
 
 // ─── Flights ──────────────────────────────────────────────────────────────────
-export const flights = pgTable("flights", {
-  id: serial("id").primaryKey(),
-  tripId: integer("trip_id").references(() => trips.id, { onDelete: "cascade" }).notNull(),
-  flightNumber: varchar("flight_number", { length: 20 }),
-  airline: text("airline"),
-  departureAirport: varchar("departure_airport", { length: 10 }),
-  arrivalAirport: varchar("arrival_airport", { length: 10 }),
-  departureTime: varchar("departure_time", { length: 10 }),
-  arrivalTime: varchar("arrival_time", { length: 10 }),
-  departureDate: date("departure_date"),
-  arrivalDate: date("arrival_date"),
-  type: varchar("type", { length: 20 }).default("outbound").notNull(),
-  isReturn: boolean("is_return").default(false).notNull(),
+export const flights = mysqlTable("flights", {
+  id: int("id").autoincrement().primaryKey(),
+  tripId: int("tripId").notNull(),
+  type: mysqlEnum("type", ["outbound", "return", "connecting"]).default("outbound"),
+  airline: varchar("airline", { length: 255 }),
+  flightNumber: varchar("flightNumber", { length: 50 }),
+  departureAirport: varchar("departureAirport", { length: 10 }),
+  arrivalAirport: varchar("arrivalAirport", { length: 10 }),
+  departureTime: varchar("departureTime", { length: 30 }),
+  arrivalTime: varchar("arrivalTime", { length: 30 }),
+  departureDate: varchar("departureDate", { length: 30 }),
+  arrivalDate: varchar("arrivalDate", { length: 30 }),
+  bookingRef: varchar("bookingRef", { length: 100 }),
   notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
-
 export type Flight = typeof flights.$inferSelect;
 export type InsertFlight = typeof flights.$inferInsert;
 
 // ─── Accommodations ───────────────────────────────────────────────────────────
-export const accommodations = pgTable("accommodations", {
-  id: serial("id").primaryKey(),
-  tripId: integer("trip_id").references(() => trips.id, { onDelete: "cascade" }).notNull(),
-  name: text("name").notNull(),
+export const accommodations = mysqlTable("accommodations", {
+  id: int("id").autoincrement().primaryKey(),
+  tripId: int("tripId").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
   address: text("address"),
-  checkIn: date("check_in"),
-  checkOut: date("check_out"),
-  confirmationNumber: text("confirmation_number"),
+  checkIn: timestamp("checkIn"),
+  checkOut: timestamp("checkOut"),
+  bookingRef: varchar("bookingRef", { length: 100 }),
+  confirmationNumber: varchar("confirmationNumber", { length: 100 }),
   notes: text("notes"),
-  lat: numeric("lat", { precision: 10, scale: 7 }),
-  lng: numeric("lng", { precision: 10, scale: 7 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+  lat: decimal("lat", { precision: 10, scale: 7 }),
+  lng: decimal("lng", { precision: 10, scale: 7 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
-
 export type Accommodation = typeof accommodations.$inferSelect;
 export type InsertAccommodation = typeof accommodations.$inferInsert;
 
 // ─── Notifications ────────────────────────────────────────────────────────────
-export const notifications = pgTable("notifications", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
-  tripId: integer("trip_id").references(() => trips.id, { onDelete: "cascade" }),
-  type: notificationTypeEnum("type").default("general").notNull(),
-  title: text("title").notNull(),
-  message: text("message").notNull(),
-  isRead: boolean("is_read").default(false).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
+export const notifications = mysqlTable("notifications", {
+  id: int("id").autoincrement().primaryKey(),
+  tripId: int("tripId"),
+  userId: int("userId").notNull(),
+  type: mysqlEnum("type", ["expense_added", "itinerary_updated", "member_joined", "member_left", "trip_updated", "general"]).default("general"),
+  title: varchar("title", { length: 255 }).notNull(),
+  message: text("message"),
+  isRead: boolean("isRead").default(false),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
-
 export type Notification = typeof notifications.$inferSelect;
 export type InsertNotification = typeof notifications.$inferInsert;
+
+// ─── Visited Countries (Travel History) ──────────────────────────────────────
+export const visitedCountries = mysqlTable("visited_countries", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  countryCode: varchar("countryCode", { length: 3 }).notNull(), // ISO 3166-1 alpha-2
+  countryName: varchar("countryName", { length: 255 }).notNull(),
+  status: mysqlEnum("status", ["visited", "planned", "wishlist"]).default("visited").notNull(),
+  visitedAt: timestamp("visitedAt"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type VisitedCountry = typeof visitedCountries.$inferSelect;
+export type InsertVisitedCountry = typeof visitedCountries.$inferInsert;
+
+// ─── Past Flights (Flight Passport) ──────────────────────────────────────────
+export const pastFlights = mysqlTable("past_flights", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  flightNumber: varchar("flightNumber", { length: 20 }),
+  airline: varchar("airline", { length: 255 }),
+  airlineCode: varchar("airlineCode", { length: 10 }),
+  departureAirport: varchar("departureAirport", { length: 10 }).notNull(),
+  departureCity: varchar("departureCity", { length: 255 }),
+  departureCountry: varchar("departureCountry", { length: 255 }),
+  departureLat: decimal("departureLat", { precision: 10, scale: 7 }),
+  departureLng: decimal("departureLng", { precision: 10, scale: 7 }),
+  arrivalAirport: varchar("arrivalAirport", { length: 10 }).notNull(),
+  arrivalCity: varchar("arrivalCity", { length: 255 }),
+  arrivalCountry: varchar("arrivalCountry", { length: 255 }),
+  arrivalLat: decimal("arrivalLat", { precision: 10, scale: 7 }),
+  arrivalLng: decimal("arrivalLng", { precision: 10, scale: 7 }),
+  flightDate: timestamp("flightDate").notNull(),
+  flightYear: int("flightYear").notNull(),
+  durationMinutes: int("durationMinutes"),
+  distanceKm: int("distanceKm"),
+  seatClass: mysqlEnum("seatClass", ["economy", "premium_economy", "business", "first"]).default("economy"),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type PastFlight = typeof pastFlights.$inferSelect;
+export type InsertPastFlight = typeof pastFlights.$inferInsert;

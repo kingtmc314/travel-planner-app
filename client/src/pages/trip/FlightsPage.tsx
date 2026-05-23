@@ -87,15 +87,15 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
                       <div className="flex items-center gap-2 mb-2">
                         <span className="font-bold text-foreground">{flight.flightNumber}</span>
                         {flight.airline && <span className="text-muted-foreground text-sm">{flight.airline}</span>}
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${typeColor[flight.type] ?? "bg-muted text-muted-foreground"}`}>
-                          {typeLabel[flight.type] ?? flight.type}
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${(flight.type ? typeColor[flight.type] : null) ?? "bg-muted text-muted-foreground"}`}>
+                          {(flight.type ? typeLabel[flight.type] : null) ?? flight.type}
                         </span>
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="text-center">
                           <p className="text-lg font-bold text-foreground">{flight.departureAirport}</p>
                           {flight.departureTime && <p className="text-xs text-muted-foreground">{flight.departureTime}</p>}
-                          {flight.departureDate && <p className="text-xs text-muted-foreground">{flight.departureDate}</p>}
+                          {flight.departureDate && <p className="text-xs text-muted-foreground">{String(flight.departureDate ?? '')}</p>}
                         </div>
                         <div className="flex-1 flex items-center gap-1">
                           <div className="flex-1 h-px bg-border" />
@@ -105,7 +105,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
                         <div className="text-center">
                           <p className="text-lg font-bold text-foreground">{flight.arrivalAirport}</p>
                           {flight.arrivalTime && <p className="text-xs text-muted-foreground">{flight.arrivalTime}</p>}
-                          {flight.arrivalDate && <p className="text-xs text-muted-foreground">{flight.arrivalDate}</p>}
+                          {flight.arrivalDate && <p className="text-xs text-muted-foreground">{String(flight.arrivalDate ?? '')}</p>}
                         </div>
                       </div>
                       {flight.notes && <p className="text-xs text-muted-foreground mt-2">{flight.notes}</p>}
@@ -152,9 +152,9 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
                       </div>
                       {hotel.address && <p className="text-sm text-muted-foreground mb-2">{hotel.address}</p>}
                       <div className="flex items-center gap-2 text-sm">
-                        <span className="font-medium text-foreground">{hotel.checkIn}</span>
+                        <span className="font-medium text-foreground">{hotel.checkIn instanceof Date ? hotel.checkIn.toLocaleDateString() : String(hotel.checkIn ?? '')}</span>
                         <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                        <span className="font-medium text-foreground">{hotel.checkOut}</span>
+                        <span className="font-medium text-foreground">{hotel.checkOut instanceof Date ? hotel.checkOut.toLocaleDateString() : String(hotel.checkOut ?? '')}</span>
                       </div>
                       {hotel.confirmationNumber && (
                         <p className="text-xs text-muted-foreground mt-1">確認號碼：{hotel.confirmationNumber}</p>
@@ -162,7 +162,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
                       {hotel.notes && <p className="text-xs text-muted-foreground mt-1">{hotel.notes}</p>}
                     </div>
                     <button
-                      onClick={() => deleteHotel.mutate({ hotelId: hotel.id, tripId })}
+                      onClick={() => deleteHotel.mutate({ accId: hotel.id, tripId })}
                       className="p-1.5 rounded-lg hover:bg-destructive/10 opacity-0 group-hover:opacity-100 transition-all shrink-0"
                     >
                       <Trash2 className="w-4 h-4 text-destructive" />

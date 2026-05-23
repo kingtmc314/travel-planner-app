@@ -156,7 +156,7 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
             <div className="flex items-center gap-1">
               <button onClick={() => setShowNotifications(true)} className="relative p-2 rounded-lg hover:bg-accent transition-colors">
                 <Bell className="w-5 h-5 text-muted-foreground" />
-                {unreadCount && unreadCount > 0 && (
+                {unreadCount && unreadCount.count > 0 && (
                   <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-destructive" />
                 )}
               </button>
@@ -171,20 +171,20 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
         <div className="hidden lg:flex items-center justify-between px-6 py-3 border-b border-border bg-background/80 backdrop-blur-sm">
           <div className="flex items-center gap-3">
             <h1 className="font-semibold text-foreground">{trip?.name}</h1>
-            {trip?.memberRole && (
+            {trip?.userRole && (
               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                trip.memberRole === "owner" ? "bg-primary/10 text-primary" :
-                trip.memberRole === "editor" ? "bg-green-100 text-green-700" :
+                trip.userRole === "owner" ? "bg-primary/10 text-primary" :
+                trip.userRole === "editor" ? "bg-green-100 text-green-700" :
                 "bg-muted text-muted-foreground"
               }`}>
-                {trip.memberRole === "owner" ? "擁有者" : trip.memberRole === "editor" ? "編輯者" : "觀看者"}
+                {trip.userRole === "owner" ? "擁有者" : trip.userRole === "editor" ? "編輯者" : "觀看者"}
               </span>
             )}
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => setShowNotifications(true)} className="relative p-2 rounded-lg hover:bg-accent transition-colors">
               <Bell className="w-5 h-5 text-muted-foreground" />
-              {unreadCount && unreadCount > 0 && (
+              {unreadCount && unreadCount.count > 0 && (
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-destructive" />
               )}
             </button>

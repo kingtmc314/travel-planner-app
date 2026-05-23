@@ -44,7 +44,7 @@ export default function AIAssistant({ open, onClose, tripId, destination }: AIAs
     const userMsg = input.trim();
     setInput("");
     setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
-    chat.mutate({ message: userMsg, destination });
+    chat.mutate({ messages: [...messages, { role: 'user' as const, content: userMsg }], tripContext: destination ? { destination, startDate: '', endDate: '' } : undefined });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {

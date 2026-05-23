@@ -15,11 +15,9 @@ const tripsRouter = router({
   get: protectedProcedure
     .input(z.object({ tripId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const trip = await db.getTripById(input.tripId);
-      if (!trip) throw new Error("Trip not found");
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role) throw new Error("Access denied");
-      return { ...trip, memberRole: role };
+      const trip = await db.getTripById(input.tripId, ctx.user.id);
+      if (!trip) throw new Error("Trip not found or access denied");
+      return trip;
     }),
 
   create: protectedProcedure
@@ -33,28 +31,30 @@ const tripsRouter = router({
       description: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const trip = await db.createTrip({ ...input, createdBy: ctx.user.id });
-      // Add creator as owner
-      await db.addTripMember({
-        tripId: trip.id,
-        userId: ctx.user.id,
-        name: ctx.user.name ?? "Owner",
-        email: ctx.user.email ?? undefined,
-        role: "owner",
-      });
+      const tripId = await db.createTrip({
+        name: input.name,
+        destination: input.destination,
+        startDate: new Date(input.startDate),
+        endDate: new Date(input.endDate),
+        baseCurrency: input.baseCurrency,
+        coverImage: input.coverImage ?? null,
+        description: input.description ?? null,
+        createdBy: ctx.user.id,
+      }, ctx.user.id);
+
       // Auto-generate itinerary days
       const start = new Date(input.startDate);
       const end = new Date(input.endDate);
       let dayNum = 1;
       for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-        await db.createItineraryDay({
-          tripId: trip.id,
-          dayDate: d.toISOString().split("T")[0],
+        await db.addItineraryDay({
+          tripId,
+          date: new Date(d),
           dayNumber: dayNum++,
           title: `Day ${dayNum - 1}`,
         });
       }
-      return { tripId: trip.id };
+      return { tripId };
     }),
 
   update: protectedProcedure
@@ -69,19 +69,35 @@ const tripsRouter = router({
       description: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { tripId, ...data } = input;
-      const role = await db.getUserTripRole(tripId, ctx.user.id);
-      if (!role || role === "viewer") throw new Error("Permission denied");
-      await db.updateTrip(tripId, data);
-      await db.notifyTripMembers(tripId, ctx.user.id, "trip_updated", "行程已更新", `${ctx.user.name ?? "成員"} 更新了行程資訊`);
+      const { tripId, startDate, endDate, ...rest } = input;
+      const membership = await db.getUserMembership(tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      await db.updateTrip(tripId, {
+        ...rest,
+        ...(startDate ? { startDate: new Date(startDate) } : {}),
+        ...(endDate ? { endDate: new Date(endDate) } : {}),
+      });
+      // Notify all members
+      const members = await db.getTripMembers(tripId);
+      for (const m of members) {
+        if (m.member.userId !== ctx.user.id && m.member.userId) {
+          await db.addNotification({
+            tripId,
+            userId: m.member.userId,
+            type: "trip_updated",
+            title: "行程已更新",
+            message: `${ctx.user.name ?? "成員"} 更新了行程資訊`,
+          });
+        }
+      }
       return { success: true };
     }),
 
   delete: protectedProcedure
     .input(z.object({ tripId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (role !== "owner") throw new Error("Only owner can delete trip");
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role !== "owner") throw new Error("Only owner can delete trip");
       await db.deleteTrip(input.tripId);
       return { success: true };
     }),
@@ -90,154 +106,113 @@ const tripsRouter = router({
     const already = await db.hasDemoTrip(ctx.user.id);
     if (already) return { alreadyExists: true };
 
-    const trip = await db.createTrip({
+    // Create Egypt demo trip
+    const tripId = await db.createTrip({
       name: "埃及探索之旅 🇪🇬",
       destination: "開羅 • 盧克索 • 亞斯文",
       description: "探索古埃及文明，遊覽金字塔、神廟與尼羅河",
-      startDate: "2026-03-10",
-      endDate: "2026-03-17",
+      startDate: new Date("2026-03-10"),
+      endDate: new Date("2026-03-17"),
       baseCurrency: "EGP",
       coverImage: "https://images.unsplash.com/photo-1568322445389-f64ac2515020?w=800&q=70",
       isDemoTrip: true,
       createdBy: ctx.user.id,
-    });
+    }, ctx.user.id);
 
-    await db.addTripMember({
-      tripId: trip.id,
-      userId: ctx.user.id,
-      name: ctx.user.name ?? "旅行者",
-      email: ctx.user.email ?? undefined,
-      role: "owner",
-    });
-
-    // Demo members
-    const demoMembers = [
-      { name: "Alice Chen", email: "alice@example.com", role: "editor" as const },
-      { name: "Bob Wong", email: "bob@example.com", role: "viewer" as const },
-    ];
-    for (const m of demoMembers) {
-      await db.addTripMember({ tripId: trip.id, ...m });
-    }
-
-    // Demo itinerary days
-    const days = [
-      { date: "2026-03-10", num: 1, title: "抵達開羅" },
-      { date: "2026-03-11", num: 2, title: "吉薩金字塔" },
-      { date: "2026-03-12", num: 3, title: "開羅博物館" },
-      { date: "2026-03-13", num: 4, title: "飛往盧克索" },
-      { date: "2026-03-14", num: 5, title: "帝王谷" },
-      { date: "2026-03-15", num: 6, title: "卡納克神廟" },
-      { date: "2026-03-16", num: 7, title: "亞斯文" },
-      { date: "2026-03-17", num: 8, title: "返程" },
+    // Add itinerary days
+    const days: { date: string; title: string }[] = [
+      { date: "2026-03-10", title: "抵達開羅" },
+      { date: "2026-03-11", title: "吉薩金字塔" },
+      { date: "2026-03-12", title: "埃及博物館" },
+      { date: "2026-03-13", title: "前往盧克索" },
+      { date: "2026-03-14", title: "帝王谷" },
+      { date: "2026-03-15", title: "前往亞斯文" },
+      { date: "2026-03-16", title: "阿布辛貝神廟" },
+      { date: "2026-03-17", title: "返港" },
     ];
 
-    const dayIds: Record<number, number> = {};
-    for (const d of days) {
-      const day = await db.createItineraryDay({ tripId: trip.id, dayDate: d.date, dayNumber: d.num, title: d.title });
-      dayIds[d.num] = day.id;
-    }
-
-    // Demo activities
-    const demoActivities = [
-      { dayNum: 1, title: "抵達開羅國際機場", location: "開羅國際機場", startTime: "14:00", category: "transport" as const, notes: "航班 MS 965" },
-      { dayNum: 1, title: "入住酒店", location: "Marriott Mena House", startTime: "17:00", category: "accommodation" as const },
-      { dayNum: 2, title: "吉薩金字塔群", location: "吉薩高原", startTime: "08:00", endTime: "12:00", category: "attraction" as const, notes: "記得帶防曬霜！", lat: "29.9792", lng: "31.1342" },
-      { dayNum: 2, title: "獅身人面像", location: "吉薩", startTime: "12:30", endTime: "13:30", category: "attraction" as const, lat: "29.9753", lng: "31.1376" },
-      { dayNum: 2, title: "午餐 - 當地餐廳", location: "吉薩", startTime: "13:30", endTime: "14:30", category: "food" as const },
-      { dayNum: 3, title: "埃及博物館", location: "解放廣場，開羅", startTime: "09:00", endTime: "13:00", category: "attraction" as const, lat: "30.0478", lng: "31.2336" },
-      { dayNum: 3, title: "汗哈利利市集購物", location: "開羅舊城", startTime: "15:00", endTime: "18:00", category: "shopping" as const },
-      { dayNum: 4, title: "飛往盧克索", location: "開羅機場", startTime: "07:00", endTime: "08:30", category: "transport" as const, notes: "航班 MS 210" },
-      { dayNum: 5, title: "帝王谷", location: "盧克索西岸", startTime: "07:00", endTime: "12:00", category: "attraction" as const, lat: "25.7402", lng: "32.6014" },
-      { dayNum: 5, title: "哈特謝普蘇特神廟", location: "盧克索西岸", startTime: "12:30", endTime: "14:00", category: "attraction" as const },
-      { dayNum: 6, title: "卡納克神廟", location: "盧克索東岸", startTime: "08:00", endTime: "11:00", category: "attraction" as const, lat: "25.7188", lng: "32.6573" },
-      { dayNum: 6, title: "盧克索神廟", location: "盧克索市中心", startTime: "16:00", endTime: "18:00", category: "attraction" as const },
-      { dayNum: 7, title: "費萊神廟", location: "亞斯文", startTime: "09:00", endTime: "12:00", category: "attraction" as const, lat: "24.0242", lng: "32.8839" },
-      { dayNum: 7, title: "尼羅河遊船晚餐", location: "亞斯文", startTime: "19:00", endTime: "21:00", category: "food" as const },
-      { dayNum: 8, title: "返回開羅", location: "亞斯文機場", startTime: "10:00", category: "transport" as const },
-    ];
-
-    for (let i = 0; i < demoActivities.length; i++) {
-      const a = demoActivities[i];
-      await db.createActivity({
-        dayId: dayIds[a.dayNum],
-        tripId: trip.id,
-        title: a.title,
-        location: a.location,
-        startTime: a.startTime,
-        endTime: a.endTime,
-        category: a.category,
-        notes: a.notes,
-        lat: a.lat,
-        lng: a.lng,
-        sortOrder: i,
+    const dayIds: number[] = [];
+    for (let i = 0; i < days.length; i++) {
+      const dayId = await db.addItineraryDay({
+        tripId,
+        date: new Date(days[i].date),
+        dayNumber: i + 1,
+        title: days[i].title,
       });
+      dayIds.push(dayId);
     }
 
-    // Demo expenses
-    const demoExpenses = [
-      { title: "機票（來回）", amount: "8500", currency: "HKD", category: "transport" as const, paidByName: ctx.user.name ?? "你", date: "2026-03-10" },
-      { title: "酒店住宿（8晚）", amount: "12000", currency: "EGP", category: "accommodation" as const, paidByName: "Alice Chen", date: "2026-03-10" },
-      { title: "金字塔門票", amount: "400", currency: "EGP", category: "attraction" as const, paidByName: ctx.user.name ?? "你", date: "2026-03-11" },
-      { title: "午餐", amount: "150", currency: "EGP", category: "food" as const, paidByName: "Bob Wong", date: "2026-03-11" },
-      { title: "博物館門票", amount: "300", currency: "EGP", category: "attraction" as const, paidByName: ctx.user.name ?? "你", date: "2026-03-12" },
-      { title: "市集購物", amount: "500", currency: "EGP", category: "shopping" as const, paidByName: "Alice Chen", date: "2026-03-12" },
-      { title: "國內航班", amount: "1200", currency: "EGP", category: "transport" as const, paidByName: ctx.user.name ?? "你", date: "2026-03-13" },
-      { title: "晚餐遊船", amount: "600", currency: "EGP", category: "food" as const, paidByName: "Bob Wong", date: "2026-03-16" },
-    ];
+    // Day 1 activities
+    await db.addActivity({ dayId: dayIds[0], tripId, title: "香港國際機場出發", startTime: "06:00", category: "transport", location: "香港國際機場", sortOrder: 0 });
+    await db.addActivity({ dayId: dayIds[0], tripId, title: "抵達開羅國際機場", startTime: "13:30", category: "transport", location: "開羅國際機場", sortOrder: 1 });
+    await db.addActivity({ dayId: dayIds[0], tripId, title: "入住 Kempinski Nile Hotel", startTime: "15:00", category: "hotel", location: "開羅市中心", sortOrder: 2 });
+    await db.addActivity({ dayId: dayIds[0], tripId, title: "尼羅河畔晚餐", startTime: "19:00", category: "food", location: "Nile Restaurant", sortOrder: 3 });
 
-    for (const e of demoExpenses) {
-      await db.createExpense({ tripId: trip.id, ...e, splitAmong: [] });
-    }
+    // Day 2 activities
+    await db.addActivity({ dayId: dayIds[1], tripId, title: "吉薩大金字塔", startTime: "08:00", category: "attraction", location: "吉薩高原", notes: "世界七大奇觀之一", sortOrder: 0 });
+    await db.addActivity({ dayId: dayIds[1], tripId, title: "獅身人面像", startTime: "10:00", category: "attraction", location: "吉薩高原", sortOrder: 1 });
+    await db.addActivity({ dayId: dayIds[1], tripId, title: "午餐 - 當地餐廳", startTime: "12:30", category: "food", location: "吉薩", sortOrder: 2 });
+    await db.addActivity({ dayId: dayIds[1], tripId, title: "Memphis 古城遺址", startTime: "14:30", category: "attraction", location: "孟菲斯", sortOrder: 3 });
 
-    // Demo map pins
-    const demoPins = [
-      { title: "吉薩金字塔", lat: "29.9792", lng: "31.1342", type: "attraction" as const },
-      { title: "埃及博物館", lat: "30.0478", lng: "31.2336", type: "attraction" as const },
-      { title: "Marriott Mena House", lat: "29.9865", lng: "31.1307", type: "hotel" as const },
-      { title: "帝王谷", lat: "25.7402", lng: "32.6014", type: "attraction" as const },
-      { title: "卡納克神廟", lat: "25.7188", lng: "32.6573", type: "attraction" as const },
-      { title: "費萊神廟", lat: "24.0242", lng: "32.8839", type: "attraction" as const },
-    ];
+    // Day 3 activities
+    await db.addActivity({ dayId: dayIds[2], tripId, title: "埃及國家博物館", startTime: "09:00", category: "attraction", location: "開羅解放廣場", notes: "圖坦卡蒙黃金面具", sortOrder: 0 });
+    await db.addActivity({ dayId: dayIds[2], tripId, title: "Khan el-Khalili 市集購物", startTime: "14:00", category: "shopping", location: "伊斯蘭開羅", sortOrder: 1 });
+    await db.addActivity({ dayId: dayIds[2], tripId, title: "Al-Azhar 清真寺", startTime: "16:00", category: "attraction", location: "伊斯蘭開羅", sortOrder: 2 });
 
-    for (const p of demoPins) {
-      await db.createMapPin({ tripId: trip.id, ...p });
-    }
+    // Day 4 activities
+    await db.addActivity({ dayId: dayIds[3], tripId, title: "乘火車前往盧克索", startTime: "07:00", category: "transport", location: "開羅火車站", sortOrder: 0 });
+    await db.addActivity({ dayId: dayIds[3], tripId, title: "抵達盧克索", startTime: "13:00", category: "transport", location: "盧克索火車站", sortOrder: 1 });
+    await db.addActivity({ dayId: dayIds[3], tripId, title: "卡納克神廟", startTime: "15:00", category: "attraction", location: "盧克索東岸", sortOrder: 2 });
 
-    // Demo flights
-    await db.createFlight({
-      tripId: trip.id,
-      flightNumber: "MS 965",
-      airline: "EgyptAir",
-      departureAirport: "HKG",
-      arrivalAirport: "CAI",
-      departureDate: "2026-03-10", departureTime: "06:00",
-      arrivalDate: "2026-03-10", arrivalTime: "13:00", type: "outbound",
-      isReturn: false,
-    });
-    await db.createFlight({
-      tripId: trip.id,
-      flightNumber: "MS 966",
-      airline: "EgyptAir",
-      departureAirport: "CAI",
-      arrivalAirport: "HKG",
-      departureDate: "2026-03-17", departureTime: "14:00",
-      arrivalDate: "2026-03-18", arrivalTime: "06:00", type: "return",
-      isReturn: true,
-    });
+    // Day 5 activities
+    await db.addActivity({ dayId: dayIds[4], tripId, title: "帝王谷 (Valley of the Kings)", startTime: "07:00", category: "attraction", location: "盧克索西岸", notes: "圖坦卡蒙墓穴", sortOrder: 0 });
+    await db.addActivity({ dayId: dayIds[4], tripId, title: "哈特謝普蘇特神廟", startTime: "10:00", category: "attraction", location: "盧克索西岸", sortOrder: 1 });
+    await db.addActivity({ dayId: dayIds[4], tripId, title: "盧克索神廟 (夜間)", startTime: "19:00", category: "attraction", location: "盧克索東岸", sortOrder: 2 });
 
-    // Demo accommodation
-    await db.createAccommodation({
-      tripId: trip.id,
-      name: "Marriott Mena House",
-      address: "6 Pyramids Road, Giza, Egypt",
-      checkIn: "2026-03-10",
-      checkOut: "2026-03-13",
-      confirmationNumber: "MH2026-001",
-      lat: "29.9865",
-      lng: "31.1307",
-    });
+    // Day 6 activities
+    await db.addActivity({ dayId: dayIds[5], tripId, title: "乘船前往亞斯文", startTime: "08:00", category: "transport", location: "盧克索碼頭", sortOrder: 0 });
+    await db.addActivity({ dayId: dayIds[5], tripId, title: "菲萊神廟", startTime: "15:00", category: "attraction", location: "亞斯文", sortOrder: 1 });
+    await db.addActivity({ dayId: dayIds[5], tripId, title: "亞斯文大壩", startTime: "17:00", category: "attraction", location: "亞斯文", sortOrder: 2 });
 
-    return { alreadyExists: false, tripId: trip.id };
+    // Day 7 activities
+    await db.addActivity({ dayId: dayIds[6], tripId, title: "乘車前往阿布辛貝", startTime: "04:00", category: "transport", location: "亞斯文", sortOrder: 0 });
+    await db.addActivity({ dayId: dayIds[6], tripId, title: "阿布辛貝神廟 (拉美西斯二世)", startTime: "07:00", category: "attraction", location: "阿布辛貝", notes: "UNESCO世界遺產", sortOrder: 1 });
+    await db.addActivity({ dayId: dayIds[6], tripId, title: "返回亞斯文", startTime: "13:00", category: "transport", location: "阿布辛貝", sortOrder: 2 });
+
+    // Day 8 activities
+    await db.addActivity({ dayId: dayIds[7], tripId, title: "亞斯文機場出發", startTime: "08:00", category: "transport", location: "亞斯文機場", sortOrder: 0 });
+    await db.addActivity({ dayId: dayIds[7], tripId, title: "抵達香港", startTime: "22:00", category: "transport", location: "香港國際機場", sortOrder: 1 });
+
+    // Expenses
+    await db.addExpense({ tripId, title: "來回機票 (HKG-CAI)", amount: "8500", currency: "HKD", category: "transport", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-10"), notes: "Cathay Pacific" });
+    await db.addExpense({ tripId, title: "Kempinski Hotel (4晚)", amount: "12000", currency: "HKD", category: "accommodation", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-10") });
+    await db.addExpense({ tripId, title: "金字塔門票", amount: "540", currency: "EGP", category: "attraction", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-11") });
+    await db.addExpense({ tripId, title: "埃及博物館門票", amount: "300", currency: "EGP", category: "attraction", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-12") });
+    await db.addExpense({ tripId, title: "開羅-盧克索火車票", amount: "450", currency: "EGP", category: "transport", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-13") });
+    await db.addExpense({ tripId, title: "帝王谷門票", amount: "480", currency: "EGP", category: "attraction", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-14") });
+    await db.addExpense({ tripId, title: "阿布辛貝門票", amount: "600", currency: "EGP", category: "attraction", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-16") });
+    await db.addExpense({ tripId, title: "餐飲費用 (8天)", amount: "3200", currency: "HKD", category: "food", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-10") });
+
+    // Map pins
+    await db.addMapPin({ tripId, title: "吉薩大金字塔", lat: "29.9792", lng: "31.1342", type: "attraction", description: "世界七大奇觀" });
+    await db.addMapPin({ tripId, title: "埃及國家博物館", lat: "30.0478", lng: "31.2336", type: "attraction", description: "圖坦卡蒙黃金面具" });
+    await db.addMapPin({ tripId, title: "Kempinski Nile Hotel", lat: "30.0511", lng: "31.2357", type: "hotel", description: "5星級酒店" });
+    await db.addMapPin({ tripId, title: "Khan el-Khalili 市集", lat: "30.0478", lng: "31.2625", type: "attraction", description: "傳統市集" });
+    await db.addMapPin({ tripId, title: "卡納克神廟", lat: "25.7188", lng: "32.6573", type: "attraction", description: "古埃及最大神廟群" });
+    await db.addMapPin({ tripId, title: "帝王谷", lat: "25.7402", lng: "32.6014", type: "attraction", description: "法老陵墓群" });
+    await db.addMapPin({ tripId, title: "阿布辛貝神廟", lat: "22.3372", lng: "31.6258", type: "attraction", description: "拉美西斯二世神廟" });
+    await db.addMapPin({ tripId, title: "菲萊神廟", lat: "24.0246", lng: "32.8838", type: "attraction", description: "伊西斯神廟" });
+
+    // Flights
+    await db.addFlight({ tripId, type: "outbound", airline: "Cathay Pacific", flightNumber: "CX701", departureAirport: "HKG", arrivalAirport: "CAI", departureDate: "2026-03-10", departureTime: "06:00", arrivalDate: "2026-03-10", arrivalTime: "13:30", bookingRef: "CX-EGY-2026" });
+    await db.addFlight({ tripId, type: "return", airline: "Cathay Pacific", flightNumber: "CX702", departureAirport: "ASW", arrivalAirport: "HKG", departureDate: "2026-03-17", departureTime: "08:00", arrivalDate: "2026-03-17", arrivalTime: "22:00", bookingRef: "CX-EGY-2026" });
+
+    // Accommodations
+    await db.addAccommodation({ tripId, name: "Kempinski Nile Hotel Cairo", address: "Corniche El Nil, Garden City, Cairo", checkIn: new Date("2026-03-10T15:00:00"), checkOut: new Date("2026-03-13T12:00:00"), confirmationNumber: "KMP-2026-001", notes: "尼羅河景觀房" });
+    await db.addAccommodation({ tripId, name: "Sofitel Winter Palace Luxor", address: "Corniche El Nile, Luxor", checkIn: new Date("2026-03-13T14:00:00"), checkOut: new Date("2026-03-15T12:00:00"), confirmationNumber: "SFL-2026-002", notes: "歷史宮殿酒店" });
+    await db.addAccommodation({ tripId, name: "Movenpick Resort Aswan", address: "Elephantine Island, Aswan", checkIn: new Date("2026-03-15T14:00:00"), checkOut: new Date("2026-03-17T08:00:00"), confirmationNumber: "MVP-2026-003", notes: "島嶼度假村" });
+
+    return { alreadyExists: false, tripId };
   }),
 });
 
@@ -246,24 +221,50 @@ const membersRouter = router({
   list: protectedProcedure
     .input(z.object({ tripId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role) throw new Error("Access denied");
-      return db.getTripMembers(input.tripId);
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership) throw new Error("Access denied");
+      const members = await db.getTripMembers(input.tripId);
+      return members.map(m => ({
+        id: m.member.id,
+        userId: m.member.userId,
+        role: m.member.role,
+        displayName: m.member.displayName ?? m.user?.name ?? "Unknown",
+        email: m.member.email ?? m.user?.email ?? null,
+        joinedAt: m.member.joinedAt,
+      }));
     }),
 
   add: protectedProcedure
     .input(z.object({
       tripId: z.number(),
-      name: z.string().min(1),
+      displayName: z.string().min(1),
       email: z.string().email().optional(),
-      role: z.enum(["owner", "editor", "viewer"]).default("viewer"),
+      role: z.enum(["editor", "viewer"]).default("viewer"),
     }))
     .mutation(async ({ ctx, input }) => {
-      const myRole = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!myRole || myRole === "viewer") throw new Error("Permission denied");
-      const member = await db.addTripMember({ ...input });
-      await db.notifyTripMembers(input.tripId, ctx.user.id, "member_joined", "新成員加入", `${input.name} 已加入行程`);
-      return member;
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      const memberId = await db.addTripMember({
+        tripId: input.tripId,
+        userId: ctx.user.id, // placeholder - in real app would look up by email
+        role: input.role,
+        displayName: input.displayName,
+        email: input.email ?? null,
+      });
+      // Notify existing members
+      const members = await db.getTripMembers(input.tripId);
+      for (const m of members) {
+        if (m.member.userId !== ctx.user.id && m.member.userId) {
+          await db.addNotification({
+            tripId: input.tripId,
+            userId: m.member.userId,
+            type: "member_joined",
+            title: "新成員加入",
+            message: `${input.displayName} 加入了行程`,
+          });
+        }
+      }
+      return { memberId };
     }),
 
   updateRole: protectedProcedure
@@ -273,19 +274,20 @@ const membersRouter = router({
       role: z.enum(["owner", "editor", "viewer"]),
     }))
     .mutation(async ({ ctx, input }) => {
-      const myRole = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (myRole !== "owner") throw new Error("Only owner can change roles");
-      await db.updateTripMember(input.memberId, { role: input.role });
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role !== "owner") throw new Error("Only owner can change roles");
+      await db.updateMemberRole(input.memberId, input.role);
       return { success: true };
     }),
 
   remove: protectedProcedure
     .input(z.object({ memberId: z.number(), tripId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const myRole = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!myRole || myRole === "viewer") throw new Error("Permission denied");
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || (membership.role !== "owner" && membership.id !== input.memberId)) {
+        throw new Error("Permission denied");
+      }
       await db.removeTripMember(input.memberId);
-      await db.notifyTripMembers(input.tripId, ctx.user.id, "member_left", "成員已離開", "一位成員已離開行程");
       return { success: true };
     }),
 });
@@ -295,31 +297,9 @@ const itineraryRouter = router({
   getDays: protectedProcedure
     .input(z.object({ tripId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role) throw new Error("Access denied");
-      const days = await db.getItineraryDays(input.tripId);
-      const result = await Promise.all(
-        days.map(async (day) => ({
-          ...day,
-          activities: await db.getActivitiesByDay(day.id),
-        }))
-      );
-      return result;
-    }),
-
-  updateDay: protectedProcedure
-    .input(z.object({
-      dayId: z.number(),
-      tripId: z.number(),
-      title: z.string().optional(),
-      notes: z.string().optional(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role || role === "viewer") throw new Error("Permission denied");
-      const { dayId, tripId, ...data } = input;
-      await db.updateItineraryDay(dayId, data);
-      return { success: true };
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership) throw new Error("Access denied");
+      return db.getItineraryDays(input.tripId);
     }),
 
   addActivity: protectedProcedure
@@ -330,18 +310,42 @@ const itineraryRouter = router({
       location: z.string().optional(),
       startTime: z.string().optional(),
       endTime: z.string().optional(),
+      category: z.enum(["transport", "food", "attraction", "hotel", "shopping", "other"]).default("other"),
       notes: z.string().optional(),
-      category: z.enum(["transport", "accommodation", "food", "attraction", "shopping", "other"]).default("other"),
+      cost: z.string().optional(),
+      currency: z.string().optional(),
       sortOrder: z.number().default(0),
-      lat: z.string().optional(),
-      lng: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role || role === "viewer") throw new Error("Permission denied");
-      const activity = await db.createActivity(input);
-      await db.notifyTripMembers(input.tripId, ctx.user.id, "itinerary_updated", "行程已更新", `${ctx.user.name ?? "成員"} 新增了活動：${input.title}`);
-      return activity;
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      const actId = await db.addActivity({
+        dayId: input.dayId,
+        tripId: input.tripId,
+        title: input.title,
+        location: input.location ?? null,
+        startTime: input.startTime ?? null,
+        endTime: input.endTime ?? null,
+        category: input.category,
+        notes: input.notes ?? null,
+        cost: input.cost ?? null,
+        currency: input.currency ?? null,
+        sortOrder: input.sortOrder,
+      });
+      // Notify members
+      const members = await db.getTripMembers(input.tripId);
+      for (const m of members) {
+        if (m.member.userId !== ctx.user.id && m.member.userId) {
+          await db.addNotification({
+            tripId: input.tripId,
+            userId: m.member.userId,
+            type: "itinerary_updated",
+            title: "行程已更新",
+            message: `${ctx.user.name ?? "成員"} 新增了活動：${input.title}`,
+          });
+        }
+      }
+      return { activityId: actId };
     }),
 
   updateActivity: protectedProcedure
@@ -352,14 +356,16 @@ const itineraryRouter = router({
       location: z.string().optional(),
       startTime: z.string().optional(),
       endTime: z.string().optional(),
+      category: z.enum(["transport", "food", "attraction", "hotel", "shopping", "other"]).optional(),
       notes: z.string().optional(),
-      category: z.enum(["transport", "accommodation", "food", "attraction", "shopping", "other"]).optional(),
+      cost: z.string().optional(),
+      currency: z.string().optional(),
       sortOrder: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role || role === "viewer") throw new Error("Permission denied");
       const { activityId, tripId, ...data } = input;
+      const membership = await db.getUserMembership(tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
       await db.updateActivity(activityId, data);
       return { success: true };
     }),
@@ -367,8 +373,8 @@ const itineraryRouter = router({
   deleteActivity: protectedProcedure
     .input(z.object({ activityId: z.number(), tripId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role || role === "viewer") throw new Error("Permission denied");
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
       await db.deleteActivity(input.activityId);
       return { success: true };
     }),
@@ -379,8 +385,8 @@ const expensesRouter = router({
   list: protectedProcedure
     .input(z.object({ tripId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role) throw new Error("Access denied");
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership) throw new Error("Access denied");
       return db.getTripExpenses(input.tripId);
     }),
 
@@ -390,46 +396,46 @@ const expensesRouter = router({
       title: z.string().min(1),
       amount: z.string(),
       currency: z.string(),
-      category: z.enum(["transport", "accommodation", "food", "attraction", "shopping", "other"]).default("other"),
+      category: z.enum(["transport", "food", "accommodation", "attraction", "shopping", "other"]).default("other"),
       paidByName: z.string().optional(),
-      paidBy: z.number().optional(),
-      splitAmong: z.array(z.number()).default([]),
       date: z.string(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role || role === "viewer") throw new Error("Permission denied");
-      const expense = await db.createExpense(input);
-      await db.notifyTripMembers(input.tripId, ctx.user.id, "expense_added", "新增費用", `${ctx.user.name ?? "成員"} 新增了費用：${input.title} (${input.amount} ${input.currency})`);
-      return expense;
-    }),
-
-  update: protectedProcedure
-    .input(z.object({
-      expenseId: z.number(),
-      tripId: z.number(),
-      title: z.string().optional(),
-      amount: z.string().optional(),
-      currency: z.string().optional(),
-      category: z.enum(["transport", "accommodation", "food", "attraction", "shopping", "other"]).optional(),
-      paidByName: z.string().optional(),
-      date: z.string().optional(),
-      notes: z.string().optional(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role || role === "viewer") throw new Error("Permission denied");
-      const { expenseId, tripId, ...data } = input;
-      await db.updateExpense(expenseId, data);
-      return { success: true };
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      const expId = await db.addExpense({
+        tripId: input.tripId,
+        title: input.title,
+        amount: input.amount,
+        currency: input.currency,
+        category: input.category,
+        paidBy: ctx.user.id,
+        paidByName: input.paidByName ?? ctx.user.name ?? null,
+        date: new Date(input.date),
+        notes: input.notes ?? null,
+      });
+      // Notify members
+      const members = await db.getTripMembers(input.tripId);
+      for (const m of members) {
+        if (m.member.userId !== ctx.user.id && m.member.userId) {
+          await db.addNotification({
+            tripId: input.tripId,
+            userId: m.member.userId,
+            type: "expense_added",
+            title: "新增費用",
+            message: `${ctx.user.name ?? "成員"} 新增了費用：${input.title} ${input.amount} ${input.currency}`,
+          });
+        }
+      }
+      return { expenseId: expId };
     }),
 
   delete: protectedProcedure
     .input(z.object({ expenseId: z.number(), tripId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role || role === "viewer") throw new Error("Permission denied");
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
       await db.deleteExpense(input.expenseId);
       return { success: true };
     }),
@@ -440,8 +446,8 @@ const mapRouter = router({
   getPins: protectedProcedure
     .input(z.object({ tripId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role) throw new Error("Access denied");
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership) throw new Error("Access denied");
       return db.getMapPins(input.tripId);
     }),
 
@@ -453,34 +459,28 @@ const mapRouter = router({
       lat: z.string(),
       lng: z.string(),
       type: z.enum(["attraction", "hotel", "restaurant", "transport", "other"]).default("attraction"),
+      address: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role || role === "viewer") throw new Error("Permission denied");
-      return db.createMapPin(input);
-    }),
-
-  updatePin: protectedProcedure
-    .input(z.object({
-      pinId: z.number(),
-      tripId: z.number(),
-      title: z.string().optional(),
-      description: z.string().optional(),
-      type: z.enum(["attraction", "hotel", "restaurant", "transport", "other"]).optional(),
-    }))
-    .mutation(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role || role === "viewer") throw new Error("Permission denied");
-      const { pinId, tripId, ...data } = input;
-      await db.updateMapPin(pinId, data);
-      return { success: true };
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      const pinId = await db.addMapPin({
+        tripId: input.tripId,
+        title: input.title,
+        description: input.description ?? null,
+        lat: input.lat,
+        lng: input.lng,
+        type: input.type,
+        address: input.address ?? null,
+      });
+      return { pinId };
     }),
 
   deletePin: protectedProcedure
     .input(z.object({ pinId: z.number(), tripId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role || role === "viewer") throw new Error("Permission denied");
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
       await db.deleteMapPin(input.pinId);
       return { success: true };
     }),
@@ -491,36 +491,51 @@ const flightsRouter = router({
   list: protectedProcedure
     .input(z.object({ tripId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role) throw new Error("Access denied");
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership) throw new Error("Access denied");
       return db.getTripFlights(input.tripId);
     }),
 
   add: protectedProcedure
     .input(z.object({
       tripId: z.number(),
-      flightNumber: z.string().min(1),
+      type: z.enum(["outbound", "return", "connecting"]).default("outbound"),
       airline: z.string().optional(),
-      departureAirport: z.string().min(1),
-      arrivalAirport: z.string().min(1),
+      flightNumber: z.string().optional(),
+      departureAirport: z.string().optional(),
+      arrivalAirport: z.string().optional(),
       departureTime: z.string().optional(),
       arrivalTime: z.string().optional(),
       departureDate: z.string().optional(),
       arrivalDate: z.string().optional(),
-      type: z.enum(["outbound", "return", "connecting"]).default("outbound"),
+      bookingRef: z.string().optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role || role === "viewer") throw new Error("Permission denied");
-      return db.createFlight({ ...input, isReturn: input.type === "return" });
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      const flightId = await db.addFlight({
+        tripId: input.tripId,
+        type: input.type,
+        airline: input.airline ?? null,
+        flightNumber: input.flightNumber ?? null,
+        departureAirport: input.departureAirport ?? null,
+        arrivalAirport: input.arrivalAirport ?? null,
+        departureTime: input.departureTime ?? null,
+        arrivalTime: input.arrivalTime ?? null,
+        departureDate: input.departureDate ?? null,
+        arrivalDate: input.arrivalDate ?? null,
+        bookingRef: input.bookingRef ?? null,
+        notes: input.notes ?? null,
+      });
+      return { flightId };
     }),
 
   delete: protectedProcedure
     .input(z.object({ flightId: z.number(), tripId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role || role === "viewer") throw new Error("Permission denied");
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
       await db.deleteFlight(input.flightId);
       return { success: true };
     }),
@@ -531,8 +546,8 @@ const hotelsRouter = router({
   list: protectedProcedure
     .input(z.object({ tripId: z.number() }))
     .query(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role) throw new Error("Access denied");
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership) throw new Error("Access denied");
       return db.getTripAccommodations(input.tripId);
     }),
 
@@ -541,121 +556,35 @@ const hotelsRouter = router({
       tripId: z.number(),
       name: z.string().min(1),
       address: z.string().optional(),
-      checkIn: z.string().min(1),
-      checkOut: z.string().min(1),
+      checkIn: z.string().optional(),
+      checkOut: z.string().optional(),
+      bookingRef: z.string().optional(),
       confirmationNumber: z.string().optional(),
       notes: z.string().optional(),
-      lat: z.string().optional(),
-      lng: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role || role === "viewer") throw new Error("Permission denied");
-      return db.createAccommodation(input);
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      const accId = await db.addAccommodation({
+        tripId: input.tripId,
+        name: input.name,
+        address: input.address ?? null,
+        checkIn: input.checkIn ? new Date(input.checkIn) : null,
+        checkOut: input.checkOut ? new Date(input.checkOut) : null,
+        bookingRef: input.bookingRef ?? null,
+        confirmationNumber: input.confirmationNumber ?? null,
+        notes: input.notes ?? null,
+      });
+      return { accId };
     }),
 
   delete: protectedProcedure
-    .input(z.object({ hotelId: z.number(), tripId: z.number() }))
+    .input(z.object({ accId: z.number(), tripId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      const role = await db.getUserTripRole(input.tripId, ctx.user.id);
-      if (!role || role === "viewer") throw new Error("Permission denied");
-      await db.deleteAccommodation(input.hotelId);
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      await db.deleteAccommodation(input.accId);
       return { success: true };
-    }),
-});
-
-// ─── AI Router ────────────────────────────────────────────────────────────────
-const aiRouter = router({
-  suggestActivities: protectedProcedure
-    .input(z.object({
-      destination: z.string(),
-      date: z.string(),
-      dayNumber: z.number(),
-      existingActivities: z.array(z.string()).default([]),
-    }))
-    .mutation(async ({ input }) => {
-      const response = await invokeLLM({
-        messages: [
-          {
-            role: "system",
-            content: `你是一位專業旅遊規劃師，精通全球旅遊目的地。請用繁體中文回應，提供具體、實用的旅遊建議。`,
-          },
-          {
-            role: "user",
-            content: `目的地：${input.destination}
-日期：${input.date}（第 ${input.dayNumber} 天）
-已有活動：${input.existingActivities.join(", ") || "無"}
-
-請推薦 5 個適合這天的活動，包括景點、餐廳或體驗。每個活動請提供：
-1. 活動名稱
-2. 建議時間（開始-結束）
-3. 地點
-4. 類別（transport/accommodation/food/attraction/shopping/other）
-5. 簡短說明（1-2句）
-
-以 JSON 陣列格式回應，每個物件包含 title, startTime, endTime, location, category, notes 欄位。`,
-          },
-        ],
-        response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "activity_suggestions",
-            strict: true,
-            schema: {
-              type: "object",
-              properties: {
-                activities: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      title: { type: "string" },
-                      startTime: { type: "string" },
-                      endTime: { type: "string" },
-                      location: { type: "string" },
-                      category: { type: "string" },
-                      notes: { type: "string" },
-                    },
-                    required: ["title", "startTime", "endTime", "location", "category", "notes"],
-                    additionalProperties: false,
-                  },
-                },
-              },
-              required: ["activities"],
-              additionalProperties: false,
-            },
-          },
-        },
-      });
-      const content = response.choices[0]?.message?.content;
-      if (typeof content !== "string") return { activities: [] };
-      if (!content) return { activities: [] };
-      try {
-        const parsed = JSON.parse(content);
-        return parsed;
-      } catch {
-        return { activities: [] };
-      }
-    }),
-
-  chat: protectedProcedure
-    .input(z.object({
-      message: z.string(),
-      destination: z.string().optional(),
-      context: z.string().optional(),
-    }))
-    .mutation(async ({ input }) => {
-      const response = await invokeLLM({
-        messages: [
-          {
-            role: "system",
-            content: `你是 WanderPlan 的 AI 旅遊助手，專門幫助用戶規劃旅行。請用繁體中文回應，提供具體、實用的建議。${input.destination ? `目前規劃目的地：${input.destination}。` : ""}${input.context ? `行程背景：${input.context}` : ""}`,
-          },
-          { role: "user", content: input.message },
-        ],
-      });
-      const replyContent = response.choices[0]?.message?.content;
-      return { reply: typeof replyContent === "string" ? replyContent : "抱歉，我暫時無法回應。" };
     }),
 });
 
@@ -666,20 +595,213 @@ const notificationsRouter = router({
   }),
 
   unreadCount: protectedProcedure.query(async ({ ctx }) => {
-    return db.getUnreadNotificationCount(ctx.user.id);
+    const count = await db.getUnreadCount(ctx.user.id);
+    return { count };
   }),
 
-  markRead: protectedProcedure.mutation(async ({ ctx }) => {
-    await db.markNotificationsRead(ctx.user.id);
+  markRead: protectedProcedure
+    .input(z.object({ notifId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.markNotificationRead(input.notifId);
+      return { success: true };
+    }),
+
+  markAllRead: protectedProcedure.mutation(async ({ ctx }) => {
+    await db.markAllNotificationsRead(ctx.user.id);
     return { success: true };
   }),
+});
+
+// ─── Travel History Router ────────────────────────────────────────────────────
+const travelHistoryRouter = router({
+  getCountries: protectedProcedure.query(async ({ ctx }) => {
+    return db.getVisitedCountries(ctx.user.id);
+  }),
+
+  upsertCountry: protectedProcedure
+    .input(z.object({
+      countryCode: z.string().min(2).max(3),
+      countryName: z.string().min(1),
+      status: z.enum(["visited", "planned", "wishlist"]),
+      visitedAt: z.string().optional(),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      await db.upsertVisitedCountry({
+        userId: ctx.user.id,
+        countryCode: input.countryCode,
+        countryName: input.countryName,
+        status: input.status,
+        visitedAt: input.visitedAt ? new Date(input.visitedAt) : null,
+        notes: input.notes ?? null,
+      });
+      return { success: true };
+    }),
+
+  removeCountry: protectedProcedure
+    .input(z.object({ countryCode: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.removeVisitedCountry(ctx.user.id, input.countryCode);
+      return { success: true };
+    }),
+});
+
+// ─── Flight Passport Router ───────────────────────────────────────────────────
+const passportRouter = router({
+  getFlights: protectedProcedure.query(async ({ ctx }) => {
+    return db.getPastFlights(ctx.user.id);
+  }),
+
+  addFlight: protectedProcedure
+    .input(z.object({
+      flightNumber: z.string().optional(),
+      airline: z.string().optional(),
+      airlineCode: z.string().optional(),
+      departureAirport: z.string().min(2),
+      departureCity: z.string().optional(),
+      departureCountry: z.string().optional(),
+      departureLat: z.string().optional(),
+      departureLng: z.string().optional(),
+      arrivalAirport: z.string().min(2),
+      arrivalCity: z.string().optional(),
+      arrivalCountry: z.string().optional(),
+      arrivalLat: z.string().optional(),
+      arrivalLng: z.string().optional(),
+      flightDate: z.string(),
+      durationMinutes: z.number().optional(),
+      distanceKm: z.number().optional(),
+      seatClass: z.enum(["economy", "premium_economy", "business", "first"]).default("economy"),
+      notes: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const flightDate = new Date(input.flightDate);
+      const flightId = await db.addPastFlight({
+        userId: ctx.user.id,
+        flightNumber: input.flightNumber ?? null,
+        airline: input.airline ?? null,
+        airlineCode: input.airlineCode ?? null,
+        departureAirport: input.departureAirport,
+        departureCity: input.departureCity ?? null,
+        departureCountry: input.departureCountry ?? null,
+        departureLat: input.departureLat ?? null,
+        departureLng: input.departureLng ?? null,
+        arrivalAirport: input.arrivalAirport,
+        arrivalCity: input.arrivalCity ?? null,
+        arrivalCountry: input.arrivalCountry ?? null,
+        arrivalLat: input.arrivalLat ?? null,
+        arrivalLng: input.arrivalLng ?? null,
+        flightDate,
+        flightYear: flightDate.getFullYear(),
+        durationMinutes: input.durationMinutes ?? null,
+        distanceKm: input.distanceKm ?? null,
+        seatClass: input.seatClass,
+        notes: input.notes ?? null,
+      });
+      return { flightId };
+    }),
+
+  deleteFlight: protectedProcedure
+    .input(z.object({ flightId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      await db.deletePastFlight(input.flightId);
+      return { success: true };
+    }),
+});
+
+// ─── AI Router ────────────────────────────────────────────────────────────────
+const aiRouter = router({
+  chat: protectedProcedure
+    .input(z.object({
+      messages: z.array(z.object({
+        role: z.enum(["user", "assistant"]),
+        content: z.string(),
+      })),
+      tripContext: z.object({
+        destination: z.string(),
+        startDate: z.string(),
+        endDate: z.string(),
+      }).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const systemPrompt = input.tripContext
+        ? `你是一個專業的旅行助手。目前正在規劃前往 ${input.tripContext.destination} 的旅行，日期為 ${input.tripContext.startDate} 至 ${input.tripContext.endDate}。請用繁體中文回答，提供實用的旅行建議。`
+        : "你是一個專業的旅行助手。請用繁體中文回答，提供實用的旅行建議。";
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: systemPrompt },
+          ...input.messages.map(m => ({ role: m.role as "user" | "assistant", content: m.content })),
+        ],
+      });
+      const content = response.choices[0]?.message?.content;
+      return { reply: typeof content === "string" ? content : "抱歉，無法生成回覆。" };
+    }),
+
+  suggestActivities: protectedProcedure
+    .input(z.object({
+      destination: z.string(),
+      date: z.string(),
+      dayNumber: z.number(),
+      existingActivities: z.array(z.string()).optional(),
+    }))
+    .mutation(async ({ input }) => {
+      const response = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: "你是一個旅行規劃專家。請根據目的地和日期，建議5個適合的旅行活動。以JSON格式回覆，格式為：{\"activities\": [{\"title\": \"活動名稱\", \"location\": \"地點\", \"startTime\": \"09:00\", \"category\": \"attraction\", \"notes\": \"簡短說明\"}]}。category只能是: transport, food, attraction, hotel, shopping, other。"
+          },
+          {
+            role: "user",
+            content: `目的地: ${input.destination}\n日期: ${input.date} (第${input.dayNumber}天)\n${input.existingActivities?.length ? `已有活動: ${input.existingActivities.join(", ")}` : ""}\n請建議5個適合的活動。`
+          }
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: {
+            name: "activities_suggestion",
+            strict: true,
+            schema: {
+              type: "object",
+              properties: {
+                activities: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: {
+                      title: { type: "string" },
+                      location: { type: "string" },
+                      startTime: { type: "string" },
+                      category: { type: "string" },
+                      notes: { type: "string" },
+                    },
+                    required: ["title", "location", "startTime", "category", "notes"],
+                    additionalProperties: false,
+                  }
+                }
+              },
+              required: ["activities"],
+              additionalProperties: false,
+            }
+          }
+        }
+      });
+      const content = response.choices[0]?.message?.content;
+      const contentStr = typeof content === "string" ? content : JSON.stringify(content);
+      try {
+        const parsed = JSON.parse(contentStr);
+        return parsed as { activities: Array<{ title: string; location: string; startTime: string; category: string; notes: string }> };
+      } catch {
+        return { activities: [] };
+      }
+    }),
 });
 
 // ─── App Router ───────────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
   auth: router({
-    me: publicProcedure.query((opts) => opts.ctx.user),
+    me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
@@ -693,8 +815,10 @@ export const appRouter = router({
   map: mapRouter,
   flights: flightsRouter,
   hotels: hotelsRouter,
-  ai: aiRouter,
   notifications: notificationsRouter,
+  travelHistory: travelHistoryRouter,
+  passport: passportRouter,
+  ai: aiRouter,
 });
 
 export type AppRouter = typeof appRouter;

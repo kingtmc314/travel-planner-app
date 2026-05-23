@@ -41,7 +41,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
 
   const handleAdd = () => {
     if (!form.title || !form.amount) { toast.error("請填寫必填欄位"); return; }
-    addExpense.mutate({ tripId, ...form, category: form.category as "transport" | "accommodation" | "food" | "attraction" | "shopping" | "other", splitAmong: [] });
+    addExpense.mutate({ tripId, ...form, category: form.category as "transport" | "accommodation" | "food" | "attraction" | "shopping" | "other"});
   };
 
   // Stats
@@ -151,7 +151,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-medium" style={{background:`${cat?.color}20`, color: cat?.color}}>{cat?.label}</span>
                   </div>
                   <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground">
-                    <span>{expense.date}</span>
+                    <span>{expense.date instanceof Date ? expense.date.toLocaleDateString() : String(expense.date)}</span>
                     {expense.paidByName && <><span>·</span><span>由 {expense.paidByName} 付款</span></>}
                   </div>
                 </div>

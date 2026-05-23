@@ -55,3 +55,16 @@
 - [x] Auth tests (me, logout)
 - [x] Protected procedure authorization tests (all routers)
 - [x] 15/15 tests passing
+
+## Bug Fixes
+- [ ] Fix OAuth callback failed on published domain (MySQL schema mismatch with postgres driver)
+
+## New Features
+- [ ] Travel History page: world SVG map with visited/planned/wishlist countries (Mark O'Travel style)
+- [ ] Travel History: country count stats (e.g. 42/203 visited), coloured map regions
+- [ ] Travel History: add/remove countries with status (visited/planned/wishlist)
+- [ ] Flight Passport page: personal stats (total flights, distance km, flight time, airports, airlines)
+- [ ] Flight Passport: year-by-year breakdown tabs (All-Time, 2026, 2025, 2024...)
+- [ ] Flight Passport: flight route lines on map/globe
+- [ ] Wire both new pages into sidebar/bottom navigation
+- [ ] Add DB tables: visited_countries, past_flights
