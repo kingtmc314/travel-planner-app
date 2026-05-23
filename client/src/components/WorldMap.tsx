@@ -52,11 +52,44 @@ const COUNTRY_NAMES: Record<string, string> = {
 
 type CountryStatus = "visited" | "planned" | "wishlist";
 
+export interface FlightRoute {
+  dep: string; // IATA code e.g. "HKG"
+  arr: string; // IATA code e.g. "NRT"
+  label?: string;
+}
+
 interface WorldMapProps {
   visitedCountries: Array<{ countryCode: string; status: CountryStatus }>;
+  flightRoutes?: FlightRoute[];
   onCountryClick?: (code: string, name: string) => void;
   className?: string;
 }
+
+// IATA code → [lat, lng] for arc drawing
+const IATA_COORDS: Record<string, [number, number]> = {
+  HKG: [22.308, 113.915], NRT: [35.765, 140.386], ICN: [37.469, 126.451],
+  LHR: [51.477, -0.461], CDG: [49.013, 2.550], JFK: [40.640, -73.779],
+  LAX: [33.943, -118.408], SYD: [-33.946, 151.177], SIN: [1.350, 103.994],
+  BKK: [13.681, 100.747], DXB: [25.253, 55.365], TPE: [25.077, 121.233],
+  PEK: [40.080, 116.584], PVG: [31.143, 121.805], CAN: [23.392, 113.299],
+  KIX: [34.427, 135.244], FUK: [33.585, 130.451], OKA: [26.195, 127.646],
+  MNL: [14.509, 121.020], KUL: [2.745, 101.710], CGK: [-6.126, 106.656],
+  DEL: [28.556, 77.100], BOM: [19.089, 72.868], LOS: [6.577, 3.321],
+  CAI: [30.122, 31.406], JNB: [-26.134, 28.242], NBO: [-1.319, 36.928],
+  GRU: [-23.435, -46.473], EZE: [-34.822, -58.536], MEX: [19.436, -99.072],
+  YYZ: [43.677, -79.631], ORD: [41.978, -87.905], MIA: [25.796, -80.287],
+  SFO: [37.619, -122.375], SEA: [47.450, -122.309], ATL: [33.641, -84.427],
+  FCO: [41.800, 12.239], MAD: [40.494, -3.567], BCN: [41.297, 2.078],
+  AMS: [52.308, 4.764], FRA: [50.033, 8.571], MUC: [48.354, 11.786],
+  ZRH: [47.458, 8.548], VIE: [48.110, 16.570], CPH: [55.618, 12.656],
+  ARN: [59.651, 17.919], HEL: [60.317, 24.963], DUB: [53.421, -6.270],
+  IST: [40.976, 28.814], DOH: [25.273, 51.608], AUH: [24.433, 54.651],
+  LXR: [25.671, 32.706], ASW: [23.964, 32.820], HRG: [27.178, 33.799],
+  CTS: [42.775, 141.692], NGO: [34.858, 136.805], HIJ: [34.436, 132.919],
+  SGN: [10.819, 106.652], HAN: [21.221, 105.807], RGN: [16.907, 96.133],
+  CMB: [7.180, 79.885], MLE: [4.192, 73.529], REP: [13.411, 103.813],
+  GVA: [46.238, 6.109], LIS: [38.774, -9.134], ATH: [37.936, 23.944],
+};
 
 const STATUS_COLORS: Record<CountryStatus, string> = {
   visited: "#22c55e",
@@ -70,7 +103,7 @@ const STATUS_LABELS: Record<CountryStatus, string> = {
   wishlist: "心願清單",
 };
 
-export default function WorldMap({ visitedCountries, onCountryClick, className = "" }: WorldMapProps) {
+export default function WorldMap({ visitedCountries, flightRoutes = [], onCountryClick, className = "" }: WorldMapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [tooltip, setTooltip] = useState<{ x: number; y: number; name: string; status?: CountryStatus } | null>(null);
   const [geoData, setGeoData] = useState<any>(null);
@@ -217,6 +250,43 @@ export default function WorldMap({ visitedCountries, onCountryClick, className =
             stroke="oklch(0.28 0.02 240)"
             strokeWidth={0.5 / transform.scale}
           />
+
+          {/* Flight route arcs */}
+          {flightRoutes.map((route, i) => {
+            const depCoord = IATA_COORDS[route.dep?.toUpperCase()];
+            const arrCoord = IATA_COORDS[route.arr?.toUpperCase()];
+            if (!depCoord || !arrCoord) return null;
+            const p1 = projection([depCoord[1], depCoord[0]]);
+            const p2 = projection([arrCoord[1], arrCoord[0]]);
+            if (!p1 || !p2) return null;
+            // Quadratic bezier arc: control point lifted above midpoint
+            const mx = (p1[0] + p2[0]) / 2;
+            const my = (p1[1] + p2[1]) / 2;
+            const dx = p2[0] - p1[0];
+            const dy = p2[1] - p1[1];
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            const lift = Math.min(dist * 0.35, 80);
+            // Perpendicular offset for arc curvature
+            const nx = -dy / dist;
+            const ny = dx / dist;
+            const cx = mx + nx * lift;
+            const cy = my + ny * lift;
+            return (
+              <g key={i}>
+                <path
+                  d={`M ${p1[0]} ${p1[1]} Q ${cx} ${cy} ${p2[0]} ${p2[1]}`}
+                  fill="none"
+                  stroke="rgba(125,211,252,0.35)"
+                  strokeWidth={1.2 / transform.scale}
+                  strokeLinecap="round"
+                />
+                {/* Departure dot */}
+                <circle cx={p1[0]} cy={p1[1]} r={2.5 / transform.scale} fill="#7dd3fc" opacity={0.8} />
+                {/* Arrival dot */}
+                <circle cx={p2[0]} cy={p2[1]} r={2.5 / transform.scale} fill="#7dd3fc" opacity={0.8} />
+              </g>
+            );
+          })}
         </g>
       </svg>
 

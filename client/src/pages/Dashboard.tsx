@@ -126,14 +126,6 @@ export default function Dashboard() {
     enabled: !!user,
     refetchInterval: 30000,
   });
-  const importDemo = trpc.trips.importDemo.useMutation({
-    onSuccess: (data) => {
-      if (!data.alreadyExists) {
-        toast.success("已匯入埃及示範行程！");
-        refetch();
-      }
-    },
-  });
   const updateTrip = trpc.trips.update.useMutation({
     onSuccess: () => { toast.success("行程已更新"); setEditingTrip(null); refetch(); },
     onError: () => toast.error("更新失敗"),
@@ -152,13 +144,6 @@ export default function Dashboard() {
     },
     onError: () => toast.error("建立失敗，請重試"),
   });
-
-  // Auto-import demo on first load
-  useEffect(() => {
-    if (user && trips && trips.length === 0) {
-      importDemo.mutate();
-    }
-  }, [user, trips]);
 
   if (authLoading) {
     return (
@@ -388,9 +373,12 @@ export default function Dashboard() {
             <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-6">
               <Sparkles className="w-10 h-10 text-primary" />
             </div>
-            <h3 className="text-xl font-semibold text-foreground mb-2">正在準備示範行程...</h3>
-            <p className="text-muted-foreground mb-6">我們正在為你匯入埃及示範行程</p>
-            <Loader2 className="w-6 h-6 text-primary animate-spin" />
+            <h3 className="text-xl font-semibold text-foreground mb-2">開始你的第一次旅行</h3>
+            <p className="text-muted-foreground mb-6">點擊右上角「+ 新增行程」，記錄你的旅行計劃</p>
+            <Button onClick={() => setShowCreate(true)} className="gap-2">
+              <Plus className="w-4 h-4" />
+              新增第一個行程
+            </Button>
           </div>
         )}
       </main>

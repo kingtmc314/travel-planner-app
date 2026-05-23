@@ -1,5 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import AppLayout from "@/components/AppLayout";
+import WorldMap from "@/components/WorldMap";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -103,6 +104,8 @@ const defaultForm = {
 
 export default function FlightPassport() {
   const { data: flights, refetch, isLoading } = trpc.passport.getFlights.useQuery();
+  // We derive visited countries directly from flight records so the map stays in sync
+  // without requiring a separate sync step
   const addFlight = trpc.passport.addFlight.useMutation({
     onSuccess: () => { refetch(); setShowAdd(false); setForm(defaultForm); toast.success("航班已記錄"); },
     onError: () => toast.error("新增失敗"),
@@ -250,6 +253,54 @@ export default function FlightPassport() {
       byYear[y] = (byYear[y] ?? 0) + 1;
     });
     return byYear;
+  }, [flights]);
+
+  // Build unique flight routes for map arcs (deduplicated by dep+arr pair)
+  const flightRoutes = useMemo(() => {
+    if (!flights) return [];
+    const seen = new Set<string>();
+    const routes: { dep: string; arr: string }[] = [];
+    flights.forEach(f => {
+      const dep = (f.departureAirport ?? "").toUpperCase();
+      const arr = (f.arrivalAirport ?? "").toUpperCase();
+      if (!dep || !arr || dep === arr) return;
+      const key = [dep, arr].sort().join("-");
+      if (!seen.has(key)) { seen.add(key); routes.push({ dep, arr }); }
+    });
+    return routes;
+  }, [flights]);
+
+  // Country name → ISO alpha-2 (mirrors FLIGHT_COUNTRY_TO_ISO on the server)
+  const COUNTRY_NAME_TO_ISO: Record<string, string> = {
+    "Japan": "JP", "Taiwan": "TW", "South Korea": "KR", "Korea": "KR",
+    "Thailand": "TH", "Singapore": "SG", "Malaysia": "MY", "Indonesia": "ID",
+    "Vietnam": "VN", "Philippines": "PH", "Cambodia": "KH", "China": "CN",
+    "Egypt": "EG", "UK": "GB", "United Kingdom": "GB", "France": "FR",
+    "Germany": "DE", "Italy": "IT", "Spain": "ES", "USA": "US",
+    "United States": "US", "Canada": "CA", "Australia": "AU", "New Zealand": "NZ",
+    "UAE": "AE", "United Arab Emirates": "AE", "Greece": "GR", "Portugal": "PT",
+    "Netherlands": "NL", "Switzerland": "CH", "Austria": "AT", "Czech Republic": "CZ",
+    "Hungary": "HU", "Poland": "PL", "India": "IN", "Maldives": "MV",
+    "Sri Lanka": "LK", "Nepal": "NP", "Morocco": "MA", "Turkey": "TR",
+    "Russia": "RU", "Brazil": "BR", "Argentina": "AR", "Mexico": "MX",
+    "Hong Kong": "HK", "Macau": "MO",
+  };
+
+  const mapCountries = useMemo(() => {
+    if (!flights) return [];
+    const seen = new Set<string>();
+    const result: { countryCode: string; status: "visited" }[] = [];
+    flights.forEach(f => {
+      for (const name of [f.arrivalCountry, f.departureCountry]) {
+        if (!name || name === "Hong Kong") continue;
+        const iso = COUNTRY_NAME_TO_ISO[name];
+        if (iso && !seen.has(iso)) {
+          seen.add(iso);
+          result.push({ countryCode: iso, status: "visited" });
+        }
+      }
+    });
+    return result;
   }, [flights]);
 
   return (
@@ -419,9 +470,16 @@ export default function FlightPassport() {
                 </div>
               </div>
 
-              {/* Route visualization */}
-              <div className="bg-indigo-950 px-6 py-4">
-                <FlightRouteMap flights={stats.filtered} />
+              {/* World Map with flight routes and visited countries */}
+              <div className="bg-indigo-950 px-4 pb-4 pt-2">
+                <p className="text-xs text-white/50 uppercase tracking-wider mb-2">Flight Map</p>
+                <div style={{ minHeight: 220 }}>
+                  <WorldMap
+                    visitedCountries={mapCountries}
+                    flightRoutes={flightRoutes}
+                    className="w-full rounded-xl overflow-hidden"
+                  />
+                </div>
               </div>
             </div>
 

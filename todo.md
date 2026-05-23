@@ -111,3 +111,11 @@
 - [x] Return countriesSynced count in seedMyFlights mutation response
 - [x] Show post-import summary dialog: "X flights imported, Y new countries added to map"
 - [x] Add "Sync Map" button for users who already imported flights (syncCountriesFromFlights mutation)
+
+## Remove Egypt Demo Auto-import & Add Map to Flight Passport
+- [x] Remove auto-import of Egypt demo trip on Dashboard (useEffect + importDemo mutation)
+- [x] Replace "正在準備示範行程" empty state with a clean "新增第一個行程" CTA
+- [x] Remove Egypt demo mention from Home.tsx landing page text
+- [x] Add WorldMap component to FlightPassport page (same as TravelHistory)
+- [x] Highlight visited countries on passport map based on past flights' countries
+- [x] Draw flight route arcs on the map between departure and arrival airports (quadratic bezier, deduplicated)

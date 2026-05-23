@@ -106,7 +106,7 @@ export default function Home() {
       <div className="py-24 px-6" style={{background:"linear-gradient(135deg, oklch(0.14 0.04 255), oklch(0.20 0.06 240))"}}>
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-4xl font-bold text-white mb-6">準備好開始你的下一段旅程了嗎？</h2>
-          <p className="text-white/70 text-lg mb-10">立即登入，我們已為你準備了一個埃及示範行程，讓你馬上體驗所有功能。</p>
+          <p className="text-white/70 text-lg mb-10">登入後即可開始規劃你的第一次旅行，記錄行程、費用與旅遊足跡。</p>
           <Button size="lg" onClick={() => window.location.href = getLoginUrl()} className="bg-white font-semibold px-10 py-6 text-base shadow-2xl" style={{color:"oklch(0.15 0.03 255)"}}>
             立即免費使用 <ArrowRight className="ml-2 w-5 h-5" />
           </Button>
