@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Globe, Plus, Trash2, Loader2, MapPin, CheckCircle, Heart, Calendar, Edit2 } from "lucide-react";
+import WorldMap from "@/components/WorldMap";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 
@@ -335,7 +336,17 @@ export default function TravelHistory() {
                 </div>
               </div>
             </div>
-            <WorldMapSVG countryMap={countryMap} />
+            <WorldMap
+              visitedCountries={(countries ?? []).map(c => ({ countryCode: c.countryCode, status: c.status as "visited" | "planned" | "wishlist" }))}
+              onCountryClick={(code, name) => {
+                // If country not yet added, open the add dialog pre-filled
+                if (!countryMap[code]) {
+                  setAddForm({ countryCode: code, countryName: name, status: "visited", visitedYear: "" });
+                  setShowAdd(true);
+                }
+              }}
+              className="w-full"
+            />
           </div>
         ) : (
           /* List View */

@@ -94,3 +94,13 @@
 - [x] Visited Countries (Travel History): Add edit button to each country card + upsert mutation
 - [x] Add updateExpense, updateFlight, updateAccommodation, updatePastFlight, updateMapPin db helpers
 - [x] Add expenses.update, flights.update, hotels.update, passport.updateFlight, map.updatePin tRPC procedures
+
+## Interactive World Map on Travel History Page
+- [x] Install d3-geo and topojson-client for SVG world map projection
+- [x] Download world TopoJSON data and upload to static storage
+- [x] Create WorldMap component with country highlighting by status
+- [x] Add tooltips showing country name and status on hover
+- [x] Add zoom/pan interaction (scroll wheel + drag + +/- buttons)
+- [x] Integrate WorldMap into TravelHistory page replacing old placeholder map
+- [x] Add color legend (visited=green, planned=blue, wishlist=amber)
+- [x] Click unvisited country on map to open add-country dialog pre-filled
