@@ -253,7 +253,7 @@ export default function WorldMap({ visitedCountries, flightRoutes = [], onCountr
         <g transform={`translate(${transform.x},${transform.y}) scale(${transform.scale})`}
            style={{ transformOrigin: `${WIDTH / 2}px ${HEIGHT / 2}px` }}>
           {/* Country fills */}
-          {countries.map((feature: any) => {
+          {countries.map((feature: any, idx: number) => {
             const numId = String(feature.id ?? "");
             const status = getCountryFill(numId);
             const fill = status ? STATUS_COLORS[status] : "oklch(0.35 0.02 240)";
@@ -261,7 +261,7 @@ export default function WorldMap({ visitedCountries, flightRoutes = [], onCountr
             const name = COUNTRY_NAMES[alpha2] ?? alpha2;
             return (
               <path
-                key={feature.id}
+                key={feature.id != null ? String(feature.id) : `f-${idx}`}
                 d={pathGen(feature) ?? ""}
                 fill={fill}
                 fillOpacity={status ? 0.85 : 1}
