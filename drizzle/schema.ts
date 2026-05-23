@@ -70,21 +70,21 @@ export type ItineraryDay = typeof itineraryDays.$inferSelect;
 export type InsertItineraryDay = typeof itineraryDays.$inferInsert;
 
 // ─── Activities ───────────────────────────────────────────────────────────────
-export const activities = mysqlTable("activities", {
+export const activities = mysqlTable("itinerary_items", {
   id: int("id").autoincrement().primaryKey(),
   dayId: int("dayId").notNull(),
   tripId: int("tripId").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
   location: varchar("location", { length: 500 }),
-  startTime: varchar("startTime", { length: 10 }),
-  endTime: varchar("endTime", { length: 10 }),
+  startTime: varchar("time", { length: 10 }),
   category: mysqlEnum("category", ["transport", "food", "attraction", "hotel", "shopping", "other"]).default("other"),
   notes: text("notes"),
-  cost: decimal("cost", { precision: 10, scale: 2 }),
-  currency: varchar("currency", { length: 10 }),
-  sortOrder: int("sortOrder").default(0),
+  lat: decimal("lat", { precision: 10, scale: 7 }),
+  lng: decimal("lng", { precision: 10, scale: 7 }),
+  sortOrder: int("orderIndex").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
-});
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+})
 export type Activity = typeof activities.$inferSelect;
 export type InsertActivity = typeof activities.$inferInsert;
 
@@ -96,7 +96,7 @@ export const expenses = mysqlTable("expenses", {
   amount: decimal("amount", { precision: 10, scale: 2 }).notNull(),
   currency: varchar("currency", { length: 10 }).notNull(),
   category: mysqlEnum("category", ["transport", "food", "accommodation", "attraction", "shopping", "other"]).default("other"),
-  paidBy: int("paidBy").notNull(),
+  paidBy: int("paidByUserId").notNull(),
   paidByName: varchar("paidByName", { length: 255 }),
   splitAmong: json("splitAmong"),
   date: timestamp("date").notNull(),
@@ -111,10 +111,10 @@ export const mapPins = mysqlTable("map_pins", {
   id: int("id").autoincrement().primaryKey(),
   tripId: int("tripId").notNull(),
   title: varchar("title", { length: 255 }).notNull(),
-  description: text("description"),
+  notes: text("notes"),
   lat: decimal("lat", { precision: 10, scale: 7 }).notNull(),
   lng: decimal("lng", { precision: 10, scale: 7 }).notNull(),
-  type: mysqlEnum("type", ["attraction", "hotel", "restaurant", "transport", "other"]).default("attraction"),
+  category: mysqlEnum("category", ["attraction", "hotel", "restaurant", "transport", "other"]).default("attraction"),
   address: text("address"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
@@ -125,16 +125,20 @@ export type InsertMapPin = typeof mapPins.$inferInsert;
 export const flights = mysqlTable("flights", {
   id: int("id").autoincrement().primaryKey(),
   tripId: int("tripId").notNull(),
-  type: mysqlEnum("type", ["outbound", "return", "connecting"]).default("outbound"),
   airline: varchar("airline", { length: 255 }),
   flightNumber: varchar("flightNumber", { length: 50 }),
-  departureAirport: varchar("departureAirport", { length: 10 }),
-  arrivalAirport: varchar("arrivalAirport", { length: 10 }),
-  departureTime: varchar("departureTime", { length: 30 }),
-  arrivalTime: varchar("arrivalTime", { length: 30 }),
-  departureDate: varchar("departureDate", { length: 30 }),
-  arrivalDate: varchar("arrivalDate", { length: 30 }),
-  bookingRef: varchar("bookingRef", { length: 100 }),
+  date: varchar("date", { length: 30 }),
+  fromCode: varchar("fromCode", { length: 10 }),
+  fromCity: varchar("fromCity", { length: 255 }),
+  toCode: varchar("toCode", { length: 10 }),
+  toCity: varchar("toCity", { length: 255 }),
+  departTime: varchar("departTime", { length: 30 }),
+  arriveTime: varchar("arriveTime", { length: 30 }),
+  duration: varchar("duration", { length: 30 }),
+  isLayover: boolean("isLayover").default(false),
+  layoverDuration: varchar("layoverDuration", { length: 30 }),
+  orderIndex: int("orderIndex").default(0),
+  type: mysqlEnum("type", ["outbound", "return", "connecting"]).default("outbound"),
   notes: text("notes"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
@@ -145,15 +149,13 @@ export type InsertFlight = typeof flights.$inferInsert;
 export const accommodations = mysqlTable("accommodations", {
   id: int("id").autoincrement().primaryKey(),
   tripId: int("tripId").notNull(),
-  name: varchar("name", { length: 255 }).notNull(),
-  address: text("address"),
-  checkIn: timestamp("checkIn"),
-  checkOut: timestamp("checkOut"),
-  bookingRef: varchar("bookingRef", { length: 100 }),
-  confirmationNumber: varchar("confirmationNumber", { length: 100 }),
+  city: varchar("city", { length: 255 }),
+  name: varchar("hotelName", { length: 255 }).notNull(),
+  checkIn: varchar("checkIn", { length: 30 }),
+  checkOut: varchar("checkOut", { length: 30 }),
+  nights: int("nights"),
   notes: text("notes"),
-  lat: decimal("lat", { precision: 10, scale: 7 }),
-  lng: decimal("lng", { precision: 10, scale: 7 }),
+  orderIndex: int("orderIndex").default(0),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type Accommodation = typeof accommodations.$inferSelect;
@@ -167,7 +169,7 @@ export const notifications = mysqlTable("notifications", {
   type: mysqlEnum("type", ["expense_added", "itinerary_updated", "member_joined", "member_left", "trip_updated", "general"]).default("general"),
   title: varchar("title", { length: 255 }).notNull(),
   message: text("message"),
-  isRead: boolean("isRead").default(false),
+  isRead: boolean("read").default(false),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type Notification = typeof notifications.$inferSelect;

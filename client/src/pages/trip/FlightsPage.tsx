@@ -9,8 +9,12 @@ import { Plus, Trash2, Loader2, Plane, Hotel, ArrowRight, Edit2 } from "lucide-r
 import { useState } from "react";
 import { toast } from "sonner";
 
-const defaultFlight = { flightNumber: "", airline: "", departureAirport: "", arrivalAirport: "", departureTime: "", arrivalTime: "", departureDate: "", arrivalDate: "", notes: "", type: "outbound" as "outbound" | "return" | "connecting", bookingRef: "" };
-const defaultHotel = { name: "", address: "", checkIn: "", checkOut: "", confirmationNumber: "", bookingRef: "", notes: "" };
+const defaultFlight = {
+  flightNumber: "", airline: "", fromCode: "", fromCity: "", toCode: "", toCity: "",
+  date: "", departTime: "", arriveTime: "", duration: "", notes: "",
+  type: "outbound" as "outbound" | "return" | "connecting",
+};
+const defaultHotel = { name: "", city: "", checkIn: "", checkOut: "", nights: "", notes: "" };
 
 export default function FlightsPage({ tripId }: { tripId: number }) {
   const { data: flights, refetch: refetchFlights, isLoading: flightsLoading } = trpc.flights.list.useQuery({ tripId });
@@ -43,12 +47,12 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
   const deleteHotel = trpc.hotels.delete.useMutation({ onSuccess: () => { refetchHotels(); toast.success("住宿已刪除"); } });
 
   const handleAddFlight = () => {
-    if (!flightForm.flightNumber || !flightForm.departureAirport || !flightForm.arrivalAirport) { toast.error("請填寫必填欄位"); return; }
+    if (!flightForm.fromCode || !flightForm.toCode) { toast.error("請填寫出發和抵達機場代碼"); return; }
     addFlight.mutate({ tripId, ...flightForm });
   };
 
   const handleUpdateFlight = () => {
-    if (!editingFlight || !flightForm.departureAirport || !flightForm.arrivalAirport) { toast.error("請填寫必填欄位"); return; }
+    if (!editingFlight) return;
     updateFlight.mutate({ flightId: editingFlight.id, tripId, ...flightForm });
   };
 
@@ -57,37 +61,37 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
     setFlightForm({
       flightNumber: flight.flightNumber ?? "",
       airline: flight.airline ?? "",
-      departureAirport: flight.departureAirport ?? "",
-      arrivalAirport: flight.arrivalAirport ?? "",
-      departureTime: flight.departureTime ?? "",
-      arrivalTime: flight.arrivalTime ?? "",
-      departureDate: flight.departureDate ? String(flight.departureDate).split("T")[0] : "",
-      arrivalDate: flight.arrivalDate ? String(flight.arrivalDate).split("T")[0] : "",
+      fromCode: flight.fromCode ?? "",
+      fromCity: flight.fromCity ?? "",
+      toCode: flight.toCode ?? "",
+      toCity: flight.toCity ?? "",
+      date: flight.date ?? "",
+      departTime: flight.departTime ?? "",
+      arriveTime: flight.arriveTime ?? "",
+      duration: flight.duration ?? "",
       notes: flight.notes ?? "",
       type: flight.type ?? "outbound",
-      bookingRef: flight.bookingRef ?? "",
     });
   };
 
   const handleAddHotel = () => {
-    if (!hotelForm.name || !hotelForm.checkIn || !hotelForm.checkOut) { toast.error("請填寫必填欄位"); return; }
-    addHotel.mutate({ tripId, ...hotelForm });
+    if (!hotelForm.name) { toast.error("請填寫酒店名稱"); return; }
+    addHotel.mutate({ tripId, ...hotelForm, nights: hotelForm.nights ? parseInt(hotelForm.nights) : undefined });
   };
 
   const handleUpdateHotel = () => {
     if (!editingHotel || !hotelForm.name) { toast.error("請填寫必填欄位"); return; }
-    updateHotel.mutate({ accId: editingHotel.id, tripId, ...hotelForm });
+    updateHotel.mutate({ accId: editingHotel.id, tripId, ...hotelForm, nights: hotelForm.nights ? parseInt(hotelForm.nights) : undefined });
   };
 
   const openEditHotel = (hotel: any) => {
     setEditingHotel(hotel);
     setHotelForm({
       name: hotel.name ?? "",
-      address: hotel.address ?? "",
-      checkIn: hotel.checkIn ? (hotel.checkIn instanceof Date ? hotel.checkIn.toISOString().split("T")[0] : String(hotel.checkIn).split("T")[0]) : "",
-      checkOut: hotel.checkOut ? (hotel.checkOut instanceof Date ? hotel.checkOut.toISOString().split("T")[0] : String(hotel.checkOut).split("T")[0]) : "",
-      confirmationNumber: hotel.confirmationNumber ?? "",
-      bookingRef: hotel.bookingRef ?? "",
+      city: hotel.city ?? "",
+      checkIn: hotel.checkIn ?? "",
+      checkOut: hotel.checkOut ?? "",
+      nights: hotel.nights ? String(hotel.nights) : "",
       notes: hotel.notes ?? "",
     });
   };
@@ -120,37 +124,37 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label>出發機場 *</Label>
-          <Input className="mt-1.5" placeholder="HKG" value={flightForm.departureAirport} onChange={e => setFlightForm({...flightForm, departureAirport: e.target.value})} />
+          <Label>出發機場代碼 *</Label>
+          <Input className="mt-1.5" placeholder="HKG" value={flightForm.fromCode} onChange={e => setFlightForm({...flightForm, fromCode: e.target.value.toUpperCase()})} />
         </div>
         <div>
-          <Label>抵達機場 *</Label>
-          <Input className="mt-1.5" placeholder="CAI" value={flightForm.arrivalAirport} onChange={e => setFlightForm({...flightForm, arrivalAirport: e.target.value})} />
+          <Label>出發城市</Label>
+          <Input className="mt-1.5" placeholder="Hong Kong" value={flightForm.fromCity} onChange={e => setFlightForm({...flightForm, fromCity: e.target.value})} />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label>出發日期</Label>
-          <Input className="mt-1.5" type="date" value={flightForm.departureDate} onChange={e => setFlightForm({...flightForm, departureDate: e.target.value})} />
+          <Label>抵達機場代碼 *</Label>
+          <Input className="mt-1.5" placeholder="CAI" value={flightForm.toCode} onChange={e => setFlightForm({...flightForm, toCode: e.target.value.toUpperCase()})} />
+        </div>
+        <div>
+          <Label>抵達城市</Label>
+          <Input className="mt-1.5" placeholder="Cairo" value={flightForm.toCity} onChange={e => setFlightForm({...flightForm, toCity: e.target.value})} />
+        </div>
+      </div>
+      <div className="grid grid-cols-3 gap-3">
+        <div>
+          <Label>日期</Label>
+          <Input className="mt-1.5" type="date" value={flightForm.date} onChange={e => setFlightForm({...flightForm, date: e.target.value})} />
         </div>
         <div>
           <Label>出發時間</Label>
-          <Input className="mt-1.5" type="time" value={flightForm.departureTime} onChange={e => setFlightForm({...flightForm, departureTime: e.target.value})} />
-        </div>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label>抵達日期</Label>
-          <Input className="mt-1.5" type="date" value={flightForm.arrivalDate} onChange={e => setFlightForm({...flightForm, arrivalDate: e.target.value})} />
+          <Input className="mt-1.5" type="time" value={flightForm.departTime} onChange={e => setFlightForm({...flightForm, departTime: e.target.value})} />
         </div>
         <div>
           <Label>抵達時間</Label>
-          <Input className="mt-1.5" type="time" value={flightForm.arrivalTime} onChange={e => setFlightForm({...flightForm, arrivalTime: e.target.value})} />
+          <Input className="mt-1.5" type="time" value={flightForm.arriveTime} onChange={e => setFlightForm({...flightForm, arriveTime: e.target.value})} />
         </div>
-      </div>
-      <div>
-        <Label>訂位編號</Label>
-        <Input className="mt-1.5" placeholder="ABCDEF" value={flightForm.bookingRef} onChange={e => setFlightForm({...flightForm, bookingRef: e.target.value})} />
       </div>
       <div>
         <Label>備注</Label>
@@ -166,26 +170,22 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
         <Input className="mt-1.5" placeholder="例：開羅希爾頓酒店" value={hotelForm.name} onChange={e => setHotelForm({...hotelForm, name: e.target.value})} />
       </div>
       <div>
-        <Label>地址</Label>
-        <Input className="mt-1.5" placeholder="酒店地址" value={hotelForm.address} onChange={e => setHotelForm({...hotelForm, address: e.target.value})} />
+        <Label>城市</Label>
+        <Input className="mt-1.5" placeholder="城市名稱" value={hotelForm.city} onChange={e => setHotelForm({...hotelForm, city: e.target.value})} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label>入住日期 *</Label>
+          <Label>入住日期</Label>
           <Input className="mt-1.5" type="date" value={hotelForm.checkIn} onChange={e => setHotelForm({...hotelForm, checkIn: e.target.value})} />
         </div>
         <div>
-          <Label>退房日期 *</Label>
+          <Label>退房日期</Label>
           <Input className="mt-1.5" type="date" value={hotelForm.checkOut} onChange={e => setHotelForm({...hotelForm, checkOut: e.target.value})} />
         </div>
       </div>
       <div>
-        <Label>確認號碼</Label>
-        <Input className="mt-1.5" placeholder="確認號碼" value={hotelForm.confirmationNumber} onChange={e => setHotelForm({...hotelForm, confirmationNumber: e.target.value})} />
-      </div>
-      <div>
-        <Label>訂房編號</Label>
-        <Input className="mt-1.5" placeholder="訂房編號" value={hotelForm.bookingRef} onChange={e => setHotelForm({...hotelForm, bookingRef: e.target.value})} />
+        <Label>晚數</Label>
+        <Input className="mt-1.5" type="number" min="1" placeholder="3" value={hotelForm.nights} onChange={e => setHotelForm({...hotelForm, nights: e.target.value})} />
       </div>
       <div>
         <Label>備注</Label>
@@ -197,7 +197,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-foreground">航班 & 住宿</h2>
+        <h2 className="text-xl font-bold text-foreground">航班 &amp; 住宿</h2>
         <p className="text-muted-foreground text-sm mt-0.5">管理你的航班資訊和住宿預訂</p>
       </div>
 
@@ -235,18 +235,18 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
-                        <span className="font-bold text-foreground">{flight.flightNumber}</span>
+                        {flight.flightNumber && <span className="font-bold text-foreground">{flight.flightNumber}</span>}
                         {flight.airline && <span className="text-muted-foreground text-sm">{flight.airline}</span>}
                         <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${(flight.type ? typeColor[flight.type] : null) ?? "bg-muted text-muted-foreground"}`}>
                           {(flight.type ? typeLabel[flight.type] : null) ?? flight.type}
                         </span>
-                        {flight.bookingRef && <span className="text-xs text-muted-foreground">· {flight.bookingRef}</span>}
                       </div>
                       <div className="flex items-center gap-3">
                         <div className="text-center">
-                          <p className="text-lg font-bold text-foreground">{flight.departureAirport}</p>
-                          {flight.departureTime && <p className="text-xs text-muted-foreground">{flight.departureTime}</p>}
-                          {flight.departureDate && <p className="text-xs text-muted-foreground">{String(flight.departureDate ?? '')}</p>}
+                          <p className="text-lg font-bold text-foreground">{flight.fromCode ?? "—"}</p>
+                          {flight.fromCity && <p className="text-xs text-muted-foreground">{flight.fromCity}</p>}
+                          {flight.departTime && <p className="text-xs text-primary font-medium">{flight.departTime}</p>}
+                          {flight.date && <p className="text-xs text-muted-foreground">{flight.date}</p>}
                         </div>
                         <div className="flex-1 flex items-center gap-1">
                           <div className="flex-1 h-px bg-border" />
@@ -254,24 +254,18 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
                           <div className="flex-1 h-px bg-border" />
                         </div>
                         <div className="text-center">
-                          <p className="text-lg font-bold text-foreground">{flight.arrivalAirport}</p>
-                          {flight.arrivalTime && <p className="text-xs text-muted-foreground">{flight.arrivalTime}</p>}
-                          {flight.arrivalDate && <p className="text-xs text-muted-foreground">{String(flight.arrivalDate ?? '')}</p>}
+                          <p className="text-lg font-bold text-foreground">{flight.toCode ?? "—"}</p>
+                          {flight.toCity && <p className="text-xs text-muted-foreground">{flight.toCity}</p>}
+                          {flight.arriveTime && <p className="text-xs text-primary font-medium">{flight.arriveTime}</p>}
                         </div>
                       </div>
                       {flight.notes && <p className="text-xs text-muted-foreground mt-2">{flight.notes}</p>}
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                      <button
-                        onClick={() => openEditFlight(flight)}
-                        className="p-1.5 rounded-lg hover:bg-accent transition-colors"
-                      >
+                      <button onClick={() => openEditFlight(flight)} className="p-1.5 rounded-lg hover:bg-accent transition-colors">
                         <Edit2 className="w-4 h-4 text-muted-foreground" />
                       </button>
-                      <button
-                        onClick={() => deleteFlight.mutate({ flightId: flight.id, tripId })}
-                        className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
-                      >
+                      <button onClick={() => deleteFlight.mutate({ flightId: flight.id, tripId })} className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors">
                         <Trash2 className="w-4 h-4 text-destructive" />
                       </button>
                     </div>
@@ -308,32 +302,21 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
                       <div className="flex items-center gap-2 mb-1">
                         <Hotel className="w-4 h-4 text-purple-500" />
                         <h3 className="font-semibold text-foreground">{hotel.name}</h3>
+                        {hotel.city && <span className="text-sm text-muted-foreground">· {hotel.city}</span>}
                       </div>
-                      {hotel.address && <p className="text-sm text-muted-foreground mb-2">{hotel.address}</p>}
                       <div className="flex items-center gap-2 text-sm">
-                        <span className="font-medium text-foreground">{hotel.checkIn instanceof Date ? hotel.checkIn.toLocaleDateString() : String(hotel.checkIn ?? '')}</span>
-                        <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                        <span className="font-medium text-foreground">{hotel.checkOut instanceof Date ? hotel.checkOut.toLocaleDateString() : String(hotel.checkOut ?? '')}</span>
+                        {hotel.checkIn && <span className="font-medium text-foreground">{hotel.checkIn}</span>}
+                        {hotel.checkIn && hotel.checkOut && <ArrowRight className="w-4 h-4 text-muted-foreground" />}
+                        {hotel.checkOut && <span className="font-medium text-foreground">{hotel.checkOut}</span>}
+                        {hotel.nights && <span className="text-muted-foreground text-xs">({hotel.nights} 晚)</span>}
                       </div>
-                      {hotel.confirmationNumber && (
-                        <p className="text-xs text-muted-foreground mt-1">確認號碼：{hotel.confirmationNumber}</p>
-                      )}
-                      {hotel.bookingRef && (
-                        <p className="text-xs text-muted-foreground mt-0.5">訂房編號：{hotel.bookingRef}</p>
-                      )}
                       {hotel.notes && <p className="text-xs text-muted-foreground mt-1">{hotel.notes}</p>}
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                      <button
-                        onClick={() => openEditHotel(hotel)}
-                        className="p-1.5 rounded-lg hover:bg-accent transition-colors"
-                      >
+                      <button onClick={() => openEditHotel(hotel)} className="p-1.5 rounded-lg hover:bg-accent transition-colors">
                         <Edit2 className="w-4 h-4 text-muted-foreground" />
                       </button>
-                      <button
-                        onClick={() => deleteHotel.mutate({ accId: hotel.id, tripId })}
-                        className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
-                      >
+                      <button onClick={() => deleteHotel.mutate({ accId: hotel.id, tripId })} className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors">
                         <Trash2 className="w-4 h-4 text-destructive" />
                       </button>
                     </div>

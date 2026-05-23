@@ -263,7 +263,7 @@ export async function deleteMapPin(pinId: number) {
 export async function getTripFlights(tripId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(flights).where(eq(flights.tripId, tripId)).orderBy(asc(flights.departureDate));
+  return db.select().from(flights).where(eq(flights.tripId, tripId)).orderBy(asc(flights.orderIndex), asc(flights.date));
 }
 
 export async function addFlight(data: InsertFlight) {
@@ -289,7 +289,7 @@ export async function deleteFlight(flightId: number) {
 export async function getTripAccommodations(tripId: number) {
   const db = await getDb();
   if (!db) return [];
-  return db.select().from(accommodations).where(eq(accommodations.tripId, tripId)).orderBy(asc(accommodations.checkIn));
+  return db.select().from(accommodations).where(eq(accommodations.tripId, tripId)).orderBy(asc(accommodations.orderIndex));
 }
 
 export async function addAccommodation(data: InsertAccommodation) {

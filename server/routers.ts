@@ -262,23 +262,23 @@ const tripsRouter = router({
     await db.addExpense({ tripId, title: "餐飲費用 (8天)", amount: "3200", currency: "HKD", category: "food", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-10") });
 
     // Map pins
-    await db.addMapPin({ tripId, title: "吉薩大金字塔", lat: "29.9792", lng: "31.1342", type: "attraction", description: "世界七大奇觀" });
-    await db.addMapPin({ tripId, title: "埃及國家博物館", lat: "30.0478", lng: "31.2336", type: "attraction", description: "圖坦卡蒙黃金面具" });
-    await db.addMapPin({ tripId, title: "Kempinski Nile Hotel", lat: "30.0511", lng: "31.2357", type: "hotel", description: "5星級酒店" });
-    await db.addMapPin({ tripId, title: "Khan el-Khalili 市集", lat: "30.0478", lng: "31.2625", type: "attraction", description: "傳統市集" });
-    await db.addMapPin({ tripId, title: "卡納克神廟", lat: "25.7188", lng: "32.6573", type: "attraction", description: "古埃及最大神廟群" });
-    await db.addMapPin({ tripId, title: "帝王谷", lat: "25.7402", lng: "32.6014", type: "attraction", description: "法老陵墓群" });
-    await db.addMapPin({ tripId, title: "阿布辛貝神廟", lat: "22.3372", lng: "31.6258", type: "attraction", description: "拉美西斯二世神廟" });
-    await db.addMapPin({ tripId, title: "菲萊神廟", lat: "24.0246", lng: "32.8838", type: "attraction", description: "伊西斯神廟" });
+    await db.addMapPin({ tripId, title: "吉薩大金字塔", lat: "29.9792", lng: "31.1342", category: "attraction", notes: "世界七大奇觀" });
+    await db.addMapPin({ tripId, title: "埃及國家博物館", lat: "30.0478", lng: "31.2336", category: "attraction", notes: "圖坦卡蒙黃金面具" });
+    await db.addMapPin({ tripId, title: "Kempinski Nile Hotel", lat: "30.0511", lng: "31.2357", category: "hotel", notes: "5星級酒店" });
+    await db.addMapPin({ tripId, title: "Khan el-Khalili 市集", lat: "30.0478", lng: "31.2625", category: "attraction", notes: "傳統市集" });
+    await db.addMapPin({ tripId, title: "卡納克神廟", lat: "25.7188", lng: "32.6573", category: "attraction", notes: "古埃及最大神廟群" });
+    await db.addMapPin({ tripId, title: "帝王谷", lat: "25.7402", lng: "32.6014", category: "attraction", notes: "法老陵墓群" });
+    await db.addMapPin({ tripId, title: "阿布辛貝神廟", lat: "22.3372", lng: "31.6258", category: "attraction", notes: "拉美西斯二世神廟" });
+    await db.addMapPin({ tripId, title: "菲萊神廟", lat: "24.0246", lng: "32.8838", category: "attraction", notes: "伊西斯神廟" });
 
     // Flights
-    await db.addFlight({ tripId, type: "outbound", airline: "Cathay Pacific", flightNumber: "CX701", departureAirport: "HKG", arrivalAirport: "CAI", departureDate: "2026-03-10", departureTime: "06:00", arrivalDate: "2026-03-10", arrivalTime: "13:30", bookingRef: "CX-EGY-2026" });
-    await db.addFlight({ tripId, type: "return", airline: "Cathay Pacific", flightNumber: "CX702", departureAirport: "ASW", arrivalAirport: "HKG", departureDate: "2026-03-17", departureTime: "08:00", arrivalDate: "2026-03-17", arrivalTime: "22:00", bookingRef: "CX-EGY-2026" });
+    await db.addFlight({ tripId, type: "outbound", airline: "Cathay Pacific", flightNumber: "CX701", fromCode: "HKG", fromCity: "Hong Kong", toCode: "CAI", toCity: "Cairo", date: "2026-03-10", departTime: "06:00", arriveTime: "13:30", orderIndex: 0 });
+    await db.addFlight({ tripId, type: "return", airline: "Cathay Pacific", flightNumber: "CX702", fromCode: "ASW", fromCity: "Aswan", toCode: "HKG", toCity: "Hong Kong", date: "2026-03-17", departTime: "08:00", arriveTime: "22:00", orderIndex: 1 });
 
     // Accommodations
-    await db.addAccommodation({ tripId, name: "Kempinski Nile Hotel Cairo", address: "Corniche El Nil, Garden City, Cairo", checkIn: new Date("2026-03-10T15:00:00"), checkOut: new Date("2026-03-13T12:00:00"), confirmationNumber: "KMP-2026-001", notes: "尼羅河景觀房" });
-    await db.addAccommodation({ tripId, name: "Sofitel Winter Palace Luxor", address: "Corniche El Nile, Luxor", checkIn: new Date("2026-03-13T14:00:00"), checkOut: new Date("2026-03-15T12:00:00"), confirmationNumber: "SFL-2026-002", notes: "歷史宮殿酒店" });
-    await db.addAccommodation({ tripId, name: "Movenpick Resort Aswan", address: "Elephantine Island, Aswan", checkIn: new Date("2026-03-15T14:00:00"), checkOut: new Date("2026-03-17T08:00:00"), confirmationNumber: "MVP-2026-003", notes: "島嶼度假村" });
+    await db.addAccommodation({ tripId, name: "Kempinski Nile Hotel Cairo", city: "Cairo", checkIn: "2026-03-10", checkOut: "2026-03-13", nights: 3, notes: "尼羅河景觀房", orderIndex: 0 });
+    await db.addAccommodation({ tripId, name: "Sofitel Winter Palace Luxor", city: "Luxor", checkIn: "2026-03-13", checkOut: "2026-03-15", nights: 2, notes: "歷史宮殿酒店", orderIndex: 1 });
+    await db.addAccommodation({ tripId, name: "Movenpick Resort Aswan", city: "Aswan", checkIn: "2026-03-15", checkOut: "2026-03-17", nights: 2, notes: "島嶼度假村", orderIndex: 2 });
 
     return { alreadyExists: false, tripId };
   }),
@@ -393,11 +393,8 @@ const itineraryRouter = router({
         title: input.title,
         location: input.location ?? null,
         startTime: input.startTime ?? null,
-        endTime: input.endTime ?? null,
         category: input.category,
         notes: input.notes ?? null,
-        cost: input.cost ?? null,
-        currency: input.currency ?? null,
         sortOrder: input.sortOrder,
       });
       // Notify members
@@ -546,10 +543,10 @@ const mapRouter = router({
     .input(z.object({
       tripId: z.number(),
       title: z.string().min(1),
-      description: z.string().optional(),
+      notes: z.string().optional(),
       lat: z.string(),
       lng: z.string(),
-      type: z.enum(["attraction", "hotel", "restaurant", "transport", "other"]).default("attraction"),
+      category: z.enum(["attraction", "hotel", "restaurant", "transport", "other"]).default("attraction"),
       address: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -558,10 +555,10 @@ const mapRouter = router({
       const pinId = await db.addMapPin({
         tripId: input.tripId,
         title: input.title,
-        description: input.description ?? null,
+        notes: input.notes ?? null,
         lat: input.lat,
         lng: input.lng,
-        type: input.type,
+        category: input.category,
         address: input.address ?? null,
       });
       return { pinId };
@@ -572,8 +569,8 @@ const mapRouter = router({
       pinId: z.number(),
       tripId: z.number(),
       title: z.string().min(1).optional(),
-      description: z.string().optional(),
-      type: z.enum(["attraction", "hotel", "restaurant", "transport", "other"]).optional(),
+      notes: z.string().optional(),
+      category: z.enum(["attraction", "hotel", "restaurant", "transport", "other"]).optional(),
       address: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -610,13 +607,17 @@ const flightsRouter = router({
       type: z.enum(["outbound", "return", "connecting"]).default("outbound"),
       airline: z.string().optional(),
       flightNumber: z.string().optional(),
-      departureAirport: z.string().optional(),
-      arrivalAirport: z.string().optional(),
-      departureTime: z.string().optional(),
-      arrivalTime: z.string().optional(),
-      departureDate: z.string().optional(),
-      arrivalDate: z.string().optional(),
-      bookingRef: z.string().optional(),
+      fromCode: z.string().optional(),
+      fromCity: z.string().optional(),
+      toCode: z.string().optional(),
+      toCity: z.string().optional(),
+      date: z.string().optional(),
+      departTime: z.string().optional(),
+      arriveTime: z.string().optional(),
+      duration: z.string().optional(),
+      isLayover: z.boolean().optional(),
+      layoverDuration: z.string().optional(),
+      orderIndex: z.number().optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -627,13 +628,17 @@ const flightsRouter = router({
         type: input.type,
         airline: input.airline ?? null,
         flightNumber: input.flightNumber ?? null,
-        departureAirport: input.departureAirport ?? null,
-        arrivalAirport: input.arrivalAirport ?? null,
-        departureTime: input.departureTime ?? null,
-        arrivalTime: input.arrivalTime ?? null,
-        departureDate: input.departureDate ?? null,
-        arrivalDate: input.arrivalDate ?? null,
-        bookingRef: input.bookingRef ?? null,
+        fromCode: input.fromCode ?? null,
+        fromCity: input.fromCity ?? null,
+        toCode: input.toCode ?? null,
+        toCity: input.toCity ?? null,
+        date: input.date ?? null,
+        departTime: input.departTime ?? null,
+        arriveTime: input.arriveTime ?? null,
+        duration: input.duration ?? null,
+        isLayover: input.isLayover ?? false,
+        layoverDuration: input.layoverDuration ?? null,
+        orderIndex: input.orderIndex ?? 0,
         notes: input.notes ?? null,
       });
       return { flightId };
@@ -646,13 +651,17 @@ const flightsRouter = router({
       type: z.enum(["outbound", "return", "connecting"]).optional(),
       airline: z.string().optional(),
       flightNumber: z.string().optional(),
-      departureAirport: z.string().optional(),
-      arrivalAirport: z.string().optional(),
-      departureTime: z.string().optional(),
-      arrivalTime: z.string().optional(),
-      departureDate: z.string().optional(),
-      arrivalDate: z.string().optional(),
-      bookingRef: z.string().optional(),
+      fromCode: z.string().optional(),
+      fromCity: z.string().optional(),
+      toCode: z.string().optional(),
+      toCity: z.string().optional(),
+      date: z.string().optional(),
+      departTime: z.string().optional(),
+      arriveTime: z.string().optional(),
+      duration: z.string().optional(),
+      isLayover: z.boolean().optional(),
+      layoverDuration: z.string().optional(),
+      orderIndex: z.number().optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
@@ -687,12 +696,12 @@ const hotelsRouter = router({
     .input(z.object({
       tripId: z.number(),
       name: z.string().min(1),
-      address: z.string().optional(),
+      city: z.string().optional(),
       checkIn: z.string().optional(),
       checkOut: z.string().optional(),
-      bookingRef: z.string().optional(),
-      confirmationNumber: z.string().optional(),
+      nights: z.number().optional(),
       notes: z.string().optional(),
+      orderIndex: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
       const membership = await db.getUserMembership(input.tripId, ctx.user.id);
@@ -700,12 +709,12 @@ const hotelsRouter = router({
       const accId = await db.addAccommodation({
         tripId: input.tripId,
         name: input.name,
-        address: input.address ?? null,
-        checkIn: input.checkIn ? new Date(input.checkIn) : null,
-        checkOut: input.checkOut ? new Date(input.checkOut) : null,
-        bookingRef: input.bookingRef ?? null,
-        confirmationNumber: input.confirmationNumber ?? null,
+        city: input.city ?? null,
+        checkIn: input.checkIn ?? null,
+        checkOut: input.checkOut ?? null,
+        nights: input.nights ?? null,
         notes: input.notes ?? null,
+        orderIndex: input.orderIndex ?? 0,
       });
       return { accId };
     }),
@@ -715,22 +724,18 @@ const hotelsRouter = router({
       accId: z.number(),
       tripId: z.number(),
       name: z.string().min(1).optional(),
-      address: z.string().optional(),
+      city: z.string().optional(),
       checkIn: z.string().optional(),
       checkOut: z.string().optional(),
-      bookingRef: z.string().optional(),
-      confirmationNumber: z.string().optional(),
+      nights: z.number().optional(),
       notes: z.string().optional(),
+      orderIndex: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { accId, tripId, checkIn, checkOut, ...rest } = input;
+      const { accId, tripId, ...rest } = input;
       const membership = await db.getUserMembership(tripId, ctx.user.id);
       if (!membership || membership.role === "viewer") throw new Error("Permission denied");
-      await db.updateAccommodation(accId, {
-        ...rest,
-        ...(checkIn ? { checkIn: new Date(checkIn) } : {}),
-        ...(checkOut ? { checkOut: new Date(checkOut) } : {}),
-      });
+      await db.updateAccommodation(accId, rest);
       return { success: true };
     }),
 

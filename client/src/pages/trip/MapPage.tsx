@@ -17,7 +17,7 @@ const PIN_TYPES = [
   { value: "other", label: "其他", icon: MoreHorizontal, color: "#94a3b8" },
 ];
 
-const defaultForm = { title: "", description: "", lat: "", lng: "", type: "attraction", address: "" };
+const defaultForm = { title: "", notes: "", lat: "", lng: "", category: "attraction", address: "" };
 
 export default function MapPage({ tripId }: { tripId: number }) {
   const { data: pins, refetch, isLoading } = trpc.map.getPins.useQuery({ tripId }, { refetchInterval: 15000 });
@@ -59,7 +59,7 @@ export default function MapPage({ tripId }: { tripId: number }) {
     markersRef.current = [];
     const bounds = new google.maps.LatLngBounds();
     pins.forEach(pin => {
-      const pinType = PIN_TYPES.find(t => t.value === pin.type) ?? PIN_TYPES[0];
+      const pinType = PIN_TYPES.find(t => t.value === pin.category) ?? PIN_TYPES[0];
       const marker = new google.maps.Marker({
         position: { lat: parseFloat(pin.lat as string), lng: parseFloat(pin.lng as string) },
         map: mapRef.current!,
@@ -75,7 +75,7 @@ export default function MapPage({ tripId }: { tripId: number }) {
       });
       marker.addListener("click", () => {
         setSelectedPin(pin);
-        infoWindowRef.current?.setContent(`<div style="padding:4px 8px;font-weight:600">${pin.title}</div>${pin.description ? `<div style="padding:0 8px 4px;color:#666;font-size:12px">${pin.description}</div>` : ""}`);
+        infoWindowRef.current?.setContent(`<div style="padding:4px 8px;font-weight:600">${pin.title}</div>${pin.notes ? `<div style="padding:0 8px 4px;color:#666;font-size:12px">${pin.notes}</div>` : ""}`);  
         infoWindowRef.current?.open(mapRef.current!, marker);
       });
       bounds.extend({ lat: parseFloat(pin.lat as string), lng: parseFloat(pin.lng as string) });
@@ -88,17 +88,17 @@ export default function MapPage({ tripId }: { tripId: number }) {
 
   const handleAdd = () => {
     if (!form.title || !form.lat || !form.lng) { toast.error("請填寫名稱並在地圖上選擇位置"); return; }
-    addPin.mutate({ tripId, title: form.title, description: form.description, lat: form.lat, lng: form.lng, type: form.type as any, address: form.address });
+    addPin.mutate({ tripId, title: form.title, notes: form.notes, lat: form.lat, lng: form.lng, category: form.category as any, address: form.address });
   };
 
   const handleUpdate = () => {
     if (!editingPin || !form.title) { toast.error("請填寫名稱"); return; }
-    updatePin.mutate({ pinId: editingPin.id, tripId, title: form.title, description: form.description, type: form.type as any, address: form.address });
+    updatePin.mutate({ pinId: editingPin.id, tripId, title: form.title, notes: form.notes, category: form.category as any, address: form.address });
   };
 
   const openEdit = (pin: any) => {
     setEditingPin(pin);
-    setForm({ title: pin.title, description: pin.description ?? "", lat: String(pin.lat), lng: String(pin.lng), type: pin.type ?? "attraction", address: pin.address ?? "" });
+    setForm({ title: pin.title, notes: pin.notes ?? "", lat: String(pin.lat), lng: String(pin.lng), category: pin.category ?? "attraction", address: pin.address ?? "" });
   };
 
   if (isLoading) return (
@@ -115,14 +115,14 @@ export default function MapPage({ tripId }: { tripId: number }) {
       </div>
       <div>
         <Label>類型</Label>
-        <Select value={form.type} onValueChange={v => setForm({...form, type: v})}>
+        <Select value={form.category} onValueChange={v => setForm({...form, category: v})}>
           <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
           <SelectContent>{PIN_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
         </Select>
       </div>
       <div>
         <Label>描述</Label>
-        <Input className="mt-1.5" placeholder="簡短描述..." value={form.description} onChange={e => setForm({...form, description: e.target.value})} />
+        <Input className="mt-1.5" placeholder="簡短描述..." value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} />
       </div>
       <div>
         <Label>地址</Label>
@@ -187,7 +187,7 @@ export default function MapPage({ tripId }: { tripId: number }) {
           ) : (
             <div className="divide-y divide-border">
               {pins.map(pin => {
-                const pinType = PIN_TYPES.find(t => t.value === pin.type) ?? PIN_TYPES[0];
+                const pinType = PIN_TYPES.find(t => t.value === pin.category) ?? PIN_TYPES[0];
                 const Icon = pinType.icon;
                 return (
                   <div key={pin.id}
