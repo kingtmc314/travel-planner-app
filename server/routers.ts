@@ -688,6 +688,113 @@ const expensesRouter = router({
       await db.deleteExpense(input.expenseId);
       return { success: true };
     }),
+
+  // AI auto-classify: suggest categories for all "other" expenses in a trip
+  autoClassify: protectedProcedure
+    .input(z.object({ tripId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership) throw new Error("Access denied");
+
+      const allExpenses = await db.getTripExpenses(input.tripId);
+      const uncategorised = allExpenses.filter(e => !e.category || e.category === "other");
+      if (uncategorised.length === 0) return { suggestions: [], total: 0 };
+
+      // Build a compact list for the LLM
+      const items = uncategorised.map(e => ({ id: e.id, title: e.title }));
+
+      const systemPrompt = `You are a travel expense categorisation assistant.
+For each expense item, assign exactly one category from this list:
+- transport  (flights, trains, buses, taxis, ferries, car rental, metro, toll, fuel)
+- food       (restaurants, cafes, snacks, drinks, groceries, street food)
+- accommodation (hotels, hostels, Airbnb, guesthouses, resorts)
+- attraction (museums, theme parks, tours, tickets, entrance fees, activities)
+- shopping   (clothes, souvenirs, electronics, gifts, markets, duty-free)
+- other      (anything that doesn't clearly fit the above)
+
+Respond ONLY with a JSON object matching the schema. No markdown, no explanation.`;
+
+      const userPrompt = `Categorise these travel expenses:\n${JSON.stringify(items, null, 2)}`;
+
+      const schema = {
+        type: "object" as const,
+        properties: {
+          results: {
+            type: "array" as const,
+            items: {
+              type: "object" as const,
+              properties: {
+                id: { type: "integer" as const },
+                category: { type: "string" as const, enum: ["transport", "food", "accommodation", "attraction", "shopping", "other"] },
+              },
+              required: ["id", "category"],
+              additionalProperties: false,
+            },
+          },
+        },
+        required: ["results"],
+        additionalProperties: false,
+      };
+
+      const response = await invokeLLM({
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: { name: "expense_categories", strict: true, schema },
+        },
+      });
+
+      const rawContent = response.choices?.[0]?.message?.content ?? "{}";
+      const raw = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
+      let parsed: { results: Array<{ id: number; category: string }> };
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new Error("AI returned invalid JSON");
+      }
+
+      // Merge with original title for display
+      const titleMap = new Map(uncategorised.map(e => [e.id, e.title]));
+      const suggestions = (parsed.results ?? []).map(r => ({
+        id: r.id,
+        title: titleMap.get(r.id) ?? "",
+        suggestedCategory: r.category as "transport" | "food" | "accommodation" | "attraction" | "shopping" | "other",
+      }));
+
+      return { suggestions, total: suggestions.length };
+    }),
+
+  // Apply the confirmed classification suggestions
+  applyClassification: protectedProcedure
+    .input(z.object({
+      tripId: z.number(),
+      classifications: z.array(z.object({
+        id: z.number(),
+        category: z.enum(["transport", "food", "accommodation", "attraction", "shopping", "other"]),
+      })),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+
+      // Validate all expense IDs belong to this trip
+      const tripExpenses = await db.getTripExpenses(input.tripId);
+      const validIds = new Set(tripExpenses.map(e => e.id));
+      const invalidIds = input.classifications.filter(c => !validIds.has(c.id)).map(c => c.id);
+      if (invalidIds.length > 0) {
+        throw new Error(`Expense IDs not found in this trip: ${invalidIds.join(", ")}`);
+      }
+
+      let updated = 0;
+      for (const c of input.classifications) {
+        await db.updateExpense(c.id, { category: c.category });
+        updated++;
+      }
+      return { updated };
+    }),
 });
 
 // ─── Map Router ───────────────────────────────────────────────────────────────
@@ -1316,6 +1423,7 @@ const syncRouter = router({
     let totalHotels = 0;
     let totalActivities = 0;
     let totalMapPins = 0;
+    let uncategorisedExpenses = 0;
 
     for (const tripId of tripIds) {
       const [exps, fls, hotels, days, pins] = await Promise.all([
@@ -1326,6 +1434,7 @@ const syncRouter = router({
         db.getMapPins(tripId),
       ]);
       totalExpenses += exps.length;
+      uncategorisedExpenses += exps.filter(e => !e.category || e.category === "other").length;
       totalFlights += fls.length;
       totalHotels += hotels.length;
       totalMapPins += pins.length;
@@ -1341,6 +1450,7 @@ const syncRouter = router({
     return {
       trips: userTrips.length,
       expenses: totalExpenses,
+      uncategorisedExpenses,
       tripFlights: totalFlights,
       hotels: totalHotels,
       activities: totalActivities,

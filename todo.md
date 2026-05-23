@@ -161,3 +161,12 @@
 - [x] Frontend: summary card "總費用" updates to converted total
 - [x] Fixed TypeScript conflict: removed inline currencyRouter from routers.ts (was duplicating the import)
 - [x] 15/15 tests passing, 0 TypeScript errors
+
+## AI Auto-Categorisation in Sync Center
+- [x] Backend: expenses.autoClassify tRPC procedure — fetch all "other" expenses, batch-call invokeLLM with structured JSON output, return preview list of (id, title, suggestedCategory)
+- [x] Backend: expenses.applyClassification mutation — accept array of {id, category} and bulk-update
+- [x] Frontend: SyncPage — new "AI 自動分類" card with uncategorised count badge
+- [x] Frontend: "開始分類" button triggers autoClassify query, shows per-expense preview table
+- [x] Frontend: user can review/override each suggestion before confirming
+- [x] Frontend: "確認套用" button calls applyClassification mutation, shows success count
+- [x] Frontend: progress indicator during LLM call (can take a few seconds for large batches)

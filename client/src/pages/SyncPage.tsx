@@ -1,17 +1,36 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
   RefreshCw, CheckCircle2, AlertCircle, Loader2,
-  Plane, MapPin, Receipt, Hotel, Globe, Map, Activity, Database, Zap,
+  Plane, MapPin, Receipt, Hotel, Globe, Map, Activity, Database, Zap, Sparkles, ChevronDown, ChevronUp,
 } from "lucide-react";
 
 type SyncStatus = "idle" | "syncing" | "done" | "error";
+
+const CATEGORY_LABELS: Record<string, string> = {
+  transport: "交通",
+  food: "餐飲",
+  accommodation: "住宿",
+  attraction: "景點",
+  shopping: "購物",
+  other: "其他",
+};
+
+const CATEGORY_COLORS: Record<string, string> = {
+  transport: "bg-blue-100 text-blue-700",
+  food: "bg-orange-100 text-orange-700",
+  accommodation: "bg-purple-100 text-purple-700",
+  attraction: "bg-green-100 text-green-700",
+  shopping: "bg-pink-100 text-pink-700",
+  other: "bg-slate-100 text-slate-600",
+};
 
 interface SyncCardProps {
   icon: React.ReactNode;
@@ -26,12 +45,12 @@ interface SyncCardProps {
 
 function SyncCard({ icon, title, description, count, countLabel, status, onSync, result }: SyncCardProps) {
   return (
-    <Card className={`transition-all duration-300 ${status === "done" ? "border-green-300 bg-green-50/50" : status === "error" ? "border-destructive/30 bg-destructive/5" : ""}`}>
+    <Card className={`transition-all duration-300 ${status === "done" ? "border-green-300 bg-green-50/50 dark:bg-green-950/20" : status === "error" ? "border-destructive/30 bg-destructive/5" : ""}`}>
       <CardContent className="p-5">
         <div className="flex items-start justify-between gap-4">
           <div className="flex items-start gap-3 flex-1 min-w-0">
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-              status === "done" ? "bg-green-100 text-green-600" :
+              status === "done" ? "bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400" :
               status === "error" ? "bg-destructive/10 text-destructive" :
               "bg-primary/10 text-primary"
             }`}>
@@ -49,7 +68,7 @@ function SyncCard({ icon, title, description, count, countLabel, status, onSync,
                   </Badge>
                 )}
                 {status === "done" && (
-                  <Badge className="text-xs bg-green-100 text-green-700 border-green-200">已同步</Badge>
+                  <Badge className="text-xs bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-400">已同步</Badge>
                 )}
                 {status === "error" && (
                   <Badge variant="destructive" className="text-xs">失敗</Badge>
@@ -83,8 +102,270 @@ function SyncCard({ icon, title, description, count, countLabel, status, onSync,
   );
 }
 
+// ─── AI Auto-Classify Card ────────────────────────────────────────────────────
+type ClassifyPhase = "idle" | "selecting-trip" | "classifying" | "reviewing" | "applying" | "done";
+
+type Suggestion = {
+  id: number;
+  title: string;
+  suggestedCategory: "transport" | "food" | "accommodation" | "attraction" | "shopping" | "other";
+};
+
+function AiClassifyCard({ trips, uncategorisedCount }: { trips: Array<{ id: number; name: string }>; uncategorisedCount?: number }) {
+  const [phase, setPhase] = useState<ClassifyPhase>("idle");
+  const [selectedTripId, setSelectedTripId] = useState<number | null>(null);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [overrides, setOverrides] = useState<Record<number, string>>({});
+  const [expanded, setExpanded] = useState(false);
+  const [applyResult, setApplyResult] = useState<string | null>(null);
+
+  const utils = trpc.useUtils();
+
+  const autoClassify = trpc.expenses.autoClassify.useQuery(
+    { tripId: selectedTripId ?? 0 },
+    {
+      enabled: false, // manually triggered
+      retry: false,
+    }
+  );
+
+  const applyClassification = trpc.expenses.applyClassification.useMutation({
+    onSuccess: (data) => {
+      setApplyResult(`已成功更新 ${data.updated} 筆費用的分類`);
+      setPhase("done");
+      toast.success(`AI 分類完成：${data.updated} 筆費用已更新`);
+      utils.expenses.list.invalidate();
+    },
+    onError: (e) => {
+      toast.error(`套用失敗：${e.message}`);
+      setPhase("reviewing");
+    },
+  });
+
+  const handleStartClassify = async () => {
+    if (!selectedTripId) {
+      toast.error("請先選擇行程");
+      return;
+    }
+    setPhase("classifying");
+    setSuggestions([]);
+    setOverrides({});
+    setApplyResult(null);
+    try {
+      const result = await utils.expenses.autoClassify.fetch({ tripId: selectedTripId });
+      if (result.suggestions.length === 0) {
+        toast.info("此行程沒有未分類的費用");
+        setPhase("done");
+        setApplyResult("此行程所有費用已有分類，無需更新。");
+        return;
+      }
+      setSuggestions(result.suggestions);
+      setPhase("reviewing");
+      setExpanded(true);
+    } catch (e: any) {
+      toast.error(`AI 分類失敗：${e.message}`);
+      setPhase("idle");
+    }
+  };
+
+  const handleApply = () => {
+    if (!selectedTripId) return;
+    setPhase("applying");
+    const classifications = suggestions.map(s => ({
+      id: s.id,
+      category: (overrides[s.id] ?? s.suggestedCategory) as Suggestion["suggestedCategory"],
+    }));
+    applyClassification.mutate({ tripId: selectedTripId, classifications });
+  };
+
+  const handleReset = () => {
+    setPhase("idle");
+    setSuggestions([]);
+    setOverrides({});
+    setApplyResult(null);
+    setExpanded(false);
+  };
+
+  const isClassifying = phase === "classifying";
+  const isApplying = phase === "applying";
+  const isDone = phase === "done";
+
+  return (
+    <Card className={`transition-all duration-300 ${isDone ? "border-green-300 bg-green-50/50 dark:bg-green-950/20" : "border-primary/20"}`}>
+      <CardContent className="p-5">
+        {/* Header row */}
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-start gap-3 flex-1 min-w-0">
+            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
+              isDone ? "bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400" :
+              isClassifying || isApplying ? "bg-primary/10 text-primary" :
+              "bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400"
+            }`}>
+              {isClassifying || isApplying
+                ? <Loader2 className="w-5 h-5 animate-spin" />
+                : isDone
+                  ? <CheckCircle2 className="w-5 h-5" />
+                  : <Sparkles className="w-5 h-5" />
+              }
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-semibold text-foreground text-sm">AI 自動分類費用</h3>
+                <Badge className="text-xs bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-400">AI</Badge>
+                {uncategorisedCount !== undefined && uncategorisedCount > 0 && phase === "idle" && (
+                  <Badge variant="secondary" className="text-xs font-mono">{uncategorisedCount} 筆未分類</Badge>
+                )}
+                {suggestions.length > 0 && phase === "reviewing" && (
+                  <Badge variant="secondary" className="text-xs font-mono">{suggestions.length} 筆待確認</Badge>
+                )}
+                {isDone && (
+                  <Badge className="text-xs bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-400">完成</Badge>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                使用 AI 分析費用名稱，自動將「其他」類別歸類為餐飲、交通、購物等正確分類
+              </p>
+              {applyResult && (
+                <p className={`text-xs mt-1.5 font-medium ${isDone ? "text-green-600" : "text-muted-foreground"}`}>
+                  {applyResult}
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Action button */}
+          {phase === "idle" || phase === "selecting-trip" ? (
+            <Button
+              size="sm"
+              variant="default"
+              className="shrink-0 bg-violet-600 hover:bg-violet-700 text-white"
+              onClick={() => setPhase("selecting-trip")}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span className="ml-1.5 hidden sm:inline">開始分類</span>
+            </Button>
+          ) : isDone ? (
+            <Button size="sm" variant="outline" onClick={handleReset} className="shrink-0">
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span className="ml-1.5 hidden sm:inline">重新分類</span>
+            </Button>
+          ) : null}
+        </div>
+
+        {/* Trip selector */}
+        {(phase === "selecting-trip" || phase === "classifying" || phase === "reviewing" || phase === "applying") && (
+          <div className="mt-4 flex items-center gap-2 flex-wrap">
+            <Select
+              value={selectedTripId ? String(selectedTripId) : ""}
+              onValueChange={v => setSelectedTripId(Number(v))}
+              disabled={isClassifying || isApplying}
+            >
+              <SelectTrigger className="flex-1 min-w-0 h-8 text-sm">
+                <SelectValue placeholder="選擇行程…" />
+              </SelectTrigger>
+              <SelectContent>
+                {trips.map(t => (
+                  <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {phase === "selecting-trip" && (
+              <Button
+                size="sm"
+                className="shrink-0 bg-violet-600 hover:bg-violet-700 text-white"
+                onClick={handleStartClassify}
+                disabled={!selectedTripId}
+              >
+                {isClassifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                <span className="ml-1.5">分析</span>
+              </Button>
+            )}
+            {isClassifying && (
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <Loader2 className="w-3 h-3 animate-spin" />
+                AI 分析中，請稍候…
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Preview table */}
+        {phase === "reviewing" && suggestions.length > 0 && (
+          <div className="mt-4">
+            <button
+              className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground mb-2 transition-colors"
+              onClick={() => setExpanded(v => !v)}
+            >
+              {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+              {expanded ? "收起" : "展開"} AI 建議（{suggestions.length} 筆）
+            </button>
+
+            {expanded && (
+              <div className="border border-border rounded-xl overflow-hidden">
+                <div className="grid grid-cols-[1fr_auto] text-[10px] font-semibold text-muted-foreground uppercase tracking-wide bg-muted/50 px-3 py-2 gap-3">
+                  <span>費用名稱</span>
+                  <span className="text-right">AI 建議分類</span>
+                </div>
+                <div className="divide-y divide-border max-h-64 overflow-y-auto">
+                  {suggestions.map(s => {
+                    const effective = (overrides[s.id] ?? s.suggestedCategory) as string;
+                    return (
+                      <div key={s.id} className="grid grid-cols-[1fr_auto] items-center px-3 py-2 gap-3 hover:bg-muted/30 transition-colors">
+                        <span className="text-sm text-foreground truncate">{s.title}</span>
+                        <Select
+                          value={effective}
+                          onValueChange={v => setOverrides(prev => ({ ...prev, [s.id]: v }))}
+                        >
+                          <SelectTrigger className="h-7 text-xs w-28 shrink-0">
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${CATEGORY_COLORS[effective] ?? ""}`}>
+                              {CATEGORY_LABELS[effective] ?? effective}
+                            </span>
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.entries(CATEGORY_LABELS).map(([val, label]) => (
+                              <SelectItem key={val} value={val}>
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${CATEGORY_COLORS[val]}`}>{label}</span>
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            <div className="flex items-center gap-2 mt-3">
+              <Button
+                size="sm"
+                className="bg-violet-600 hover:bg-violet-700 text-white"
+                onClick={handleApply}
+                disabled={isApplying}
+              >
+                {isApplying ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />}
+                確認套用 {suggestions.length} 筆分類
+              </Button>
+              <Button size="sm" variant="ghost" onClick={handleReset} disabled={isApplying} className="text-muted-foreground">
+                取消
+              </Button>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SyncPage() {
   const { data: summary, refetch: refetchSummary, isLoading } = trpc.sync.getSummary.useQuery();
+  const { data: tripsData } = trpc.trips.list.useQuery();
+
+  const trips = useMemo(() =>
+    (tripsData ?? []).map(t => ({ id: t.id, name: t.name })),
+    [tripsData]
+  );
 
   const [statuses, setStatuses] = useState<Record<string, SyncStatus>>({});
   const [results, setResults] = useState<Record<string, string>>({});
@@ -128,7 +409,6 @@ export default function SyncPage() {
       setIsSyncingAll(false);
       const log = data.results.map(r => `✓ ${r.label}：${r.synced} 筆`);
       setSyncAllLog(log);
-      // Mark all as done
       setStatuses({
         flights2countries: "done",
         trips2countries: "done",
@@ -204,7 +484,7 @@ export default function SyncPage() {
             </div>
             <div>
               <h1 className="text-2xl font-bold text-foreground">同步中心</h1>
-              <p className="text-sm text-muted-foreground">同步並驗證所有旅行資料</p>
+              <p className="text-sm text-muted-foreground">同步、驗證並智能整理所有旅行資料</p>
             </div>
           </div>
         </div>
@@ -264,15 +544,25 @@ export default function SyncPage() {
             {isSyncingAll ? "同步中..." : "一鍵全部同步"}
           </Button>
 
-          {/* Sync log */}
           {syncAllLog.length > 0 && (
-            <div className="mt-3 p-3 rounded-lg bg-green-50 border border-green-200">
-              <p className="text-xs font-semibold text-green-700 mb-1.5">同步完成</p>
+            <div className="mt-3 p-3 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800">
+              <p className="text-xs font-semibold text-green-700 dark:text-green-400 mb-1.5">同步完成</p>
               {syncAllLog.map((line, i) => (
-                <p key={i} className="text-xs text-green-600">{line}</p>
+                <p key={i} className="text-xs text-green-600 dark:text-green-500">{line}</p>
               ))}
             </div>
           )}
+        </div>
+
+        <Separator className="mb-6" />
+
+        {/* AI Section */}
+        <div className="mb-6">
+          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5" />
+            AI 智能功能
+          </h2>
+          <AiClassifyCard trips={trips} uncategorisedCount={summary?.uncategorisedExpenses} />
         </div>
 
         <Separator className="mb-6" />
@@ -307,9 +597,8 @@ export default function SyncPage() {
               <div>
                 <p className="text-xs font-medium text-foreground mb-1">關於同步</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  同步操作會自動更新各模組之間的關聯資料。例如，當你新增歷史航班後，
-                  可以執行「飛行護照 → 旅遊足跡」同步，讓地圖自動標記到訪國家。
-                  所有同步操作均為安全的 upsert 操作，不會刪除現有資料。
+                  同步操作會自動更新各模組之間的關聯資料。AI 自動分類功能會分析費用名稱並建議適合的分類，
+                  你可以在套用前逐一確認或修改每筆建議。所有操作均為安全的 upsert 操作，不會刪除現有資料。
                 </p>
               </div>
             </div>
