@@ -6,6 +6,7 @@ import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
 import * as db from "./db";
 import { currencyRouter } from "./currency_router";
+import { makeRequest, GeocodingResult, PlacesSearchResult } from "./_core/map";
 
 // ─── Country Detection Helper ────────────────────────────────────────────────
 const COUNTRY_KEYWORDS: Array<{ keywords: string[]; code: string; name: string }> = [
@@ -604,6 +605,34 @@ const itineraryRouter = router({
       await db.deleteActivity(input.activityId);
       return { success: true };
     }),
+
+  addDay: protectedProcedure
+    .input(z.object({
+      tripId: z.number(),
+      date: z.string(),
+      dayNumber: z.number(),
+      title: z.string().optional(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      const dayId = await db.addItineraryDay({
+        tripId: input.tripId,
+        date: new Date(input.date),
+        dayNumber: input.dayNumber,
+        title: input.title ?? `Day ${input.dayNumber}`,
+      });
+      return { dayId };
+    }),
+
+  deleteDay: protectedProcedure
+    .input(z.object({ dayId: z.number(), tripId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      await db.deleteItineraryDay(input.dayId);
+      return { success: true };
+    }),
 });
 
 // ─── Expenses Router ──────────────────────────────────────────────────────────
@@ -856,6 +885,40 @@ const mapRouter = router({
       if (!membership || membership.role === "viewer") throw new Error("Permission denied");
       await db.deleteMapPin(input.pinId);
       return { success: true };
+    }),
+
+  geocodePlace: protectedProcedure
+    .input(z.object({ query: z.string().min(1) }))
+    .mutation(async ({ input }) => {
+      // Try text search first for better results with place names
+      const searchResult = await makeRequest<PlacesSearchResult>(
+        "/maps/api/place/textsearch/json",
+        { query: input.query }
+      );
+      if (searchResult.results && searchResult.results.length > 0) {
+        const place = searchResult.results[0];
+        return {
+          lat: String(place.geometry.location.lat),
+          lng: String(place.geometry.location.lng),
+          address: place.formatted_address,
+          name: place.name,
+        };
+      }
+      // Fallback to geocoding API
+      const geoResult = await makeRequest<GeocodingResult>(
+        "/maps/api/geocode/json",
+        { address: input.query }
+      );
+      if (!geoResult.results || geoResult.results.length === 0) {
+        throw new Error("找不到該地點，請嘗試更具體的名稱");
+      }
+      const r = geoResult.results[0];
+      return {
+        lat: String(r.geometry.location.lat),
+        lng: String(r.geometry.location.lng),
+        address: r.formatted_address,
+        name: input.query,
+      };
     }),
 });
 

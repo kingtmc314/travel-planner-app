@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { MapView, type LeafletMap } from "@/components/Map";
-import { Plus, Trash2, Loader2, MapPin, Hotel, Utensils, Car, MoreHorizontal, Edit2 } from "lucide-react";
+import { Plus, Trash2, Loader2, MapPin, Hotel, Utensils, Car, MoreHorizontal, Edit2, Search } from "lucide-react";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import L from "leaflet";
@@ -50,6 +50,20 @@ export default function MapPage({ tripId }: { tripId: number }) {
   const deletePin = trpc.map.deletePin.useMutation({
     onSuccess: () => { refetch(); setSelectedPin(null); toast.success("地點已刪除"); },
   });
+  const geocodePlace = trpc.map.geocodePlace.useMutation({
+    onSuccess: (data) => {
+      setForm(prev => ({
+        ...prev,
+        lat: data.lat,
+        lng: data.lng,
+        address: data.address,
+        // Only auto-fill title if it's empty
+        title: prev.title || data.name,
+      }));
+      toast.success("已自動填入座標和地址");
+    },
+    onError: (err) => toast.error(err.message || "找不到該地點"),
+  });
 
   const handleMapReady = useCallback((map: LeafletMap) => {
     mapRef.current = map;
@@ -61,7 +75,6 @@ export default function MapPage({ tripId }: { tripId: number }) {
 
   const renderMarkers = useCallback(() => {
     if (!mapRef.current || !pins) return;
-    // Remove old markers
     markersRef.current.forEach(m => m.remove());
     markersRef.current = [];
 
@@ -91,7 +104,6 @@ export default function MapPage({ tripId }: { tripId: number }) {
     }
   }, [pins]);
 
-  // Re-render markers whenever pins change
   useEffect(() => {
     if (mapRef.current && pins) {
       renderMarkers();
@@ -99,7 +111,7 @@ export default function MapPage({ tripId }: { tripId: number }) {
   }, [pins, renderMarkers]);
 
   const handleAdd = () => {
-    if (!form.title || !form.lat || !form.lng) { toast.error("請填寫名稱並在地圖上選擇位置"); return; }
+    if (!form.title || !form.lat || !form.lng) { toast.error("請填寫名稱並提供座標（可點擊地圖或搜尋地點）"); return; }
     addPin.mutate({ tripId, title: form.title, notes: form.notes, lat: form.lat, lng: form.lng, category: form.category as any, address: form.address });
   };
 
@@ -113,53 +125,88 @@ export default function MapPage({ tripId }: { tripId: number }) {
     setForm({ title: pin.title, notes: pin.notes ?? "", lat: String(pin.lat), lng: String(pin.lng), category: pin.category ?? "attraction", address: pin.address ?? "" });
   };
 
+  const handleGeocode = () => {
+    if (!form.title.trim()) { toast.error("請先輸入地點名稱"); return; }
+    geocodePlace.mutate({ query: form.title });
+  };
+
   if (isLoading) return (
     <div className="flex items-center justify-center py-20">
       <Loader2 className="w-8 h-8 text-primary animate-spin" />
     </div>
   );
 
+  // Shared form fields component
   const PinFormFields = ({ showCoords = true }: { showCoords?: boolean }) => (
     <div className="space-y-4 mt-2">
+      {/* Place name with geocode button */}
       <div>
         <Label>地點名稱 *</Label>
-        <Input className="mt-1.5" placeholder="例：吉薩金字塔" value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
+        <div className="flex gap-2 mt-1.5">
+          <Input
+            className="flex-1"
+            placeholder="例：吉薩金字塔"
+            value={form.title}
+            onChange={e => setForm({ ...form, title: e.target.value })}
+            onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleGeocode(); } }}
+          />
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={handleGeocode}
+            disabled={geocodePlace.isPending}
+            className="shrink-0 gap-1.5 px-3"
+            title="自動搜尋座標和地址"
+          >
+            {geocodePlace.isPending
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Search className="w-4 h-4" />
+            }
+            搜尋
+          </Button>
+        </div>
+        <p className="text-xs text-muted-foreground mt-1">輸入名稱後點「搜尋」自動填入座標和地址</p>
       </div>
+
       <div>
         <Label>類型</Label>
-        <Select value={form.category} onValueChange={v => setForm({...form, category: v})}>
+        <Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}>
           <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
           <SelectContent>{PIN_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
         </Select>
       </div>
+
       <div>
         <Label>描述</Label>
-        <Input className="mt-1.5" placeholder="簡短描述..." value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} />
+        <Input className="mt-1.5" placeholder="簡短描述..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
       </div>
+
       <div>
         <Label>地址</Label>
-        <Input className="mt-1.5" placeholder="詳細地址..." value={form.address} onChange={e => setForm({...form, address: e.target.value})} />
+        <Input className="mt-1.5" placeholder="詳細地址（搜尋後自動填入）..." value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
       </div>
+
       {showCoords && (
         <>
           <div className="grid grid-cols-2 gap-3">
             <div>
               <Label>緯度 *</Label>
-              <Input className="mt-1.5" placeholder="29.9792" value={form.lat} onChange={e => setForm({...form, lat: e.target.value})} />
+              <Input className="mt-1.5" placeholder="29.9792" value={form.lat} onChange={e => setForm({ ...form, lat: e.target.value })} />
             </div>
             <div>
               <Label>經度 *</Label>
-              <Input className="mt-1.5" placeholder="31.1342" value={form.lng} onChange={e => setForm({...form, lng: e.target.value})} />
+              <Input className="mt-1.5" placeholder="31.1342" value={form.lng} onChange={e => setForm({ ...form, lng: e.target.value })} />
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">💡 直接在地圖上點擊即可自動填入座標</p>
+          <p className="text-xs text-muted-foreground">💡 搜尋地點名稱或直接在地圖上點擊即可自動填入座標</p>
         </>
       )}
     </div>
   );
 
   return (
-    <div className="flex flex-col" style={{height:"calc(100vh - 120px)"}}>
+    <div className="flex flex-col" style={{ height: "calc(100vh - 120px)" }}>
       {/* Toolbar */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-background shrink-0">
         <div>
@@ -173,7 +220,7 @@ export default function MapPage({ tripId }: { tripId: number }) {
 
       <div className="flex flex-1 min-h-0">
         {/* Map */}
-        <div className="flex-1 relative min-h-0" style={{minHeight: '400px'}}>
+        <div className="flex-1 relative min-h-0" style={{ minHeight: "400px" }}>
           <MapView
             onMapReady={(map) => { handleMapReady(map); setTimeout(renderMarkers, 300); }}
             className="w-full h-full absolute inset-0"
@@ -193,7 +240,7 @@ export default function MapPage({ tripId }: { tripId: number }) {
           {!pins || pins.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center px-4">
               <MapPin className="w-8 h-8 text-muted-foreground mb-2" />
-              <p className="text-muted-foreground text-sm">點擊地圖新增地點</p>
+              <p className="text-muted-foreground text-sm">點擊地圖或使用「新增地點」按鈕</p>
             </div>
           ) : (
             <div className="divide-y divide-border">
@@ -209,7 +256,7 @@ export default function MapPage({ tripId }: { tripId: number }) {
                         mapRef.current.panTo([parseFloat(pin.lat as string), parseFloat(pin.lng as string)]);
                       }
                     }}>
-                    <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{background:`${pinType.color}20`, color: pinType.color}}>
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0" style={{ background: `${pinType.color}20`, color: pinType.color }}>
                       <Icon className="w-4 h-4" />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -239,9 +286,9 @@ export default function MapPage({ tripId }: { tripId: number }) {
         </div>
       </div>
 
-      {/* Add Pin Dialog */}
+      {/* Add Pin Dialog — max-h + overflow-y-auto prevents content from going off-screen */}
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>新增地點標記</DialogTitle></DialogHeader>
           <PinFormFields showCoords={true} />
           <Button className="w-full mt-4" onClick={handleAdd} disabled={addPin.isPending}>
@@ -253,7 +300,7 @@ export default function MapPage({ tripId }: { tripId: number }) {
 
       {/* Edit Pin Dialog */}
       <Dialog open={!!editingPin} onOpenChange={(o) => !o && setEditingPin(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>修改地點標記</DialogTitle></DialogHeader>
           <PinFormFields showCoords={false} />
           <Button className="w-full mt-4" onClick={handleUpdate} disabled={updatePin.isPending}>

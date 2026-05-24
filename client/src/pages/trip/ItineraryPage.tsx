@@ -7,11 +7,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import {
   Plus, MapPin, Clock, Trash2, Edit2, Sparkles, Loader2,
-  Car, Home, Utensils, Camera, ShoppingBag, MoreHorizontal
+  Car, Home, Utensils, Camera, ShoppingBag, MoreHorizontal, CalendarPlus, Import
 } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
-import { format } from "date-fns";
+import { format, addDays } from "date-fns";
 import { zhTW } from "date-fns/locale";
 
 const CATEGORIES = [
@@ -40,14 +40,25 @@ const defaultForm: ActivityFormData = {
   title: "", location: "", startTime: "", endTime: "", notes: "", category: "attraction",
 };
 
+const PIN_CATEGORY_MAP: Record<string, string> = {
+  attraction: "attraction",
+  hotel: "accommodation",
+  restaurant: "food",
+  transport: "transport",
+  other: "other",
+};
+
 export default function ItineraryPage({ tripId }: { tripId: number }) {
   const { data: days, refetch, isLoading } = trpc.itinerary.getDays.useQuery({ tripId }, { refetchInterval: 15000 });
   const { data: trip } = trpc.trips.get.useQuery({ tripId });
+  const { data: pins } = trpc.map.getPins.useQuery({ tripId });
   const [addingDayId, setAddingDayId] = useState<number | null>(null);
   const [editingActivity, setEditingActivity] = useState<any | null>(null);
   const [form, setForm] = useState<ActivityFormData>(defaultForm);
   const [aiDayId, setAiDayId] = useState<number | null>(null);
   const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
+  const [showImportPins, setShowImportPins] = useState(false);
+  const [importTargetDayId, setImportTargetDayId] = useState<number | null>(null);
 
   const addActivity = trpc.itinerary.addActivity.useMutation({
     onSuccess: () => { refetch(); setAddingDayId(null); setForm(defaultForm); toast.success("活動已新增"); },
@@ -60,6 +71,10 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
   const deleteActivity = trpc.itinerary.deleteActivity.useMutation({
     onSuccess: () => { refetch(); toast.success("活動已刪除"); },
   });
+  const addDay = trpc.itinerary.addDay.useMutation({
+    onSuccess: () => { refetch(); toast.success("已新增一天"); },
+    onError: () => toast.error("新增失敗"),
+  });
   const suggestActivities = trpc.ai.suggestActivities.useMutation({
     onSuccess: (data) => setAiSuggestions(data.activities ?? []),
     onError: () => toast.error("AI 建議失敗，請重試"),
@@ -67,12 +82,19 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
 
   const handleAdd = () => {
     if (!addingDayId || !form.title) { toast.error("請填寫活動名稱"); return; }
-    addActivity.mutate({ dayId: addingDayId, tripId, ...form, category: (form.category === "accommodation" ? "hotel" : form.category) as "transport" | "food" | "attraction" | "hotel" | "shopping" | "other", sortOrder: 0 });
+    addActivity.mutate({
+      dayId: addingDayId, tripId, ...form,
+      category: (form.category === "accommodation" ? "hotel" : form.category) as "transport" | "food" | "attraction" | "hotel" | "shopping" | "other",
+      sortOrder: 0,
+    });
   };
 
   const handleUpdate = () => {
     if (!editingActivity || !form.title) return;
-    updateActivity.mutate({ activityId: editingActivity.id, tripId, ...form, category: (form.category === "accommodation" ? "hotel" : form.category) as "transport" | "food" | "attraction" | "hotel" | "shopping" | "other" });
+    updateActivity.mutate({
+      activityId: editingActivity.id, tripId, ...form,
+      category: (form.category === "accommodation" ? "hotel" : form.category) as "transport" | "food" | "attraction" | "hotel" | "shopping" | "other",
+    });
   };
 
   const handleAISuggest = (day: any) => {
@@ -88,8 +110,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
 
   const handleApplySuggestion = (suggestion: any, dayId: number) => {
     addActivity.mutate({
-      dayId,
-      tripId,
+      dayId, tripId,
       title: suggestion.title,
       location: suggestion.location ?? "",
       startTime: suggestion.startTime ?? "",
@@ -101,18 +122,72 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
     toast.success(`已新增：${suggestion.title}`);
   };
 
+  const handleAddDay = () => {
+    const currentDayCount = days?.length ?? 0;
+    const nextDayNumber = currentDayCount + 1;
+    // Base date from trip start, or today if no trip data
+    const baseDate = trip?.startDate ? new Date(trip.startDate) : new Date();
+    const newDate = addDays(baseDate, currentDayCount);
+    addDay.mutate({
+      tripId,
+      date: newDate.toISOString(),
+      dayNumber: nextDayNumber,
+      title: `Day ${nextDayNumber}`,
+    });
+  };
+
+  const handleImportPin = (pin: any, dayId: number) => {
+    const mappedCategory = PIN_CATEGORY_MAP[pin.category] ?? "other";
+    addActivity.mutate({
+      dayId, tripId,
+      title: pin.title,
+      location: pin.address ?? "",
+      startTime: "",
+      endTime: "",
+      notes: pin.notes ?? "",
+      category: (mappedCategory === "accommodation" ? "hotel" : mappedCategory) as "transport" | "food" | "attraction" | "hotel" | "shopping" | "other",
+      sortOrder: 99,
+    });
+    toast.success(`已匯入：${pin.title}`);
+  };
+
   if (isLoading) return (
     <div className="flex items-center justify-center py-20">
       <Loader2 className="w-8 h-8 text-primary animate-spin" />
     </div>
   );
 
+  const hasPins = pins && pins.length > 0;
+
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
-      <div className="mb-6">
-        <h2 className="text-xl font-bold text-foreground">每日行程</h2>
-        <p className="text-muted-foreground text-sm mt-0.5">{days?.length ?? 0} 天行程</p>
+      <div className="mb-6 flex items-start justify-between gap-4">
+        <div>
+          <h2 className="text-xl font-bold text-foreground">每日行程</h2>
+          <p className="text-muted-foreground text-sm mt-0.5">{days?.length ?? 0} 天行程</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={handleAddDay} disabled={addDay.isPending} className="gap-1.5 shrink-0">
+          {addDay.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarPlus className="w-3.5 h-3.5" />}
+          新增一天
+        </Button>
       </div>
+
+      {/* Empty state */}
+      {(!days || days.length === 0) && (
+        <div className="flex flex-col items-center justify-center py-16 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
+            <CalendarPlus className="w-8 h-8 text-primary" />
+          </div>
+          <h3 className="text-lg font-semibold text-foreground mb-1">還沒有行程天數</h3>
+          <p className="text-muted-foreground text-sm mb-4 max-w-xs">
+            點擊「新增一天」開始規劃每日行程，或修改行程日期讓系統自動生成
+          </p>
+          <Button onClick={handleAddDay} disabled={addDay.isPending} className="gap-2">
+            {addDay.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarPlus className="w-4 h-4" />}
+            新增第一天
+          </Button>
+        </div>
+      )}
 
       <div className="space-y-6">
         {days?.map((day) => (
@@ -131,6 +206,17 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                 </p>
               </div>
               <div className="flex items-center gap-1">
+                {hasPins && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => { setImportTargetDayId(day.id); setShowImportPins(true); }}
+                    className="gap-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 text-xs"
+                  >
+                    <MapPin className="w-3.5 h-3.5" />
+                    匯入地點
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="sm"
@@ -204,15 +290,12 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                     const Icon = cat.icon;
                     return (
                       <div key={activity.id} className="relative flex gap-3 group">
-                        {/* Timeline connector */}
                         {idx < day.activities.length - 1 && (
                           <div className="absolute left-4 top-9 bottom-0 w-0.5 bg-border" />
                         )}
-                        {/* Icon */}
                         <div className={`w-8 h-8 rounded-full ${cat.color} flex items-center justify-center shrink-0 z-10`}>
                           <Icon className="w-4 h-4" />
                         </div>
-                        {/* Content */}
                         <div className="flex-1 min-w-0 pb-1">
                           <div className="flex items-start justify-between gap-2">
                             <div className="flex-1 min-w-0">
@@ -235,7 +318,10 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                             </div>
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
                               <button
-                                onClick={() => { setEditingActivity(activity); setForm({ title: activity.title, location: activity.location ?? "", startTime: activity.startTime ?? "", endTime: activity.endTime ?? "", notes: activity.notes ?? "", category: activity.category }); }}
+                                onClick={() => {
+                                  setEditingActivity(activity);
+                                  setForm({ title: activity.title, location: activity.location ?? "", startTime: activity.startTime ?? "", endTime: activity.endTime ?? "", notes: activity.notes ?? "", category: activity.category });
+                                }}
                                 className="p-1.5 rounded-lg hover:bg-accent transition-colors"
                               >
                                 <Edit2 className="w-3.5 h-3.5 text-muted-foreground" />
@@ -261,7 +347,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
 
       {/* Add Activity Dialog */}
       <Dialog open={!!addingDayId} onOpenChange={(o) => !o && setAddingDayId(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>新增活動</DialogTitle>
           </DialogHeader>
@@ -271,11 +357,60 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
 
       {/* Edit Activity Dialog */}
       <Dialog open={!!editingActivity} onOpenChange={(o) => !o && setEditingActivity(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>編輯活動</DialogTitle>
           </DialogHeader>
           <ActivityForm form={form} setForm={setForm} onSubmit={handleUpdate} loading={updateActivity.isPending} submitLabel="儲存變更" />
+        </DialogContent>
+      </Dialog>
+
+      {/* Import from Map Pins Dialog */}
+      <Dialog open={showImportPins} onOpenChange={(o) => { if (!o) { setShowImportPins(false); setImportTargetDayId(null); } }}>
+        <DialogContent className="sm:max-w-md max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-blue-600" />
+              從地圖標記匯入景點
+            </DialogTitle>
+          </DialogHeader>
+          <div className="mt-2">
+            {!pins || pins.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground text-sm">
+                <MapPin className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                <p>地圖上還沒有標記</p>
+                <p className="text-xs mt-1">先在地圖頁面新增地點標記</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground mb-3">點擊地點即可加入當天行程</p>
+                {pins.map((pin) => {
+                  const cat = getCategoryStyle(PIN_CATEGORY_MAP[pin.category ?? "other"] ?? "other");
+                  const Icon = cat.icon;
+                  return (
+                    <button
+                      key={pin.id}
+                      onClick={() => {
+                        if (importTargetDayId) handleImportPin(pin, importTargetDayId);
+                      }}
+                      disabled={addActivity.isPending}
+                      className="w-full text-left p-3 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all flex items-start gap-3"
+                    >
+                      <div className={`w-8 h-8 rounded-full ${cat.color} flex items-center justify-center shrink-0`}>
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-foreground">{pin.title}</p>
+                        <p className="text-xs text-muted-foreground">{cat.label}</p>
+                        {pin.address && <p className="text-xs text-muted-foreground truncate mt-0.5">{pin.address}</p>}
+                      </div>
+                      <Plus className="w-4 h-4 text-primary shrink-0 mt-1" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </div>
@@ -293,11 +428,11 @@ function ActivityForm({ form, setForm, onSubmit, loading, submitLabel }: {
     <div className="space-y-4 mt-2">
       <div>
         <Label>活動名稱 *</Label>
-        <Input className="mt-1.5" placeholder="例：參觀吉薩金字塔" value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
+        <Input className="mt-1.5" placeholder="例：參觀吉薩金字塔" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
       </div>
       <div>
         <Label>類別</Label>
-        <Select value={form.category} onValueChange={v => setForm({...form, category: v})}>
+        <Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}>
           <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
           <SelectContent>
             {CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
@@ -306,21 +441,21 @@ function ActivityForm({ form, setForm, onSubmit, loading, submitLabel }: {
       </div>
       <div>
         <Label>地點</Label>
-        <Input className="mt-1.5" placeholder="例：吉薩高原" value={form.location} onChange={e => setForm({...form, location: e.target.value})} />
+        <Input className="mt-1.5" placeholder="例：吉薩高原" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label>開始時間</Label>
-          <Input className="mt-1.5" type="time" value={form.startTime} onChange={e => setForm({...form, startTime: e.target.value})} />
+          <Input className="mt-1.5" type="time" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} />
         </div>
         <div>
           <Label>結束時間</Label>
-          <Input className="mt-1.5" type="time" value={form.endTime} onChange={e => setForm({...form, endTime: e.target.value})} />
+          <Input className="mt-1.5" type="time" value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} />
         </div>
       </div>
       <div>
         <Label>備注</Label>
-        <Textarea className="mt-1.5" placeholder="任何備注或提示..." value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} rows={2} />
+        <Textarea className="mt-1.5" placeholder="任何備注或提示..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} />
       </div>
       <Button className="w-full" onClick={onSubmit} disabled={loading}>
         {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
