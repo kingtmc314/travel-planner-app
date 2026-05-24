@@ -172,6 +172,6 @@
 - [x] Frontend: progress indicator during LLM call (can take a few seconds for large batches)
 
 ## Map Pin Auto-Geocode + Itinerary Fix
-- [ ] Map pin dialog: type place name → Google Places Geocoder auto-fills lat/lng/address
-- [ ] Itinerary page: fix "0 天行程" empty state — show proper empty state with "新增第一天" button
-- [ ] Itinerary page: add "從地圖標記匯入" option when adding activity to a day
+- [x] Map pin dialog: type place name → Google Places Geocoder auto-fills lat/lng/address
+- [x] Itinerary page: fix "0 天行程" empty state — show proper empty state with "新增第一天" button
+- [x] Itinerary page: add "從地圖標記匯入" option when adding activity to a day

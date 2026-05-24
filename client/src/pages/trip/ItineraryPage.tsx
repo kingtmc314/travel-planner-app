@@ -17,6 +17,8 @@ import { zhTW } from "date-fns/locale";
 const CATEGORIES = [
   { value: "transport", label: "交通", icon: Car, color: "bg-blue-100 text-blue-600" },
   { value: "accommodation", label: "住宿", icon: Home, color: "bg-purple-100 text-purple-600" },
+  // "hotel" is the DB value for accommodation (addActivity maps accommodation → hotel)
+  { value: "hotel", label: "住宿", icon: Home, color: "bg-purple-100 text-purple-600" },
   { value: "food", label: "餐飲", icon: Utensils, color: "bg-orange-100 text-orange-600" },
   { value: "attraction", label: "景點", icon: Camera, color: "bg-green-100 text-green-600" },
   { value: "shopping", label: "購物", icon: ShoppingBag, color: "bg-pink-100 text-pink-600" },
@@ -42,7 +44,7 @@ const defaultForm: ActivityFormData = {
 
 const PIN_CATEGORY_MAP: Record<string, string> = {
   attraction: "attraction",
-  hotel: "accommodation",
+  hotel: "hotel",       // keep as "hotel" so DB enum matches and category style resolves correctly
   restaurant: "food",
   transport: "transport",
   other: "other",
@@ -137,7 +139,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
   };
 
   const handleImportPin = (pin: any, dayId: number) => {
-    const mappedCategory = PIN_CATEGORY_MAP[pin.category] ?? "other";
+    const mappedCategory = PIN_CATEGORY_MAP[pin.category ?? "other"] ?? "other";
     addActivity.mutate({
       dayId, tripId,
       title: pin.title,
@@ -145,7 +147,8 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
       startTime: "",
       endTime: "",
       notes: pin.notes ?? "",
-      category: (mappedCategory === "accommodation" ? "hotel" : mappedCategory) as "transport" | "food" | "attraction" | "hotel" | "shopping" | "other",
+      // mappedCategory is already a valid DB enum value (hotel, food, attraction, transport, other)
+      category: mappedCategory as "transport" | "food" | "attraction" | "hotel" | "shopping" | "other",
       sortOrder: 99,
     });
     toast.success(`已匯入：${pin.title}`);
