@@ -56,6 +56,20 @@ export const tripMembers = mysqlTable("trip_members", {
 export type TripMember = typeof tripMembers.$inferSelect;
 export type InsertTripMember = typeof tripMembers.$inferInsert;
 
+// ─── Invite Links ────────────────────────────────────────────────────────────
+export const inviteLinks = mysqlTable("invite_links", {
+  id: int("id").autoincrement().primaryKey(),
+  tripId: int("tripId").notNull(),
+  token: varchar("token", { length: 64 }).notNull().unique(),
+  role: mysqlEnum("role", ["editor", "viewer"]).default("viewer").notNull(),
+  createdBy: int("createdBy").notNull(),
+  expiresAt: timestamp("expiresAt"),
+  usedCount: int("usedCount").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+export type InviteLink = typeof inviteLinks.$inferSelect;
+export type InsertInviteLink = typeof inviteLinks.$inferInsert;
+
 // ─── Itinerary Days ───────────────────────────────────────────────────────────
 export const itineraryDays = mysqlTable("itinerary_days", {
   id: int("id").autoincrement().primaryKey(),

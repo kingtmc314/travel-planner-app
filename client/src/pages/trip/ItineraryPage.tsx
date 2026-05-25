@@ -77,6 +77,7 @@ function SortableActivityCard({
   onEdit,
   onDelete,
   onMove,
+  canEdit,
 }: {
   activity: any;
   idx: number;
@@ -85,6 +86,7 @@ function SortableActivityCard({
   onEdit: (activity: any) => void;
   onDelete: (activityId: number) => void;
   onMove: (activity: any) => void;
+  canEdit: boolean;
 }) {
   const {
     attributes,
@@ -147,6 +149,7 @@ function SortableActivityCard({
               <p className="text-muted-foreground text-xs mt-1 leading-relaxed">{activity.notes}</p>
             )}
           </div>
+            {canEdit && (
             <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
               <button
                 onClick={() => onEdit(activity)}
@@ -170,6 +173,7 @@ function SortableActivityCard({
                 <Trash2 className="w-3.5 h-3.5 text-destructive" />
               </button>
             </div>
+          )}
         </div>
       </div>
     </div>
@@ -181,6 +185,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
   const utils = trpc.useUtils();
   const { data: days, refetch, isLoading } = trpc.itinerary.getDays.useQuery({ tripId }, { refetchInterval: 15000 });
   const { data: trip } = trpc.trips.get.useQuery({ tripId });
+  const canEdit = trip?.userRole === "owner" || trip?.userRole === "editor";
   const { data: pins } = trpc.map.getPins.useQuery({ tripId });
 
   const [addingDayId, setAddingDayId] = useState<number | null>(null);
@@ -493,7 +498,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
-                  {hasPins && (
+                  {canEdit && hasPins && (
                     <Button
                       variant="ghost"
                       size="sm"
@@ -504,28 +509,32 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                       匯入地點
                     </Button>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => handleAISuggest(day)}
-                    disabled={suggestActivities.isPending && aiDayId === day.id}
-                    className="gap-1.5 text-purple-600 hover:text-purple-700 hover:bg-purple-50 text-xs"
-                  >
-                    {suggestActivities.isPending && aiDayId === day.id
-                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      : <Sparkles className="w-3.5 h-3.5" />
-                    }
-                    AI 建議
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => { setAddingDayId(day.id); setForm(defaultForm); }}
-                    className="gap-1.5 text-xs"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    新增
-                  </Button>
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => handleAISuggest(day)}
+                      disabled={suggestActivities.isPending && aiDayId === day.id}
+                      className="gap-1.5 text-purple-600 hover:text-purple-700 hover:bg-purple-50 text-xs"
+                    >
+                      {suggestActivities.isPending && aiDayId === day.id
+                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        : <Sparkles className="w-3.5 h-3.5" />
+                      }
+                      AI 建議
+                    </Button>
+                  )}
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => { setAddingDayId(day.id); setForm(defaultForm); }}
+                      className="gap-1.5 text-xs"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      新增
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -585,6 +594,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                             idx={idx}
                             totalCount={activities.length}
                             tripId={tripId}
+                            canEdit={canEdit}
                             onEdit={(a) => {
                               setEditingActivity(a);
                               setForm({ title: a.title, location: a.location ?? "", startTime: a.startTime ?? "", endTime: a.endTime ?? "", notes: a.notes ?? "", category: a.category });

@@ -7,6 +7,7 @@ import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
 import TripLayout from "./pages/trip/TripLayout";
+import JoinPage from "./pages/JoinPage";
 import ItineraryPage from "./pages/trip/ItineraryPage";
 import ExpensesPage from "./pages/trip/ExpensesPage";
 import MapPage from "./pages/trip/MapPage";
@@ -35,6 +36,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
+      <Route path="/join" component={JoinPage} />
       <Route path="/dashboard" component={Dashboard} />
       <Route path="/trips/:tripId/:tab?">
         {(params) => <TripRoutes tripId={Number(params.tripId)} />}

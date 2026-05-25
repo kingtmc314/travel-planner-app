@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Loader2, Users, Crown, Edit2, Eye } from "lucide-react";
+import { Plus, Trash2, Loader2, Users, Crown, Edit2, Eye, Link2, Copy, Check } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -20,6 +20,10 @@ export default function MembersPage({ tripId }: { tripId: number }) {
   const { data: members, refetch, isLoading } = trpc.members.list.useQuery({ tripId }, { refetchInterval: 15000 });
   const { data: trip } = trpc.trips.get.useQuery({ tripId });
   const [showAdd, setShowAdd] = useState(false);
+  const [showInviteLink, setShowInviteLink] = useState(false);
+  const [inviteLinkRole, setInviteLinkRole] = useState<"editor" | "viewer">("viewer");
+  const [generatedLink, setGeneratedLink] = useState("");
+  const [copied, setCopied] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", role: "viewer" as "owner" | "editor" | "viewer" });
 
   const addMember = trpc.members.add.useMutation({
@@ -34,6 +38,17 @@ export default function MembersPage({ tripId }: { tripId: number }) {
     onSuccess: () => { refetch(); toast.success("成員已移除"); },
     onError: (e) => toast.error(e.message || "移除失敗"),
   });
+
+  const createInviteLink = trpc.members.createInviteLink.useMutation({
+    onSuccess: (data) => { setGeneratedLink(data.inviteUrl); },
+    onError: (e) => toast.error(e.message || "生成失敗"),
+  });
+
+  const handleCopyLink = async () => {
+    await navigator.clipboard.writeText(generatedLink);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   const myRole = trip?.userRole;
   const canManage = myRole === "owner";
@@ -57,9 +72,14 @@ export default function MembersPage({ tripId }: { tripId: number }) {
           <p className="text-muted-foreground text-sm mt-0.5">{members?.length ?? 0} 位成員</p>
         </div>
         {canManage && (
-          <Button onClick={() => setShowAdd(true)} size="sm" className="gap-1.5">
-            <Plus className="w-4 h-4" />邀請成員
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={() => { setShowInviteLink(true); setGeneratedLink(""); }} variant="outline" size="sm" className="gap-1.5">
+              <Link2 className="w-4 h-4" />邀請連結
+            </Button>
+            <Button onClick={() => setShowAdd(true)} size="sm" className="gap-1.5">
+              <Plus className="w-4 h-4" />邀請成員
+            </Button>
+          </div>
         )}
       </div>
 
@@ -148,6 +168,44 @@ export default function MembersPage({ tripId }: { tripId: number }) {
           })}
         </div>
       )}
+
+      {/* Invite Link Dialog */}
+      <Dialog open={showInviteLink} onOpenChange={setShowInviteLink}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>生成邀請連結</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div>
+              <Label>加入後的角色</Label>
+              <Select value={inviteLinkRole} onValueChange={v => setInviteLinkRole(v as "editor" | "viewer")}>
+                <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="editor"><div className="flex items-center gap-2"><Edit2 className="w-3.5 h-3.5" />編輯者 — 可編輯行程</div></SelectItem>
+                  <SelectItem value="viewer"><div className="flex items-center gap-2"><Eye className="w-3.5 h-3.5" />觀看者 — 只可查看</div></SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {generatedLink ? (
+              <div className="space-y-2">
+                <Label>邀請連結</Label>
+                <div className="flex gap-2">
+                  <input readOnly value={generatedLink} className="flex-1 text-xs bg-muted rounded-lg px-3 py-2 border border-border outline-none" />
+                  <Button size="sm" variant="outline" onClick={handleCopyLink} className="shrink-0">
+                    {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">連結永久有效，任何人點擊後登入即可加入行程</p>
+              </div>
+            ) : (
+              <Button className="w-full" onClick={() => createInviteLink.mutate({ tripId, role: inviteLinkRole, origin: window.location.origin })} disabled={createInviteLink.isPending}>
+                {createInviteLink.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Link2 className="w-4 h-4 mr-2" />}
+                生成連結
+              </Button>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Add Member Dialog */}
       <Dialog open={showAdd} onOpenChange={setShowAdd}>

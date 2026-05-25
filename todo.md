@@ -199,3 +199,12 @@
 - [x] Guest mode merges trip-level metadata only (name/destination/dates) — activities/expenses not merged (by design: guest mode is lightweight)
 - [x] Merge is manual-prompt (not auto-on-login) — user sees GuestMergeBanner and clicks to confirm
 - [x] Guest trips are read-only in terms of activities/expenses in guest mode (full editing requires login)
+
+## Collaborative Trip Editing (Role-Based)
+- [ ] Backend: role guard helper — verify user is member of trip with required role (owner/editor/viewer)
+- [ ] Backend: apply role guards to all mutating procedures (activities, expenses, map pins, flights, hotels)
+- [ ] Backend: members.invite — include role selection (editor/viewer) in invite flow
+- [ ] Frontend: MembersPage — show role badge per member, owner can change roles inline
+- [ ] Frontend: TripLayout — expose current user's role via context
+- [ ] Frontend: hide edit/delete buttons when user is viewer role
+- [ ] Frontend: show "只讀模式" banner when user is viewer

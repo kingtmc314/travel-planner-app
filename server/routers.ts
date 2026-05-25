@@ -552,11 +552,56 @@ const membersRouter = router({
       if (!membership || (membership.role !== "owner" && membership.id !== input.memberId)) {
         throw new Error("Permission denied");
       }
-      await db.removeTripMember(input.memberId);
+            await db.removeTripMember(input.memberId);
       return { success: true };
     }),
+  createInviteLink: protectedProcedure
+    .input(z.object({
+      tripId: z.number(),
+      role: z.enum(["editor", "viewer"]).default("viewer"),
+      origin: z.string(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role !== "owner") throw new Error("Only owner can create invite links");
+      const crypto = await import("crypto");
+      const token = crypto.randomBytes(32).toString("hex");
+      const drizzleDb = await db.getDb();
+      if (!drizzleDb) throw new Error("Database unavailable");
+      const { inviteLinks } = await import("../drizzle/schema");
+      await drizzleDb.insert(inviteLinks).values({
+        tripId: input.tripId,
+        token,
+        role: input.role,
+        createdBy: ctx.user.id,
+      });
+      const inviteUrl = `${input.origin}/join?token=${token}`;
+      return { token, inviteUrl };
+    }),
+  joinViaInvite: protectedProcedure
+    .input(z.object({ token: z.string() }))
+    .mutation(async ({ ctx, input }) => {
+      const drizzleDb = await db.getDb();
+      if (!drizzleDb) throw new Error("Database unavailable");
+      const { inviteLinks } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const links = await drizzleDb.select().from(inviteLinks).where(eq(inviteLinks.token, input.token)).limit(1);
+      if (!links.length) throw new Error("Invalid or expired invite link");
+      const link = links[0];
+      if (link.expiresAt && new Date() > link.expiresAt) throw new Error("Invite link has expired");
+      const existing = await db.getUserMembership(link.tripId, ctx.user.id);
+      if (existing) return { tripId: link.tripId, alreadyMember: true };
+      await db.addTripMember({
+        tripId: link.tripId,
+        userId: ctx.user.id,
+        role: link.role,
+        displayName: ctx.user.name ?? ctx.user.email ?? "Member",
+        email: ctx.user.email ?? null,
+      });
+      await drizzleDb.update(inviteLinks).set({ usedCount: link.usedCount + 1 }).where(eq(inviteLinks.id, link.id));
+      return { tripId: link.tripId, alreadyMember: false };
+    }),
 });
-
 // ─── Itinerary Router ─────────────────────────────────────────────────────────
 const itineraryRouter = router({
   getDays: protectedProcedure
