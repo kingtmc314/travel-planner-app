@@ -480,6 +480,62 @@ const tripsRouter = router({
       }
       return { merged: created.length };
     }),
+  // ─── Public Share Link ────────────────────────────────────────────────────────
+  generateShareLink: protectedProcedure
+    .input(z.object({ tripId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role !== "owner") throw new Error("Only owner can generate share link");
+      const drizzleDb = await db.getDb();
+      if (!drizzleDb) throw new Error("Database unavailable");
+      const { trips } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      // Generate a random token
+      const token = Array.from(crypto.getRandomValues(new Uint8Array(24)))
+        .map(b => b.toString(16).padStart(2, "0")).join("");
+      await drizzleDb.update(trips).set({ shareToken: token, shareEnabled: true }).where(eq(trips.id, input.tripId));
+      return { token };
+    }),
+  getShareLink: protectedProcedure
+    .input(z.object({ tripId: z.number() }))
+    .query(async ({ ctx, input }) => {
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership) throw new Error("Access denied");
+      const drizzleDb = await db.getDb();
+      if (!drizzleDb) throw new Error("Database unavailable");
+      const { trips } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const rows = await drizzleDb.select({ shareToken: trips.shareToken, shareEnabled: trips.shareEnabled }).from(trips).where(eq(trips.id, input.tripId)).limit(1);
+      if (!rows.length) throw new Error("Trip not found");
+      return { shareToken: rows[0].shareToken, shareEnabled: rows[0].shareEnabled };
+    }),
+  disableShareLink: protectedProcedure
+    .input(z.object({ tripId: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role !== "owner") throw new Error("Only owner can disable share link");
+      const drizzleDb = await db.getDb();
+      if (!drizzleDb) throw new Error("Database unavailable");
+      const { trips } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      await drizzleDb.update(trips).set({ shareEnabled: false }).where(eq(trips.id, input.tripId));
+      return { success: true };
+    }),
+  getPublicTrip: publicProcedure
+    .input(z.object({ token: z.string() }))
+    .query(async ({ input }) => {
+      const drizzleDb = await db.getDb();
+      if (!drizzleDb) throw new Error("Database unavailable");
+      const { trips } = await import("../drizzle/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const rows = await drizzleDb.select().from(trips).where(and(eq(trips.shareToken, input.token), eq(trips.shareEnabled, true))).limit(1);
+      if (!rows.length) throw new Error("Share link not found or disabled");
+      const trip = rows[0];
+      // Get itinerary days and activities
+      const days = await db.getItineraryDays(trip.id);
+      const expenses = await db.getTripExpenses(trip.id);
+      return { trip, days, expenses };
+    }),
 });
 
 // ─── Members Router ───────────────────────────────────────────────────────────
@@ -636,6 +692,9 @@ const itineraryRouter = router({
         title: input.title,
         location: input.location ?? null,
         startTime: input.startTime ?? null,
+        endTime: input.endTime ?? null,
+        cost: input.cost ?? null,
+        currency: input.currency ?? null,
         category: input.category,
         notes: input.notes ?? null,
         sortOrder: input.sortOrder,
@@ -671,10 +730,10 @@ const itineraryRouter = router({
       sortOrder: z.number().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { activityId, tripId, ...data } = input;
+      const { activityId, tripId, ...rest } = input;
       const membership = await db.getUserMembership(tripId, ctx.user.id);
       if (!membership || membership.role === "viewer") throw new Error("Permission denied");
-      await db.updateActivity(activityId, data);
+      await db.updateActivity(activityId, rest);
       return { success: true };
     }),
 

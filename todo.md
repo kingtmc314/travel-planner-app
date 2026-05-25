@@ -259,3 +259,42 @@
 - [x] AppLayout.tsx: tagline, user fallback name
 - [x] SyncPage.tsx, GuestMergeBanner.tsx, NotificationsPanel.tsx
 - [x] SplitSummaryPanel, FlightRouteMap, SyncCard sub-components
+
+## Bug Fix: Create Trip Failure
+- [ ] Diagnose create trip failure (check trips.create procedure, schema validation, date handling)
+- [ ] Fix the bug and verify trip creation works end-to-end
+
+## Expense PDF Export
+- [ ] Backend: expenses.exportPdf tRPC procedure — fetch all expenses + receipt URLs for a trip, return structured data
+- [ ] Frontend: "匯出 PDF" button in ExpensesPage header
+- [ ] Frontend: generate PDF client-side using jsPDF or html-to-canvas with itemized table + receipt thumbnails
+- [ ] PDF includes: trip name, date range, expense table (date/title/category/amount/payer), receipt thumbnails, total summary
+
+## Public Read-Only Trip Share Link
+- [ ] DB: add share_token (varchar, unique, nullable) column to trips table
+- [ ] Backend: trips.generateShareToken mutation — generate random token, save to trip, return share URL
+- [ ] Backend: trips.getByShareToken public procedure — fetch trip + itinerary + expenses (read-only, no auth required)
+- [ ] Frontend: "分享" button in TripLayout header → shows share link dialog with copy button
+- [ ] Frontend: /share/:token route → SharedTripView page (read-only, no login required)
+- [ ] SharedTripView shows: trip header, itinerary days/activities, expense summary (no amounts if private)
+
+## Expense Chart Analytics
+- [ ] Frontend: Add "圖表分析" tab/section in ExpensesPage (alongside existing table)
+- [ ] Pie chart: expense breakdown by category (using recharts/chart.js already in project)
+- [ ] Pie chart: expense breakdown by payer/member
+- [ ] Bar chart: daily/weekly spending trend over trip dates
+- [ ] Bar chart: per-member spending comparison
+- [ ] Charts respect currency conversion toggle (show converted amounts if active)
+- [ ] Charts are responsive and support both ZH/EN labels
+
+## Itinerary Page Redesign (Timeline Style)
+- [ ] Day card header: cover photo banner (trip coverImage), dark overlay, date + day-of-week, total daily cost
+- [ ] Weather row: temperature range + condition (from existing weather data if available, else omit)
+- [ ] Daily route row: origin → destination derived from first/last activity location
+- [ ] Pass/ticket tag row: show pass-type tags from activity notes as colored pill badges
+- [ ] Timeline activity list: left column = time, center = category icon circle, right = activity card
+- [ ] Activity card: title (bold), subtitle/location, cost badge, tags (train number, pass type)
+- [ ] Status label: "需劃位" (orange), "建議預約" (orange), "PASS" (green) detected from activity notes keywords
+- [ ] Sticky day header when scrolling within a day
+- [ ] Add/edit/drag-to-reorder preserved from current implementation
+- [ ] Full i18n support for all new labels

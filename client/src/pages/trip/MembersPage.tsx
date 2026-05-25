@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Plus, Trash2, Loader2, Users, Crown, Edit2, Eye, Link2, Copy, Check } from "lucide-react";
+import { Plus, Trash2, Loader2, Users, Crown, Edit2, Eye, Link2, Copy, Check, Globe, GlobeLock } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -20,6 +20,7 @@ export default function MembersPage({ tripId }: { tripId: number }) {
   const [inviteLinkRole, setInviteLinkRole] = useState<"editor" | "viewer">("viewer");
   const [generatedLink, setGeneratedLink] = useState("");
   const [copied, setCopied] = useState(false);
+  const [copiedShare, setCopiedShare] = useState(false);
   const [form, setForm] = useState({ name: "", email: "", role: "viewer" as "owner" | "editor" | "viewer" });
 
   const ROLES = [
@@ -40,6 +41,25 @@ export default function MembersPage({ tripId }: { tripId: number }) {
     onSuccess: () => { refetch(); toast.success(t("memberRemoved")); },
     onError: (e) => toast.error(e.message || t("deleteFailed")),
   });
+
+  const { data: shareData, refetch: refetchShare } = trpc.trips.getShareLink.useQuery({ tripId });
+  const generateShareLink = trpc.trips.generateShareLink.useMutation({
+    onSuccess: () => { refetchShare(); toast.success(lang === "zh" ? "公開分享連結已生成" : "Public share link generated"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const disableShareLink = trpc.trips.disableShareLink.useMutation({
+    onSuccess: () => { refetchShare(); toast.success(lang === "zh" ? "分享連結已停用" : "Share link disabled"); },
+    onError: (e) => toast.error(e.message),
+  });
+  const shareUrl = shareData?.shareToken && shareData?.shareEnabled
+    ? `${window.location.origin}/share/${shareData.shareToken}`
+    : null;
+  const handleCopyShareLink = async () => {
+    if (!shareUrl) return;
+    await navigator.clipboard.writeText(shareUrl);
+    setCopiedShare(true);
+    setTimeout(() => setCopiedShare(false), 2000);
+  };
 
   const createInviteLink = trpc.members.createInviteLink.useMutation({
     onSuccess: (data) => { setGeneratedLink(data.inviteUrl); },
@@ -171,6 +191,44 @@ export default function MembersPage({ tripId }: { tripId: number }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Public Share Link Section */}
+      {canManage && (
+        <div className="mt-8 bg-card rounded-2xl border border-border p-5">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center">
+              <Globe className="w-5 h-5 text-blue-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground text-sm">
+                {lang === "zh" ? "公開分享連結" : "Public Share Link"}
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                {lang === "zh" ? "生成連結讓未登入的朋友也能瀏覽行程（唯讀）" : "Generate a link so anyone can view the trip without logging in (read-only)"}
+              </p>
+            </div>
+          </div>
+          {shareUrl ? (
+            <div className="space-y-3">
+              <div className="flex gap-2">
+                <input readOnly value={shareUrl} className="flex-1 text-xs bg-muted rounded-lg px-3 py-2 border border-border outline-none" />
+                <Button size="sm" variant="outline" onClick={handleCopyShareLink} className="shrink-0">
+                  {copiedShare ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                </Button>
+              </div>
+              <Button size="sm" variant="outline" className="text-destructive border-destructive/30 hover:bg-destructive/10" onClick={() => disableShareLink.mutate({ tripId })} disabled={disableShareLink.isPending}>
+                {disableShareLink.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <GlobeLock className="w-3.5 h-3.5 mr-1.5" />}
+                {lang === "zh" ? "停用分享連結" : "Disable Share Link"}
+              </Button>
+            </div>
+          ) : (
+            <Button size="sm" onClick={() => generateShareLink.mutate({ tripId })} disabled={generateShareLink.isPending} className="gap-1.5">
+              {generateShareLink.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Globe className="w-3.5 h-3.5" />}
+              {lang === "zh" ? "生成公開連結" : "Generate Share Link"}
+            </Button>
+          )}
         </div>
       )}
 

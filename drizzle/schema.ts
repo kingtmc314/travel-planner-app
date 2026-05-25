@@ -37,6 +37,8 @@ export const trips = mysqlTable("trips", {
   coverImage: text("coverImage"),
   createdBy: int("createdBy").notNull(),
   isDemoTrip: boolean("isDemoTrip").default(false),
+  shareToken: varchar("shareToken", { length: 64 }),
+  shareEnabled: boolean("shareEnabled").default(false),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
@@ -91,6 +93,9 @@ export const activities = mysqlTable("itinerary_items", {
   title: varchar("title", { length: 255 }).notNull(),
   location: varchar("location", { length: 500 }),
   startTime: varchar("time", { length: 10 }),
+  endTime: varchar("endTime", { length: 10 }),
+  cost: varchar("cost", { length: 50 }),
+  currency: varchar("currency", { length: 10 }),
   category: mysqlEnum("category", ["transport", "food", "attraction", "hotel", "shopping", "other"]).default("other"),
   notes: text("notes"),
   lat: decimal("lat", { precision: 10, scale: 7 }),

@@ -10,7 +10,7 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveCo
 import {
   Plus, Trash2, Loader2, DollarSign, TrendingUp, Users, Edit2, ArrowLeftRight,
   AlertCircle, CalendarRange, X, Calculator, ArrowRight, CheckCircle2,
-  Check, ClipboardPaste, Camera, ImageIcon, ZoomIn, Download
+  Check, ClipboardPaste, Camera, ImageIcon, ZoomIn, Download, FileDown, BarChart2
 } from "lucide-react";
 import { useState, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
@@ -204,6 +204,9 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
   } | null>(null);
   const [analyzingReceiptId, setAnalyzingReceiptId] = useState<number | null>(null);
 
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [showCharts, setShowCharts] = useState(false);
+  const [chartView, setChartView] = useState<"category" | "payer">("category");
   // CSV import
   const [showImport, setShowImport] = useState(false);
   const [csvText, setCsvText] = useState("");
@@ -358,6 +361,68 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
       byPayer: Object.entries(byPayer).map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 })),
     };
   }, [filteredExpenses, conversionMap, displayCurrency]);
+
+  async function handleExportPdf() {
+    if (!expenses || expenses.length === 0) return;
+    setExportingPdf(true);
+    try {
+      const { default: jsPDF } = await import("jspdf");
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+      const tripName = trip?.name ?? (lang === "zh" ? "行程費用報告" : "Trip Expense Report");
+      const dateRange = trip ? `${getDateStr(trip.startDate)} ~ ${getDateStr(trip.endDate)}` : "";
+      // Header
+      doc.setFontSize(18); doc.setFont("helvetica", "bold");
+      doc.text(tripName, 14, 20);
+      doc.setFontSize(10); doc.setFont("helvetica", "normal"); doc.setTextColor(100);
+      doc.text(dateRange, 14, 28);
+      doc.text(`${lang === "zh" ? "匯出日期" : "Exported"}: ${new Date().toLocaleDateString()}`, 14, 34);
+      doc.text(`${lang === "zh" ? "基本貨幣" : "Base currency"}: ${effectiveCurrency}`, 14, 40);
+      // Table header
+      let y = 50;
+      const cols = [
+        { label: lang === "zh" ? "日期" : "Date", x: 14, w: 28 },
+        { label: lang === "zh" ? "名稱" : "Name", x: 44, w: 60 },
+        { label: lang === "zh" ? "類別" : "Category", x: 106, w: 28 },
+        { label: lang === "zh" ? "貨幣" : "Cur", x: 136, w: 16 },
+        { label: lang === "zh" ? "金額" : "Amount", x: 154, w: 28 },
+        { label: lang === "zh" ? "付款人" : "Payer", x: 184, w: 22 },
+      ];
+      doc.setFillColor(240, 240, 250); doc.rect(12, y - 5, 186, 8, "F");
+      doc.setFontSize(9); doc.setFont("helvetica", "bold"); doc.setTextColor(60);
+      cols.forEach(c => doc.text(c.label, c.x, y));
+      y += 6;
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(40);
+      let total = 0;
+      expenses.forEach((e, idx) => {
+        if (y > 270) { doc.addPage(); y = 20; }
+        if (idx % 2 === 0) { doc.setFillColor(250, 250, 255); doc.rect(12, y - 4, 186, 7, "F"); }
+        const catLabel = CATS.find(c => c.value === e.category)?.label ?? (lang === "zh" ? "其他" : "Other");
+        const amt = parseFloat(String(e.amount));
+        total += amt;
+        doc.text(getDateStr(e.date), cols[0].x, y);
+        const titleText = (e.title ?? "").substring(0, 28);
+        doc.text(titleText, cols[1].x, y);
+        doc.text(catLabel.substring(0, 10), cols[2].x, y);
+        doc.text(e.currency ?? "", cols[3].x, y);
+        doc.text(formatAmount(amt, e.currency), cols[4].x, y, { align: "right" });
+        doc.text((e.paidByName ?? "").substring(0, 8), cols[5].x, y);
+        y += 7;
+      });
+      // Total row
+      y += 2;
+      doc.setFont("helvetica", "bold"); doc.setFontSize(9);
+      doc.text(`${lang === "zh" ? "合計" : "Total"}: ${effectiveCurrency} ${formatAmount(stats.total, effectiveCurrency)}`, 14, y);
+      // Footer
+      doc.setFont("helvetica", "normal"); doc.setFontSize(8); doc.setTextColor(150);
+      doc.text(`${lang === "zh" ? "由 Travel Planner 匯出" : "Exported by Travel Planner"} · ${new Date().toISOString()}`, 14, 290);
+      doc.save(`${tripName.replace(/\s+/g, "_")}_expenses.pdf`);
+      toast.success(lang === "zh" ? "PDF 已匯出" : "PDF exported");
+    } catch (err) {
+      toast.error(lang === "zh" ? "匯出失敗" : "Export failed");
+    } finally {
+      setExportingPdf(false);
+    }
+  }
 
   const effectiveCurrency = displayCurrency ?? baseCurrency;
   const hasFallback = conversionData?.results.some(r => r.isFallback) ?? false;
@@ -748,6 +813,28 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
               {lang === "zh" ? "貼上數據" : "Paste Data"}
             </button>
           )}
+          {/* Chart toggle */}
+          <button
+            onClick={() => setShowCharts(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+              showCharts ? "bg-blue-600 text-white border-blue-600"
+                : "bg-card text-muted-foreground border-border hover:border-primary hover:text-foreground"
+            }`}
+          >
+            <BarChart2 className="w-3.5 h-3.5" />
+            {lang === "zh" ? "圖表" : "Charts"}
+          </button>
+          {/* PDF Export */}
+          {expenses && expenses.length > 0 && (
+            <button
+              onClick={handleExportPdf}
+              disabled={exportingPdf}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors bg-card text-muted-foreground border-border hover:border-primary hover:text-foreground disabled:opacity-50"
+            >
+              {exportingPdf ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+              {lang === "zh" ? "匯出 PDF" : "Export PDF"}
+            </button>
+          )}
           {/* Add row */}
           {canEdit && (
             <Button onClick={addNewRow} size="sm" className="gap-1.5">
@@ -794,32 +881,93 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
         ))}
       </div>
 
-      {/* Charts */}
-      {expenses && expenses.length > 0 && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-          <div className="bg-card rounded-2xl border border-border p-4">
-            <h3 className="text-sm font-semibold text-foreground mb-3">{lang === "zh" ? "類別分佈" : "By Category"}</h3>
-            <ResponsiveContainer width="100%" height={180}>
-              <PieChart>
-                <Pie data={stats.byCategory} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3} dataKey="value">
-                  {stats.byCategory.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                </Pie>
-                <Tooltip formatter={(v: any) => [`${effectiveCurrency} ${formatAmount(v, effectiveCurrency)}`, ""]} />
-                <Legend iconType="circle" iconSize={8} />
-              </PieChart>
-            </ResponsiveContainer>
+      {/* Charts panel - collapsible */}
+      {showCharts && expenses && expenses.length > 0 && (
+        <div className="bg-card rounded-2xl border border-border p-5 mb-6">
+          {/* View switcher */}
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-sm font-semibold text-foreground">{lang === "zh" ? "支出分析" : "Expense Analytics"}</h3>
+            <div className="flex rounded-lg border border-border overflow-hidden text-xs">
+              <button
+                onClick={() => setChartView("category")}
+                className={`px-3 py-1.5 font-medium transition-colors ${
+                  chartView === "category" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-accent"
+                }`}
+              >{lang === "zh" ? "類別" : "Category"}</button>
+              <button
+                onClick={() => setChartView("payer")}
+                className={`px-3 py-1.5 font-medium transition-colors border-l border-border ${
+                  chartView === "payer" ? "bg-primary text-primary-foreground" : "bg-card text-muted-foreground hover:bg-accent"
+                }`}
+              >{lang === "zh" ? "成員" : "Member"}</button>
+            </div>
           </div>
-          <div className="bg-card rounded-2xl border border-border p-4">
-            <h3 className="text-sm font-semibold text-foreground mb-3">{lang === "zh" ? "各人支出" : "By Payer"}</h3>
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={stats.byPayer} layout="vertical">
-                <XAxis type="number" hide />
-                <YAxis type="category" dataKey="name" width={60} tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v: any) => [`${effectiveCurrency} ${formatAmount(v, effectiveCurrency)}`, "支出"]} />
-                <Bar dataKey="value" fill="oklch(0.42 0.12 255)" radius={[0, 4, 4, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {chartView === "category" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Pie chart */}
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">{lang === "zh" ? "類別占比" : "Category breakdown"}</p>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={stats.byCategory} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value"
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                      {stats.byCategory.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    </Pie>
+                    <Tooltip formatter={(v: any) => [`${effectiveCurrency} ${formatAmount(v, effectiveCurrency)}`, ""]} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              {/* Bar chart by category */}
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">{lang === "zh" ? "各類別金額" : "Amount by category"}</p>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={stats.byCategory} layout="vertical">
+                    <XAxis type="number" hide />
+                    <YAxis type="category" dataKey="name" width={72} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(v: any) => [`${effectiveCurrency} ${formatAmount(v, effectiveCurrency)}`, ""]} />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                      {stats.byCategory.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+          {chartView === "payer" && (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Pie by payer */}
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">{lang === "zh" ? "成員支出占比" : "Member share"}</p>
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie data={stats.byPayer} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value"
+                      label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`} labelLine={false}>
+                      {stats.byPayer.map((_, i) => (
+                        <Cell key={i} fill={["#3b82f6","#8b5cf6","#f97316","#22c55e","#ec4899","#94a3b8","#eab308","#06b6d4"][i % 8]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(v: any) => [`${effectiveCurrency} ${formatAmount(v, effectiveCurrency)}`, ""]} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+              {/* Bar by payer */}
+              <div>
+                <p className="text-xs text-muted-foreground mb-2">{lang === "zh" ? "各人支出金額" : "Amount per member"}</p>
+                <ResponsiveContainer width="100%" height={200}>
+                  <BarChart data={stats.byPayer} layout="vertical">
+                    <XAxis type="number" hide />
+                    <YAxis type="category" dataKey="name" width={60} tick={{ fontSize: 11 }} />
+                    <Tooltip formatter={(v: any) => [`${effectiveCurrency} ${formatAmount(v, effectiveCurrency)}`, ""]} />
+                    <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                      {stats.byPayer.map((_, i) => (
+                        <Cell key={i} fill={["#3b82f6","#8b5cf6","#f97316","#22c55e","#ec4899","#94a3b8","#eab308","#06b6d4"][i % 8]} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
