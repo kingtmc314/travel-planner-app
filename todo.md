@@ -214,3 +214,11 @@
 - [x] Frontend: ExpensesPage — "分帳計算" tab/panel with member balance cards (paid vs owed)
 - [x] Frontend: settlement list showing who pays whom and how much
 - [x] Frontend: support base currency display (same as existing currency toggle)
+
+## Inline-Editable Expense Table + CSV Import
+- [x] Replace expense card list with inline-editable spreadsheet table (click cell to edit, Tab/Enter navigation)
+- [x] Table columns: 日期 | 名稱 | 類別 | 貨幣 | 金額 | 付款人 | 操作
+- [x] Inline cell editors: date picker, text input, select dropdowns for category/currency/payer
+- [x] Add new row button at bottom of table (empty row ready to fill)
+- [x] CSV/paste import: "貼上數據" button opens textarea, parse tab/comma separated, preview table, bulk-insert
+- [x] CSV column mapping: auto-detect date/title/amount/currency/category columns

@@ -6,7 +6,11 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { Plus, Trash2, Loader2, DollarSign, TrendingUp, Users, Edit2, RefreshCw, ArrowLeftRight, AlertCircle, CalendarRange, X, Calculator, ArrowRight, CheckCircle2 } from "lucide-react";
+import {
+  Plus, Trash2, Loader2, DollarSign, TrendingUp, Users, Edit2, ArrowLeftRight,
+  AlertCircle, CalendarRange, X, Calculator, ArrowRight, CheckCircle2,
+  Check, ClipboardPaste
+} from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 
@@ -18,15 +22,11 @@ const CATEGORIES = [
   { value: "shopping", label: "購物", color: "#ec4899" },
   { value: "other", label: "其他", color: "#94a3b8" },
 ];
-
 const CURRENCIES = ["HKD","USD","EUR","GBP","JPY","CNY","TWD","SGD","AUD","CAD","KRW","THB","EGP","MYR","IDR","PHP","VND"];
-
 const NO_DECIMAL_CURRENCIES = new Set(["JPY", "KRW", "IDR", "VND"]);
 
 function formatAmount(amount: number, currency: string): string {
-  if (NO_DECIMAL_CURRENCIES.has(currency)) {
-    return Math.round(amount).toLocaleString();
-  }
+  if (NO_DECIMAL_CURRENCIES.has(currency)) return Math.round(amount).toLocaleString();
   return amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
@@ -36,27 +36,154 @@ function getDateStr(dateVal: Date | string | null | undefined): string {
   return String(dateVal).split("T")[0];
 }
 
-const emptyForm = (currency = "HKD") => ({
-  title: "", amount: "", currency,
-  category: "other", paidByName: "", date: new Date().toISOString().split("T")[0], notes: "",
-});
+// ─── CSV parse helpers ───────────────────────────────────────────────────────
+function detectSeparator(text: string): string {
+  // Prefer tab if there are any tabs (spreadsheet paste)
+  const tabCount = (text.match(/\t/g) || []).length;
+  return tabCount > 0 ? "\t" : ",";
+}
 
+// RFC 4180-compliant CSV parser that handles quoted fields with embedded commas/newlines
+function parseCsvLine(line: string, sep: string): string[] {
+  if (sep === "\t") {
+    // Tab-separated: no quoting needed, just split and trim
+    return line.split("\t").map(c => c.trim());
+  }
+  // Comma-separated: handle quoted fields
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; } // escaped quote
+      else { inQuotes = !inQuotes; }
+    } else if (ch === sep && !inQuotes) {
+      result.push(current.trim()); current = "";
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current.trim());
+  return result;
+}
+
+function parseCsvText(text: string): string[][] {
+  const sep = detectSeparator(text);
+  return text.split("\n").map(l => l.trim()).filter(l => l.length > 0)
+    .map(l => parseCsvLine(l, sep));
+}
+
+type ParsedExpense = {
+  title: string; amount: string; currency: string;
+  category: string; paidByName: string; date: string; notes: string;
+  _error?: string;
+};
+
+const CATEGORY_MAP: Record<string, string> = {
+  "交通": "transport", "transport": "transport",
+  "住宿": "accommodation", "accommodation": "accommodation",
+  "餐飲": "food", "food": "food", "飲食": "food",
+  "景點": "attraction", "attraction": "attraction", "活動": "attraction",
+  "購物": "shopping", "shopping": "shopping",
+  "其他": "other", "other": "other",
+};
+
+function mapCategory(raw: string): string {
+  if (!raw) return "other";
+  return CATEGORY_MAP[raw.trim()] ?? CATEGORY_MAP[raw.toLowerCase().trim()] ?? "other";
+}
+
+function mapCurrency(raw: string): string {
+  const upper = raw.toUpperCase().trim();
+  return CURRENCIES.includes(upper) ? upper : "HKD";
+}
+
+function parseDate(raw: string): string {
+  if (!raw) return new Date().toISOString().split("T")[0];
+  const iso = raw.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+  if (iso) return `${iso[1]}-${iso[2].padStart(2,"0")}-${iso[3].padStart(2,"0")}`;
+  const dmy = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2,"0")}-${dmy[1].padStart(2,"0")}`;
+  return new Date().toISOString().split("T")[0];
+}
+
+function autoMapColumns(headers: string[]): Record<string, number> {
+  const map: Record<string, number> = {};
+  const patterns: Record<string, RegExp> = {
+    date: /日期|date/i, title: /名稱|標題|項目|title|name|desc/i,
+    amount: /金額|amount|price|費用/i, currency: /貨幣|幣種|currency/i,
+    category: /類別|分類|category/i, paidByName: /付款人|付款|payer|paid/i,
+    notes: /備注|備註|notes|remark/i,
+  };
+  headers.forEach((h, i) => {
+    for (const [key, re] of Object.entries(patterns)) {
+      if (re.test(h) && !(key in map)) map[key] = i;
+    }
+  });
+  return map;
+}
+
+function rowsToExpenses(rows: string[][], hasHeader: boolean, baseCurrency: string): ParsedExpense[] {
+  const dataRows = hasHeader ? rows.slice(1) : rows;
+  const headers = hasHeader ? rows[0] : [];
+  const colMap = hasHeader ? autoMapColumns(headers) : {};
+  return dataRows.map(cells => {
+    const get = (key: string, pos: number) => {
+      const idx = colMap[key] ?? (hasHeader ? -1 : pos);
+      return idx >= 0 && idx < cells.length ? cells[idx] : "";
+    };
+    const title = get("title", 1);
+    const rawAmount = get("amount", 2);
+    const amount = rawAmount.replace(/[^0-9.]/g, "");
+    const currency = mapCurrency(get("currency", 3) || baseCurrency);
+    const category = mapCategory(get("category", 4));
+    const paidByName = get("paidByName", 5);
+    const date = parseDate(get("date", 0));
+    const notes = get("notes", 6);
+    const error = !title ? "缺少名稱" : !amount || isNaN(parseFloat(amount)) ? "金額無效" : undefined;
+    return { title, amount, currency, category, paidByName, date, notes, _error: error };
+  }).filter(r => r.title || r.amount);
+}
+
+// ─── Inline row state ────────────────────────────────────────────────────────
+type EditValues = {
+  title?: string; amount?: string; currency?: string;
+  category?: string; paidByName?: string; date?: string; notes?: string;
+};
+
+type PendingRow = {
+  title: string; amount: string; currency: string;
+  category: string; paidByName: string; date: string; notes: string;
+};
+
+type EditingCell = { rowIdx: number; col: string } | null;
+
+// ─── Main component ──────────────────────────────────────────────────────────
 export default function ExpensesPage({ tripId }: { tripId: number }) {
   const { data: expenses, refetch, isLoading } = trpc.expenses.list.useQuery({ tripId }, { refetchInterval: 15000 });
   const { data: trip } = trpc.trips.get.useQuery({ tripId });
-  const [showAdd, setShowAdd] = useState(false);
-  const [editingExpense, setEditingExpense] = useState<any | null>(null);
-  const [form, setForm] = useState(emptyForm(trip?.baseCurrency ?? "HKD"));
-
   const baseCurrency = trip?.baseCurrency ?? "HKD";
+  const canEdit = trip?.userRole === "owner" || trip?.userRole === "editor";
+
   const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
-
-  // Date range filter
   const [filterStart, setFilterStart] = useState("");
   const [filterEnd, setFilterEnd] = useState("");
   const [showDateFilter, setShowDateFilter] = useState(false);
   const [showSplit, setShowSplit] = useState(false);
+
+  // Inline table
+  const [editingCell, setEditingCell] = useState<EditingCell>(null);
+  const [pendingRows, setPendingRows] = useState<PendingRow[]>([]);
+  const [editValues, setEditValues] = useState<EditValues>({});
+
+  // CSV import
+  const [showImport, setShowImport] = useState(false);
+  const [csvText, setCsvText] = useState("");
+  const [csvHasHeader, setCsvHasHeader] = useState(true);
+  const [parsedRows, setParsedRows] = useState<ParsedExpense[]>([]);
+  const [importParsed, setImportParsed] = useState(false);
 
   const filteredExpenses = useMemo(() => {
     if (!expenses) return [];
@@ -74,23 +201,13 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
   const expenseInputs = useMemo(() => {
     if (!filteredExpenses || !displayCurrency) return [];
     return filteredExpenses.map(e => ({
-      id: e.id,
-      amount: String(e.amount),
-      currency: e.currency,
-      date: getDateStr(e.date),
+      id: e.id, amount: String(e.amount), currency: e.currency, date: getDateStr(e.date),
     }));
   }, [expenses, displayCurrency]);
 
-  const {
-    data: conversionData,
-    isLoading: conversionLoading,
-    refetch: refetchConversion,
-  } = trpc.currency.convertExpenses.useQuery(
+  const { data: conversionData, isLoading: conversionLoading } = trpc.currency.convertExpenses.useQuery(
     { targetCurrency: displayCurrency ?? "HKD", expenses: expenseInputs },
-    {
-      enabled: !!displayCurrency && expenseInputs.length > 0,
-      staleTime: 24 * 60 * 60 * 1000,
-    }
+    { enabled: !!displayCurrency && expenseInputs.length > 0, staleTime: 24 * 60 * 60 * 1000 }
   );
 
   const conversionMap = useMemo(() => {
@@ -101,56 +218,32 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
 
   function getDisplayAmount(expense: { id: number; amount: string | number; currency: string }) {
     const rawAmount = parseFloat(String(expense.amount));
-    if (!displayCurrency || displayCurrency === expense.currency) {
+    if (!displayCurrency || displayCurrency === expense.currency)
       return { value: rawAmount, currency: expense.currency, rateDate: null, isFallback: false, isConverted: false };
-    }
     const conv = conversionMap.get(expense.id);
-    if (!conv) {
+    if (!conv)
       return { value: rawAmount, currency: expense.currency, rateDate: null, isFallback: false, isConverted: false };
-    }
-    return {
-      value: conv.convertedAmount,
-      currency: conv.convertedCurrency,
-      rateDate: conv.rateDate,
-      isFallback: conv.isFallback,
-      isConverted: !conv.isIdentical,
-    };
+    return { value: conv.convertedAmount, currency: conv.convertedCurrency, rateDate: conv.rateDate, isFallback: conv.isFallback, isConverted: !conv.isIdentical };
   }
 
-  const addExpense = trpc.expenses.add.useMutation({
-    onSuccess: () => { refetch(); setShowAdd(false); setForm(emptyForm(trip?.baseCurrency ?? "HKD")); toast.success("費用已新增"); },
-    onError: () => toast.error("新增失敗"),
-  });
   const updateExpense = trpc.expenses.update.useMutation({
-    onSuccess: () => { refetch(); setEditingExpense(null); toast.success("費用已更新"); },
-    onError: () => toast.error("更新失敗"),
+    onSuccess: () => { refetch(); toast.success("已儲存"); },
+    onError: () => toast.error("儲存失敗"),
   });
   const deleteExpense = trpc.expenses.delete.useMutation({
     onSuccess: () => { refetch(); toast.success("費用已刪除"); },
   });
-
-  const handleAdd = () => {
-    if (!form.title || !form.amount) { toast.error("請填寫必填欄位"); return; }
-    addExpense.mutate({ tripId, ...form, category: form.category as any });
-  };
-
-  const handleUpdate = () => {
-    if (!editingExpense || !form.title || !form.amount) { toast.error("請填寫必填欄位"); return; }
-    updateExpense.mutate({ expenseId: editingExpense.id, tripId, ...form, category: form.category as any });
-  };
-
-  const openEdit = (expense: any) => {
-    setEditingExpense(expense);
-    setForm({
-      title: expense.title,
-      amount: String(parseFloat(expense.amount as string)),
-      currency: expense.currency,
-      category: expense.category ?? "other",
-      paidByName: expense.paidByName ?? "",
-      date: getDateStr(expense.date),
-      notes: expense.notes ?? "",
-    });
-  };
+  const addExpense = trpc.expenses.add.useMutation({
+    onSuccess: () => { refetch(); toast.success("費用已新增"); },
+    onError: () => toast.error("新增失敗"),
+  });
+  const bulkAdd = trpc.expenses.bulkAdd.useMutation({
+    onSuccess: (data) => {
+      refetch(); toast.success(`成功匯入 ${data.inserted} 筆費用`);
+      setShowImport(false); setCsvText(""); setParsedRows([]); setImportParsed(false);
+    },
+    onError: () => toast.error("匯入失敗"),
+  });
 
   const stats = useMemo(() => {
     if (!filteredExpenses) return { total: 0, byCategory: [], byPayer: [] };
@@ -171,18 +264,291 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
         name, value: Math.round(value * 100) / 100,
         color: CATEGORIES.find(c => c.label === name)?.color ?? "#94a3b8"
       })),
-      byPayer: Object.entries(byPayer).map(([name, value]) => ({
-        name, value: Math.round(value * 100) / 100
-      })),
+      byPayer: Object.entries(byPayer).map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 })),
     };
   }, [filteredExpenses, conversionMap, displayCurrency]);
 
   const effectiveCurrency = displayCurrency ?? baseCurrency;
   const hasFallback = conversionData?.results.some(r => r.isFallback) ?? false;
-
-  // Trip date bounds for the date pickers
   const tripStart = trip?.startDate ? getDateStr(trip.startDate) : "";
   const tripEnd = trip?.endDate ? getDateStr(trip.endDate) : "";
+
+  // ─── Inline editing ──────────────────────────────────────────────────────
+  function startEdit(rowIdx: number, col: string, expense: any) {
+    setEditingCell({ rowIdx, col });
+    setEditValues({
+      title: expense.title, amount: String(parseFloat(String(expense.amount))),
+      currency: expense.currency, category: expense.category ?? "other",
+      paidByName: expense.paidByName ?? "", date: getDateStr(expense.date), notes: expense.notes ?? "",
+    });
+  }
+
+  function commitEdit(expense: any) {
+    if (!editValues.title || !editValues.amount) { toast.error("名稱和金額為必填"); return; }
+    updateExpense.mutate({
+      expenseId: expense.id, tripId,
+      title: editValues.title, amount: editValues.amount, currency: editValues.currency,
+      category: editValues.category as any, paidByName: editValues.paidByName,
+      date: editValues.date, notes: editValues.notes,
+    });
+    setEditingCell(null); setEditValues({});
+  }
+
+  function cancelEdit() { setEditingCell(null); setEditValues({}); }
+
+  function addNewRow() {
+    const newRow: PendingRow = {
+      title: "", amount: "", currency: baseCurrency,
+      category: "other", paidByName: "", date: new Date().toISOString().split("T")[0], notes: "",
+    };
+    setPendingRows(prev => [...prev, newRow]);
+    const newIdx = (filteredExpenses?.length ?? 0) + pendingRows.length;
+    setEditingCell({ rowIdx: newIdx, col: "title" });
+    setEditValues({ ...newRow });
+  }
+
+  function commitNewRow(rowIdx: number) {
+    const pendingIdx = rowIdx - (filteredExpenses?.length ?? 0);
+    if (!editValues.title || !editValues.amount) {
+      setPendingRows(prev => prev.filter((_, i) => i !== pendingIdx));
+      setEditingCell(null); setEditValues({}); return;
+    }
+    addExpense.mutate({
+      tripId, title: editValues.title!, amount: editValues.amount!,
+      currency: editValues.currency ?? baseCurrency, category: (editValues.category ?? "other") as any,
+      paidByName: editValues.paidByName, date: editValues.date ?? new Date().toISOString().split("T")[0],
+      notes: editValues.notes,
+    });
+    setPendingRows(prev => prev.filter((_, i) => i !== pendingIdx));
+    setEditingCell(null); setEditValues({});
+  }
+
+  function cancelNewRow(rowIdx: number) {
+    const pendingIdx = rowIdx - (filteredExpenses?.length ?? 0);
+    setPendingRows(prev => prev.filter((_, i) => i !== pendingIdx));
+    setEditingCell(null); setEditValues({});
+  }
+
+  // ─── CSV import ──────────────────────────────────────────────────────────
+  function handleParseCsv() {
+    if (!csvText.trim()) { toast.error("請貼上數據"); return; }
+    const rows = parseCsvText(csvText);
+    if (rows.length === 0) { toast.error("無法解析數據"); return; }
+    const parsed = rowsToExpenses(rows, csvHasHeader, baseCurrency);
+    setParsedRows(parsed); setImportParsed(true);
+  }
+
+  function handleConfirmImport() {
+    const valid = parsedRows.filter(r => !r._error);
+    if (valid.length === 0) { toast.error("沒有有效的費用記錄"); return; }
+    bulkAdd.mutate({
+      tripId,
+      expenses: valid.map(r => ({
+        title: r.title, amount: r.amount, currency: r.currency,
+        category: r.category as any, paidByName: r.paidByName || undefined,
+        date: r.date, notes: r.notes || undefined,
+      })),
+    });
+  }
+
+  // ─── Cell renderer ───────────────────────────────────────────────────────
+  function renderCell(expense: any, col: string, rowIdx: number, isNew = false) {
+    const isEditing = editingCell?.rowIdx === rowIdx && editingCell?.col === col;
+    const isRowEditing = editingCell?.rowIdx === rowIdx;
+    const base = "px-2 py-1.5 text-sm align-middle";
+
+    if (col === "actions") {
+      if (!canEdit) return <td key="actions" className={base} />;
+      if (isRowEditing) {
+        return (
+          <td key="actions" className={`${base} whitespace-nowrap`}>
+            <div className="flex items-center gap-1">
+              <button onClick={() => isNew ? commitNewRow(rowIdx) : commitEdit(expense)}
+                className="p-1 rounded hover:bg-green-100 dark:hover:bg-green-900/40 text-green-600" title="儲存">
+                <Check className="w-4 h-4" />
+              </button>
+              <button onClick={() => isNew ? cancelNewRow(rowIdx) : cancelEdit()}
+                className="p-1 rounded hover:bg-muted text-muted-foreground" title="取消">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </td>
+        );
+      }
+      return (
+        <td key="actions" className={`${base} whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity`}>
+          <div className="flex items-center gap-1">
+            <button onClick={() => startEdit(rowIdx, "title", expense)}
+              className="p-1 rounded hover:bg-accent text-muted-foreground" title="編輯">
+              <Edit2 className="w-3.5 h-3.5" />
+            </button>
+            <button onClick={() => deleteExpense.mutate({ expenseId: expense.id, tripId })}
+              className="p-1 rounded hover:bg-destructive/10 text-destructive" title="刪除">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </td>
+      );
+    }
+
+    const startCellEdit = () => {
+      if (!canEdit) return;
+      if (!isRowEditing) {
+        if (isNew) setEditingCell({ rowIdx, col });
+        else startEdit(rowIdx, col, expense);
+      } else {
+        setEditingCell({ rowIdx, col });
+      }
+    };
+
+    if (col === "date") {
+      const displayDate = isRowEditing ? (editValues.date ?? "") : getDateStr(expense?.date);
+      if (isEditing) {
+        return (
+          <td key="date" className={base}>
+            <Input type="date" className="h-7 text-xs w-36 px-1.5"
+              value={editValues.date ?? ""}
+              onChange={e => setEditValues(v => ({ ...v, date: e.target.value }))}
+              onKeyDown={e => {
+                if (e.key === "Enter") setEditingCell({ rowIdx, col: "title" });
+                if (e.key === "Escape") isNew ? cancelNewRow(rowIdx) : cancelEdit();
+              }}
+              autoFocus />
+          </td>
+        );
+      }
+      return (
+        <td key="date" className={`${base} cursor-pointer hover:bg-accent/50 rounded`} onClick={startCellEdit}>
+          <span className="text-muted-foreground">{displayDate}</span>
+        </td>
+      );
+    }
+
+    if (col === "title") {
+      const displayTitle = isRowEditing ? (editValues.title ?? "") : expense?.title;
+      if (isEditing) {
+        return (
+          <td key="title" className={base}>
+            <Input className="h-7 text-xs min-w-[120px]" placeholder="費用名稱"
+              value={editValues.title ?? ""}
+              onChange={e => setEditValues(v => ({ ...v, title: e.target.value }))}
+              onKeyDown={e => {
+                if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); setEditingCell({ rowIdx, col: "amount" }); }
+                if (e.key === "Escape") isNew ? cancelNewRow(rowIdx) : cancelEdit();
+              }}
+              autoFocus />
+          </td>
+        );
+      }
+      return (
+        <td key="title" className={`${base} cursor-pointer hover:bg-accent/50 rounded`} onClick={startCellEdit}>
+          <span className="font-medium text-foreground">{displayTitle || <span className="text-muted-foreground italic text-xs">點擊輸入</span>}</span>
+        </td>
+      );
+    }
+
+    if (col === "category") {
+      const displayCat = isRowEditing ? (editValues.category ?? "other") : (expense?.category ?? "other");
+      const cat = CATEGORIES.find(c => c.value === displayCat);
+      if (isEditing) {
+        return (
+          <td key="category" className={base}>
+            <Select value={editValues.category ?? "other"}
+              onValueChange={v => { setEditValues(ev => ({ ...ev, category: v })); setEditingCell({ rowIdx, col: "currency" }); }}>
+              <SelectTrigger className="h-7 text-xs w-24"><SelectValue /></SelectTrigger>
+              <SelectContent>{CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
+            </Select>
+          </td>
+        );
+      }
+      return (
+        <td key="category" className={`${base} cursor-pointer`} onClick={startCellEdit}>
+          <span className="px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap"
+            style={{ background: `${cat?.color}20`, color: cat?.color }}>
+            {cat?.label ?? "其他"}
+          </span>
+        </td>
+      );
+    }
+
+    if (col === "currency") {
+      const displayCurr = isRowEditing ? (editValues.currency ?? baseCurrency) : expense?.currency;
+      if (isEditing) {
+        return (
+          <td key="currency" className={base}>
+            <Select value={editValues.currency ?? baseCurrency}
+              onValueChange={v => { setEditValues(ev => ({ ...ev, currency: v })); setEditingCell({ rowIdx, col: "amount" }); }}>
+              <SelectTrigger className="h-7 text-xs w-20"><SelectValue /></SelectTrigger>
+              <SelectContent>{CURRENCIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
+            </Select>
+          </td>
+        );
+      }
+      return (
+        <td key="currency" className={`${base} cursor-pointer hover:bg-accent/50 rounded`} onClick={startCellEdit}>
+          <span className="text-muted-foreground text-xs">{displayCurr}</span>
+        </td>
+      );
+    }
+
+    if (col === "amount") {
+      const rawAmt = isRowEditing ? parseFloat(editValues.amount ?? "0") : parseFloat(String(expense?.amount ?? "0"));
+      const display = isRowEditing ? null : getDisplayAmount(expense);
+      if (isEditing) {
+        return (
+          <td key="amount" className={base}>
+            <Input type="number" className="h-7 text-xs w-28 text-right" placeholder="0.00"
+              value={editValues.amount ?? ""}
+              onChange={e => setEditValues(v => ({ ...v, amount: e.target.value }))}
+              onKeyDown={e => {
+                if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); setEditingCell({ rowIdx, col: "paidByName" }); }
+                if (e.key === "Escape") isNew ? cancelNewRow(rowIdx) : cancelEdit();
+              }}
+              autoFocus />
+          </td>
+        );
+      }
+      return (
+        <td key="amount" className={`${base} text-right cursor-pointer hover:bg-accent/50 rounded`} onClick={startCellEdit}>
+          {display && display.isConverted ? (
+            <div>
+              <span className="font-semibold text-foreground">{display.currency} {formatAmount(display.value, display.currency)}</span>
+              <div className="text-[10px] text-muted-foreground">原 {expense.currency} {formatAmount(rawAmt, expense.currency)}</div>
+            </div>
+          ) : (
+            <span className="font-semibold text-foreground">
+              {(display?.currency ?? expense?.currency)} {formatAmount(display?.value ?? rawAmt, display?.currency ?? expense?.currency ?? baseCurrency)}
+            </span>
+          )}
+        </td>
+      );
+    }
+
+    if (col === "paidByName") {
+      const displayPayer = isRowEditing ? (editValues.paidByName ?? "") : expense?.paidByName;
+      if (isEditing) {
+        return (
+          <td key="paidByName" className={base}>
+            <Input className="h-7 text-xs w-24" placeholder="付款人"
+              value={editValues.paidByName ?? ""}
+              onChange={e => setEditValues(v => ({ ...v, paidByName: e.target.value }))}
+              onKeyDown={e => {
+                if (e.key === "Enter") isNew ? commitNewRow(rowIdx) : commitEdit(expense);
+                if (e.key === "Escape") isNew ? cancelNewRow(rowIdx) : cancelEdit();
+              }}
+              autoFocus />
+          </td>
+        );
+      }
+      return (
+        <td key="paidByName" className={`${base} cursor-pointer hover:bg-accent/50 rounded`} onClick={startCellEdit}>
+          <span className="text-muted-foreground text-xs">{displayPayer || "—"}</span>
+        </td>
+      );
+    }
+
+    return <td key={col} className={base} />;
+  }
 
   if (isLoading) return (
     <div className="flex items-center justify-center py-20">
@@ -190,68 +556,23 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
     </div>
   );
 
-  const ExpenseForm = ({ onSubmit, loading, label }: { onSubmit: () => void; loading: boolean; label: string }) => (
-    <div className="space-y-4 mt-2">
-      <div>
-        <Label>費用名稱 *</Label>
-        <Input className="mt-1.5" placeholder="例：午餐" value={form.title} onChange={e => setForm({...form, title: e.target.value})} />
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label>金額 *</Label>
-          <Input className="mt-1.5" type="number" placeholder="0.00" value={form.amount} onChange={e => setForm({...form, amount: e.target.value})} />
-        </div>
-        <div>
-          <Label>貨幣</Label>
-          <Select value={form.currency} onValueChange={v => setForm({...form, currency: v})}>
-            <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
-            <SelectContent>{CURRENCIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-          </Select>
-        </div>
-      </div>
-      <div>
-        <Label>類別</Label>
-        <Select value={form.category} onValueChange={v => setForm({...form, category: v})}>
-          <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
-          <SelectContent>{CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
-        </Select>
-      </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <Label>付款人</Label>
-          <Input className="mt-1.5" placeholder="姓名" value={form.paidByName} onChange={e => setForm({...form, paidByName: e.target.value})} />
-        </div>
-        <div>
-          <Label>日期</Label>
-          <Input className="mt-1.5" type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
-        </div>
-      </div>
-      <div>
-        <Label>備注</Label>
-        <Textarea className="mt-1.5" placeholder="備注..." value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} rows={2} />
-      </div>
-      <Button className="w-full" onClick={onSubmit} disabled={loading}>
-        {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-        {label}
-      </Button>
-    </div>
-  );
+  const validImportCount = parsedRows.filter(r => !r._error).length;
 
   return (
-    <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
+    <div className="px-4 sm:px-6 py-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex items-start justify-between mb-6 gap-3">
         <div>
           <h2 className="text-xl font-bold text-foreground">費用記帳</h2>
           <p className="text-muted-foreground text-sm mt-0.5">基本貨幣：{baseCurrency}</p>
         </div>
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {/* Currency conversion toggle */}
           <div className="relative">
             <button
               onClick={() => setShowCurrencyPicker(v => !v)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
-                displayCurrency
-                  ? "bg-primary text-primary-foreground border-primary"
+                displayCurrency ? "bg-primary text-primary-foreground border-primary"
                   : "bg-card text-muted-foreground border-border hover:border-primary hover:text-foreground"
               }`}
             >
@@ -260,58 +581,35 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
               {conversionLoading && <Loader2 className="w-3 h-3 animate-spin" />}
             </button>
             {showCurrencyPicker && (
-              <div className="absolute right-0 top-full mt-1 z-50 bg-popover border border-border rounded-xl shadow-lg p-2 w-56 max-h-80 overflow-y-auto">
-                <p className="text-[10px] text-muted-foreground px-2 pb-1.5 font-medium uppercase tracking-wide">顯示貨幣</p>
-                <button
-                  onClick={() => { setDisplayCurrency(null); setShowCurrencyPicker(false); }}
-                  className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${!displayCurrency ? "bg-primary/10 text-primary font-medium" : "hover:bg-accent"}`}
-                >
-                  原始貨幣（各自顯示）
-                </button>
-                {CURRENCIES.map(c => (
-                  <button
-                    key={c}
-                    onClick={() => { setDisplayCurrency(c); setShowCurrencyPicker(false); }}
-                    className={`w-full text-left px-3 py-1.5 rounded-lg text-sm transition-colors ${displayCurrency === c ? "bg-primary/10 text-primary font-medium" : "hover:bg-accent"}`}
-                  >
-                    {c}
-                    {c === baseCurrency && <span className="text-[10px] text-muted-foreground ml-1.5">（基本）</span>}
-                  </button>
-                ))}
-                {displayCurrency && (
-                  <div className="border-t border-border mt-1.5 pt-1.5">
-                    <button
-                      onClick={() => { refetchConversion(); toast.success("重新載入匯率中…"); }}
-                      className="w-full text-left px-3 py-1.5 rounded-lg text-xs text-muted-foreground hover:bg-accent flex items-center gap-1.5"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      重新載入匯率
+              <div className="absolute right-0 top-full mt-1 z-50 bg-popover border border-border rounded-xl shadow-lg p-2 w-48">
+                <div className="grid grid-cols-3 gap-1">
+                  {displayCurrency && (
+                    <button onClick={() => { setDisplayCurrency(null); setShowCurrencyPicker(false); }}
+                      className="col-span-3 text-xs px-2 py-1.5 rounded-lg hover:bg-destructive/10 text-destructive text-center mb-1">
+                      取消換算
                     </button>
-                  </div>
-                )}
+                  )}
+                  {CURRENCIES.map(c => (
+                    <button key={c} onClick={() => { setDisplayCurrency(c); setShowCurrencyPicker(false); }}
+                      className={`text-xs px-2 py-1.5 rounded-lg hover:bg-accent transition-colors ${displayCurrency === c ? "bg-primary text-primary-foreground" : "text-foreground"}`}>
+                      {c}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
-          {/* Date range filter button */}
+          {/* Date filter */}
           <div className="relative">
             <button
               onClick={() => setShowDateFilter(v => !v)}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
-                isFiltered
-                  ? "bg-green-600 text-white border-green-600"
+                isFiltered ? "bg-green-600 text-white border-green-600"
                   : "bg-card text-muted-foreground border-border hover:border-primary hover:text-foreground"
               }`}
             >
               <CalendarRange className="w-3.5 h-3.5" />
-              {isFiltered ? `${filterStart || "…"} ~ ${filterEnd || "…"}` : "篩選日期"}
-              {isFiltered && (
-                <span
-                  onClick={(e) => { e.stopPropagation(); setFilterStart(""); setFilterEnd(""); }}
-                  className="ml-0.5 hover:opacity-70"
-                >
-                  <X className="w-3 h-3" />
-                </span>
-              )}
+              {isFiltered ? "篩選中" : "日期"}
             </button>
             {showDateFilter && (
               <div className="absolute right-0 top-full mt-1 z-50 bg-popover border border-border rounded-xl shadow-lg p-4 w-72">
@@ -319,61 +617,52 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                 <div className="space-y-3">
                   <div>
                     <Label className="text-xs">開始日期</Label>
-                    <Input
-                      type="date"
-                      className="mt-1 h-8 text-sm"
-                      value={filterStart}
-                      min={tripStart || undefined}
-                      max={filterEnd || tripEnd || undefined}
-                      onChange={e => setFilterStart(e.target.value)}
-                    />
+                    <Input type="date" className="mt-1 h-8 text-sm" value={filterStart}
+                      min={tripStart || undefined} max={filterEnd || tripEnd || undefined}
+                      onChange={e => setFilterStart(e.target.value)} />
                   </div>
                   <div>
                     <Label className="text-xs">結束日期</Label>
-                    <Input
-                      type="date"
-                      className="mt-1 h-8 text-sm"
-                      value={filterEnd}
-                      min={filterStart || tripStart || undefined}
-                      max={tripEnd || undefined}
-                      onChange={e => setFilterEnd(e.target.value)}
-                    />
+                    <Input type="date" className="mt-1 h-8 text-sm" value={filterEnd}
+                      min={filterStart || tripStart || undefined} max={tripEnd || undefined}
+                      onChange={e => setFilterEnd(e.target.value)} />
                   </div>
                   <div className="flex gap-2 pt-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex-1 h-8 text-xs"
-                      onClick={() => { setFilterStart(""); setFilterEnd(""); setShowDateFilter(false); }}
-                    >
-                      清除
-                    </Button>
-                    <Button
-                      size="sm"
-                      className="flex-1 h-8 text-xs"
-                      onClick={() => setShowDateFilter(false)}
-                    >
-                      套用
-                    </Button>
+                    <Button size="sm" variant="outline" className="flex-1 h-8 text-xs"
+                      onClick={() => { setFilterStart(""); setFilterEnd(""); setShowDateFilter(false); }}>清除</Button>
+                    <Button size="sm" className="flex-1 h-8 text-xs" onClick={() => setShowDateFilter(false)}>套用</Button>
                   </div>
                 </div>
               </div>
             )}
           </div>
+          {/* Split */}
           <button
             onClick={() => setShowSplit(v => !v)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
-              showSplit
-                ? "bg-violet-600 text-white border-violet-600"
+              showSplit ? "bg-violet-600 text-white border-violet-600"
                 : "bg-card text-muted-foreground border-border hover:border-primary hover:text-foreground"
             }`}
           >
             <Calculator className="w-3.5 h-3.5" />
             分帳
           </button>
-          <Button onClick={() => { setShowAdd(true); setForm(emptyForm(trip?.baseCurrency ?? "HKD")); }} size="sm" className="gap-1.5">
-            <Plus className="w-4 h-4" />新增費用
-          </Button>
+          {/* CSV import */}
+          {canEdit && (
+            <button
+              onClick={() => setShowImport(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors bg-card text-muted-foreground border-border hover:border-primary hover:text-foreground"
+            >
+              <ClipboardPaste className="w-3.5 h-3.5" />
+              貼上數據
+            </button>
+          )}
+          {/* Add row */}
+          {canEdit && (
+            <Button onClick={addNewRow} size="sm" className="gap-1.5">
+              <Plus className="w-4 h-4" />新增
+            </Button>
+          )}
         </div>
       </div>
 
@@ -389,12 +678,9 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
         }`}>
           {hasFallback ? <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> : <ArrowLeftRight className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
           <span>
-            {conversionLoading
-              ? `正在查詢 ${displayCurrency} 歷史匯率…`
-              : hasFallback
-                ? `部分費用使用估算匯率（API 暫時無法取得歷史數據）`
-                : `已按各筆費用付款日期換算為 ${displayCurrency}（收市匯率，資料來源：Frankfurter / 55 家央行）`
-            }
+            {conversionLoading ? `正在查詢 ${displayCurrency} 歷史匯率…`
+              : hasFallback ? `部分費用使用估算匯率（API 暫時無法取得歷史數據）`
+              : `已按各筆費用付款日期換算為 ${displayCurrency}（收市匯率，資料來源：Frankfurter / 55 家央行）`}
           </span>
         </div>
       )}
@@ -402,14 +688,9 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3 mb-6">
         {[
-          {
-            icon: DollarSign,
-            label: "總費用",
-            value: conversionLoading && displayCurrency
-              ? "計算中…"
-              : `${effectiveCurrency} ${formatAmount(stats.total, effectiveCurrency)}`,
-            color: "text-blue-500 bg-blue-50 dark:bg-blue-950/30"
-          },
+          { icon: DollarSign, label: "總費用",
+            value: conversionLoading && displayCurrency ? "計算中…" : `${effectiveCurrency} ${formatAmount(stats.total, effectiveCurrency)}`,
+            color: "text-blue-500 bg-blue-50 dark:bg-blue-950/30" },
           { icon: TrendingUp, label: "筆數", value: `${expenses?.length ?? 0} 筆`, color: "text-green-500 bg-green-50 dark:bg-green-950/30" },
           { icon: Users, label: "付款人", value: `${stats.byPayer.length} 人`, color: "text-purple-500 bg-purple-50 dark:bg-purple-950/30" },
         ].map(s => (
@@ -452,6 +733,14 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
         </div>
       )}
 
+      {/* Viewer read-only banner */}
+      {!canEdit && trip && (
+        <div className="mb-4 px-3 py-2 border rounded-lg flex items-center gap-2 text-xs bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400">
+          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+          <span>只讀模式：您是此行程的檢視者，無法新增或編輯費用</span>
+        </div>
+      )}
+
       {/* Active filter notice */}
       {isFiltered && (
         <div className="mb-4 px-3 py-2 border rounded-lg flex items-center gap-2 text-xs bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400">
@@ -463,120 +752,192 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
         </div>
       )}
 
-      {/* Expense list */}
-      {!filteredExpenses || filteredExpenses.length === 0 ? (
+      {/* Inline-editable expense table */}
+      {(!filteredExpenses || filteredExpenses.length === 0) && pendingRows.length === 0 ? (
         <div className="text-center py-16">
           <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
             <DollarSign className="w-8 h-8 text-muted-foreground" />
           </div>
           <p className="text-muted-foreground">還沒有費用記錄</p>
-          <button onClick={() => setShowAdd(true)} className="text-primary hover:underline mt-2 text-sm">+ 新增第一筆費用</button>
+          {canEdit && (
+            <div className="flex items-center justify-center gap-3 mt-3">
+              <button onClick={addNewRow} className="text-primary hover:underline text-sm">+ 新增第一筆費用</button>
+              <span className="text-muted-foreground text-xs">或</span>
+              <button onClick={() => setShowImport(true)} className="text-primary hover:underline text-sm flex items-center gap-1">
+                <ClipboardPaste className="w-3.5 h-3.5" />貼上 CSV 數據
+              </button>
+            </div>
+          )}
         </div>
       ) : (
-        <div className="space-y-3">
-          {filteredExpenses.map(expense => {
-            const cat = CATEGORIES.find(c => c.value === expense.category);
-            const rawAmount = parseFloat(String(expense.amount));
-            const display = getDisplayAmount(expense);
-
-            return (
-              <div key={expense.id} className="bg-card rounded-xl border border-border p-4 flex items-center gap-3 group">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{background:`${cat?.color}20`, color: cat?.color}}>
-                  <DollarSign className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-medium text-foreground text-sm">{expense.title}</p>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium" style={{background:`${cat?.color}20`, color: cat?.color}}>{cat?.label}</span>
-                  </div>
-                  <div className="flex items-center gap-2 mt-0.5 text-xs text-muted-foreground flex-wrap">
-                    <span>{getDateStr(expense.date)}</span>
-                    {expense.paidByName && <><span>·</span><span>由 {expense.paidByName} 付款</span></>}
-                    {display.isConverted && display.rateDate && (
-                      <>
-                        <span>·</span>
-                        <span className={display.isFallback ? "text-amber-500" : "text-blue-500"}>
-                          {display.isFallback ? "估算匯率" : `${display.rateDate} 匯率`}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                </div>
-                <div className="text-right shrink-0">
-                  {conversionLoading && displayCurrency && displayCurrency !== expense.currency ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-muted-foreground ml-auto" />
-                  ) : (
-                    <>
-                      <p className="font-bold text-foreground">
-                        {display.currency} {formatAmount(display.value, display.currency)}
-                      </p>
-                      {display.isConverted && (
-                        <p className="text-[10px] text-muted-foreground mt-0.5">
-                          原 {expense.currency} {formatAmount(rawAmount, expense.currency)}
-                        </p>
-                      )}
-                    </>
-                  )}
-                </div>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-                  <button
-                    onClick={() => openEdit(expense)}
-                    className="p-1.5 rounded-lg hover:bg-accent transition-colors"
-                  >
-                    <Edit2 className="w-4 h-4 text-muted-foreground" />
-                  </button>
-                  <button
-                    onClick={() => deleteExpense.mutate({ expenseId: expense.id, tripId })}
-                    className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4 text-destructive" />
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+        <div className="bg-card rounded-2xl border border-border overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-border bg-muted/40">
+                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">日期</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">名稱</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">類別</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">貨幣</th>
+                  <th className="px-2 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap">金額</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">付款人</th>
+                  <th className="px-2 py-2 w-16"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredExpenses.map((expense, rowIdx) => (
+                  <tr key={expense.id}
+                    className={`border-b border-border last:border-0 group transition-colors ${
+                      editingCell?.rowIdx === rowIdx ? "bg-accent/30" : "hover:bg-muted/30"
+                    }`}>
+                    {renderCell(expense, "date", rowIdx)}
+                    {renderCell(expense, "title", rowIdx)}
+                    {renderCell(expense, "category", rowIdx)}
+                    {renderCell(expense, "currency", rowIdx)}
+                    {renderCell(expense, "amount", rowIdx)}
+                    {renderCell(expense, "paidByName", rowIdx)}
+                    {renderCell(expense, "actions", rowIdx)}
+                  </tr>
+                ))}
+                {pendingRows.map((row, pIdx) => {
+                  const rowIdx = (filteredExpenses?.length ?? 0) + pIdx;
+                  const mockExpense = { ...row, id: -1 };
+                  return (
+                    <tr key={`new-${pIdx}`} className="border-b border-border last:border-0 bg-primary/5">
+                      {renderCell(mockExpense, "date", rowIdx, true)}
+                      {renderCell(mockExpense, "title", rowIdx, true)}
+                      {renderCell(mockExpense, "category", rowIdx, true)}
+                      {renderCell(mockExpense, "currency", rowIdx, true)}
+                      {renderCell(mockExpense, "amount", rowIdx, true)}
+                      {renderCell(mockExpense, "paidByName", rowIdx, true)}
+                      {renderCell(mockExpense, "actions", rowIdx, true)}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {canEdit && (
+            <div className="px-3 py-2 border-t border-border">
+              <button onClick={addNewRow}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors">
+                <Plus className="w-3.5 h-3.5" />新增一行
+              </button>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Add Dialog */}
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>新增費用</DialogTitle></DialogHeader>
-          <ExpenseForm onSubmit={handleAdd} loading={addExpense.isPending} label="新增費用" />
+      {/* Click outside overlays */}
+      {showCurrencyPicker && <div className="fixed inset-0 z-40" onClick={() => setShowCurrencyPicker(false)} />}
+      {showDateFilter && <div className="fixed inset-0 z-40" onClick={() => setShowDateFilter(false)} />}
+
+      {/* CSV Import Dialog */}
+      <Dialog open={showImport} onOpenChange={(o) => {
+        if (!o) { setShowImport(false); setImportParsed(false); setCsvText(""); setParsedRows([]); }
+      }}>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ClipboardPaste className="w-4 h-4" />
+              貼上數據批量匯入
+            </DialogTitle>
+          </DialogHeader>
+          {!importParsed ? (
+            <div className="space-y-4 mt-2">
+              <div className="bg-muted/40 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
+                <p className="font-medium text-foreground">支援格式：</p>
+                <p>• 從 Excel / Google Sheets 直接複製貼上（Tab 分隔）</p>
+                <p>• CSV 格式（逗號分隔）</p>
+                <p>• 欄位順序：日期、名稱、金額、貨幣、類別、付款人、備注</p>
+                <p>• 如有標題行，系統會自動識別欄位</p>
+              </div>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={csvHasHeader}
+                  onChange={e => setCsvHasHeader(e.target.checked)} className="rounded" />
+                第一行是標題行
+              </label>
+              <Textarea
+                placeholder={"貼上試算表數據，例如：\n2025-01-15\t午餐\t250\tHKD\t餐飲\t張三\n2025-01-16\t地鐵\t50\tHKD\t交通\t李四"}
+                value={csvText} onChange={e => setCsvText(e.target.value)}
+                rows={10} className="font-mono text-xs" />
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={() => setShowImport(false)}>取消</Button>
+                <Button className="flex-1" onClick={handleParseCsv}>解析預覽</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4 mt-2">
+              <div className={`px-3 py-2 rounded-lg text-xs ${
+                validImportCount > 0
+                  ? "bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800"
+                  : "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800"
+              }`}>
+                解析完成：{validImportCount} 筆有效 · {parsedRows.length - validImportCount} 筆錯誤
+              </div>
+              <div className="overflow-x-auto rounded-lg border border-border">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="bg-muted/40 border-b border-border">
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">狀態</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">日期</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">名稱</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">類別</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-muted-foreground">金額</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">付款人</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {parsedRows.map((row, i) => {
+                      const cat = CATEGORIES.find(c => c.value === row.category);
+                      return (
+                        <tr key={i} className={`border-b border-border last:border-0 ${row._error ? "bg-red-50/50 dark:bg-red-950/20" : ""}`}>
+                          <td className="px-2 py-1.5">
+                            {row._error
+                              ? <span className="text-red-500 text-[10px]">{row._error}</span>
+                              : <Check className="w-3.5 h-3.5 text-green-600" />}
+                          </td>
+                          <td className="px-2 py-1.5 text-muted-foreground">{row.date}</td>
+                          <td className="px-2 py-1.5 font-medium text-foreground">{row.title || "—"}</td>
+                          <td className="px-2 py-1.5">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                              style={{ background: `${cat?.color}20`, color: cat?.color }}>
+                              {cat?.label ?? "其他"}
+                            </span>
+                          </td>
+                          <td className="px-2 py-1.5 text-right font-semibold">{row.currency} {row.amount}</td>
+                          <td className="px-2 py-1.5 text-muted-foreground">{row.paidByName || "—"}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div className="flex gap-3">
+                <Button variant="outline" className="flex-1" onClick={() => setImportParsed(false)}>返回修改</Button>
+                <Button className="flex-1" disabled={validImportCount === 0 || bulkAdd.isPending} onClick={handleConfirmImport}>
+                  {bulkAdd.isPending
+                    ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />匯入中…</>
+                    : `確認匯入 ${validImportCount} 筆`}
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
-
-      {/* Edit Dialog */}
-      <Dialog open={!!editingExpense} onOpenChange={(o) => !o && setEditingExpense(null)}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader><DialogTitle>修改費用</DialogTitle></DialogHeader>
-          <ExpenseForm onSubmit={handleUpdate} loading={updateExpense.isPending} label="儲存變更" />
-        </DialogContent>
-      </Dialog>
-
-      {showCurrencyPicker && (
-        <div className="fixed inset-0 z-40" onClick={() => setShowCurrencyPicker(false)} />
-      )}
-      {showDateFilter && (
-        <div className="fixed inset-0 z-40" onClick={() => setShowDateFilter(false)} />
-      )}
     </div>
   );
 }
 
 // ─── Split Summary Panel ─────────────────────────────────────────────────────
-
 function SplitSummaryPanel({ tripId, baseCurrency }: { tripId: number; baseCurrency: string }) {
   const [splitCurrency, setSplitCurrency] = useState(baseCurrency);
-
   const { data, isLoading, error } = trpc.expenses.getSplitSummary.useQuery(
     { tripId, baseCurrency: splitCurrency },
     { staleTime: 60_000 }
   );
-
   return (
     <div className="mb-6 bg-card border border-violet-200 dark:border-violet-800 rounded-2xl overflow-hidden">
-      {/* Panel header */}
       <div className="flex items-center justify-between px-4 py-3 bg-violet-50 dark:bg-violet-950/40 border-b border-violet-200 dark:border-violet-800">
         <div className="flex items-center gap-2">
           <Calculator className="w-4 h-4 text-violet-600 dark:text-violet-400" />
@@ -596,24 +957,18 @@ function SplitSummaryPanel({ tripId, baseCurrency }: { tripId: number; baseCurre
           </Select>
         </div>
       </div>
-
       {isLoading && (
         <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground text-sm">
-          <Loader2 className="w-4 h-4 animate-spin" />
-          計算中…
+          <Loader2 className="w-4 h-4 animate-spin" />計算中…
         </div>
       )}
-
       {error && (
         <div className="px-4 py-4 text-sm text-red-500 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4" />
-          計算失敗，請稍後再試
+          <AlertCircle className="w-4 h-4" />計算失敗，請稍後再試
         </div>
       )}
-
       {data && !isLoading && (
         <div className="p-4 space-y-4">
-          {/* Per-member balance */}
           <div>
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">各人結餘</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -622,33 +977,31 @@ function SplitSummaryPanel({ tripId, baseCurrency }: { tripId: number; baseCurre
                 const isPositive = balance > 0;
                 const isZero = Math.abs(balance) < 0.01;
                 return (
-                  <div
-                    key={m.userId}
-                    className={`px-3 py-2.5 rounded-xl border text-sm ${
-                      isZero
-                        ? "bg-muted/40 border-border"
-                        : isPositive
-                          ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800"
-                          : "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"
-                    }`}
-                  >
-                    {/* Name row */}
+                  <div key={m.userId} className={`px-3 py-2.5 rounded-xl border text-sm ${
+                    isZero ? "bg-muted/40 border-border"
+                      : isPositive ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800"
+                      : "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"
+                  }`}>
                     <div className="flex items-center justify-between mb-1.5">
                       <div className="flex items-center gap-2 min-w-0">
                         <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                          isZero ? "bg-muted text-muted-foreground" : isPositive ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300" : "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300"
+                          isZero ? "bg-muted text-muted-foreground"
+                            : isPositive ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300"
+                            : "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300"
                         }`}>
                           {m.name.charAt(0).toUpperCase()}
                         </div>
                         <span className="font-semibold text-foreground truncate">{m.name}</span>
                       </div>
                       <span className={`font-bold text-sm ${
-                        isZero ? "text-muted-foreground" : isPositive ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"
+                        isZero ? "text-muted-foreground"
+                          : isPositive ? "text-green-700 dark:text-green-400"
+                          : "text-red-600 dark:text-red-400"
                       }`}>
-                        {isZero ? "已結清" : (isPositive ? "應收 +" : "應付 ")}{!isZero && `${formatAmount(Math.abs(balance), splitCurrency)} ${splitCurrency}`}
+                        {isZero ? "已結清" : (isPositive ? "應收 +" : "應付 ")}
+                        {!isZero && `${formatAmount(Math.abs(balance), splitCurrency)} ${splitCurrency}`}
                       </span>
                     </div>
-                    {/* Paid / Owed breakdown */}
                     <div className="flex gap-3 text-[11px] text-muted-foreground pl-9">
                       <span>已付 <span className="font-medium text-foreground">{formatAmount(m.paidTotal, splitCurrency)}</span></span>
                       <span className="text-border">|</span>
@@ -659,8 +1012,6 @@ function SplitSummaryPanel({ tripId, baseCurrency }: { tripId: number; baseCurre
               })}
             </div>
           </div>
-
-          {/* Settlement transactions */}
           {data.settlements.length > 0 ? (
             <div>
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">最少轉帳方案</p>
@@ -689,10 +1040,8 @@ function SplitSummaryPanel({ tripId, baseCurrency }: { tripId: number; baseCurre
               所有費用已平均分攤，無需轉帳！
             </div>
           )}
-
           <p className="text-[10px] text-muted-foreground">
             * 金額已按各筆費用付款日期換算為 {splitCurrency}（Frankfurter 歷史收市匯率）。
-  
           </p>
         </div>
       )}

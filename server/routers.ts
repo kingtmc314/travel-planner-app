@@ -844,7 +844,39 @@ const expensesRouter = router({
       await db.deleteExpense(input.expenseId);
       return { success: true };
     }),
-
+  bulkAdd: protectedProcedure
+    .input(z.object({
+      tripId: z.number(),
+      expenses: z.array(z.object({
+        title: z.string().min(1),
+        amount: z.string(),
+        currency: z.string(),
+        category: z.enum(["transport", "food", "accommodation", "attraction", "shopping", "other"]).default("other"),
+        paidByName: z.string().optional(),
+        date: z.string(),
+        notes: z.string().optional(),
+      })).min(1).max(500),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      const ids: number[] = [];
+      for (const e of input.expenses) {
+        const id = await db.addExpense({
+          tripId: input.tripId,
+          title: e.title,
+          amount: e.amount,
+          currency: e.currency,
+          category: e.category,
+          paidBy: ctx.user.id,
+          paidByName: e.paidByName ?? ctx.user.name ?? null,
+          date: new Date(e.date),
+          notes: e.notes ?? null,
+        });
+        ids.push(id);
+      }
+      return { inserted: ids.length };
+    }),
   // AI auto-classify: suggest categories for all "other" expenses in a trip
   autoClassify: protectedProcedure
     .input(z.object({ tripId: z.number() }))
