@@ -175,3 +175,11 @@
 - [x] Map pin dialog: type place name → Google Places Geocoder auto-fills lat/lng/address
 - [x] Itinerary page: fix "0 天行程" empty state — show proper empty state with "新增第一天" button
 - [x] Itinerary page: add "從地圖標記匯入" option when adding activity to a day
+
+## Drag-and-Drop Activity Reorder
+- [x] Install @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities
+- [x] Backend: itinerary.reorderActivities tRPC procedure (accepts dayId + ordered array of activity IDs, bulk-updates sortOrder)
+- [x] Frontend: wrap each day's activity list in DndContext + SortableContext
+- [x] Frontend: each activity card becomes a SortableItem with drag handle icon
+- [x] Frontend: optimistic update on drag end, persist via reorderActivities mutation
+- [x] Frontend: touch-sensor support for mobile drag

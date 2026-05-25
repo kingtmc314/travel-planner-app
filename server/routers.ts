@@ -633,6 +633,28 @@ const itineraryRouter = router({
       await db.deleteItineraryDay(input.dayId);
       return { success: true };
     }),
+
+  reorderActivities: protectedProcedure
+    .input(z.object({
+      tripId: z.number(),
+      orderedIds: z.array(z.number()), // activity IDs in new order
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      // Validate all activities belong to this trip before updating
+      const tripActivities = await db.getTripActivities(input.tripId);
+      const validIds = new Set(tripActivities.map((a: any) => a.id));
+      const allValid = input.orderedIds.every(id => validIds.has(id));
+      if (!allValid) throw new Error("One or more activities do not belong to this trip");
+      // Bulk-update sortOrder for each activity
+      await Promise.all(
+        input.orderedIds.map((id, index) =>
+          db.updateActivity(id, { sortOrder: index })
+        )
+      );
+      return { success: true };
+    }),
 });
 
 // ─── Expenses Router ──────────────────────────────────────────────────────────

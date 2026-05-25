@@ -200,6 +200,12 @@ export async function deleteActivity(activityId: number) {
   await db.delete(activities).where(eq(activities.id, activityId));
 }
 
+export async function getTripActivities(tripId: number) {
+  const db = await getDb();
+  if (!db) return [];
+  return db.select().from(activities).where(eq(activities.tripId, tripId));
+}
+
 export async function deleteItineraryDay(dayId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
