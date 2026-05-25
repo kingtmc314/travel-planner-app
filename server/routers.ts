@@ -949,10 +949,118 @@ Respond ONLY with a JSON object matching the schema. No markdown, no explanation
         await db.updateExpense(c.id, { category: c.category });
         updated++;
       }
-      return { updated };
+            return { updated };
+    }),
+
+  // ─── Split Summary ────────────────────────────────────────────────────────
+  getSplitSummary: protectedProcedure
+    .input(z.object({ tripId: z.number(), baseCurrency: z.string().default("HKD") }))
+    .query(async ({ ctx, input }) => {
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership) throw new Error("Access denied");
+
+      const [allExpenses, allMembers] = await Promise.all([
+        db.getTripExpenses(input.tripId),
+        db.getTripMembers(input.tripId),
+      ]);
+
+      // Fetch exchange rates for all unique currencies to baseCurrency
+      const currencies = Array.from(new Set(allExpenses.map(e => e.currency)));
+      const rateMap: Record<string, number> = { [input.baseCurrency]: 1 };
+      await Promise.all(
+        currencies
+          .filter(c => c !== input.baseCurrency)
+          .map(async (c) => {
+            try {
+              const res = await fetch(`https://api.frankfurter.dev/v2/latest?base=${input.baseCurrency}&symbols=${c}`);
+              if (res.ok) {
+                const data = await res.json() as { rates: Record<string, number> };
+                // rates[c] = how many c per 1 baseCurrency, so 1 c = 1/rates[c] baseCurrency
+                if (data.rates[c]) rateMap[c] = 1 / data.rates[c];
+              }
+            } catch { /* ignore, use 1:1 fallback */ }
+          })
+      );
+
+      // Build member map: userId -> displayName
+      const memberMap: Record<number, string> = {};
+      for (const { member, user } of allMembers) {
+        const name = member.displayName ?? user?.name ?? `User ${member.userId}`;
+        memberMap[member.userId] = name;
+      }
+
+      // Calculate net balance per member (positive = owed money, negative = owes money)
+      const balance: Record<number, number> = {};
+      for (const { member } of allMembers) {
+        balance[member.userId] = 0;
+      }
+
+      for (const expense of allExpenses) {
+        const amountInBase = parseFloat(expense.amount) * (rateMap[expense.currency] ?? 1);
+        const payerId = expense.paidBy;
+
+        // Determine who splits this expense
+        let splitIds: number[];
+        const rawSplit = expense.splitAmong as number[] | null;
+        if (rawSplit && Array.isArray(rawSplit) && rawSplit.length > 0) {
+          splitIds = rawSplit;
+        } else {
+          // Default: split equally among all members
+          splitIds = Object.keys(balance).map(Number);
+        }
+        if (splitIds.length === 0) continue;
+        const share = amountInBase / splitIds.length;
+
+        // Payer gets credited
+        if (balance[payerId] !== undefined) balance[payerId] += amountInBase;
+        else balance[payerId] = amountInBase;
+
+        // Each splitter gets debited their share
+        for (const uid of splitIds) {
+          if (balance[uid] !== undefined) balance[uid] -= share;
+          else balance[uid] = -share;
+        }
+      }
+
+      // Build member summary list
+      const members = Object.entries(balance).map(([uid, net]) => ({
+        userId: Number(uid),
+        name: memberMap[Number(uid)] ?? `User ${uid}`,
+        net: Math.round(net * 100) / 100,
+        status: net > 0.005 ? "owed" as const : net < -0.005 ? "owes" as const : "settled" as const,
+      }));
+
+      // Minimal-transfer settlement algorithm (greedy)
+      const creditors = members.filter(m => m.net > 0.005).map(m => ({ ...m, remaining: m.net }));
+      const debtors = members.filter(m => m.net < -0.005).map(m => ({ ...m, remaining: -m.net }));
+      const settlements: { from: string; fromId: number; to: string; toId: number; amount: number }[] = [];
+
+      let ci = 0, di = 0;
+      while (ci < creditors.length && di < debtors.length) {
+        const c = creditors[ci];
+        const d = debtors[di];
+        const transfer = Math.min(c.remaining, d.remaining);
+        if (transfer > 0.005) {
+          settlements.push({
+            from: d.name, fromId: d.userId,
+            to: c.name, toId: c.userId,
+            amount: Math.round(transfer * 100) / 100,
+          });
+        }
+        c.remaining -= transfer;
+        d.remaining -= transfer;
+        if (c.remaining < 0.005) ci++;
+        if (d.remaining < 0.005) di++;
+      }
+
+      return {
+        baseCurrency: input.baseCurrency,
+        members,
+        settlements,
+        totalExpenses: Math.round(allExpenses.reduce((s, e) => s + parseFloat(e.amount) * (rateMap[e.currency] ?? 1), 0) * 100) / 100,
+      };
     }),
 });
-
 // ─── Map Router ───────────────────────────────────────────────────────────────
 const mapRouter = router({
   getPins: protectedProcedure

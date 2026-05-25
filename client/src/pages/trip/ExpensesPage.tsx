@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { Plus, Trash2, Loader2, DollarSign, TrendingUp, Users, Edit2, RefreshCw, ArrowLeftRight, AlertCircle, CalendarRange, X } from "lucide-react";
+import { Plus, Trash2, Loader2, DollarSign, TrendingUp, Users, Edit2, RefreshCw, ArrowLeftRight, AlertCircle, CalendarRange, X, Calculator, ArrowRight, CheckCircle2 } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 
@@ -56,6 +56,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
   const [filterStart, setFilterStart] = useState("");
   const [filterEnd, setFilterEnd] = useState("");
   const [showDateFilter, setShowDateFilter] = useState(false);
+  const [showSplit, setShowSplit] = useState(false);
 
   const filteredExpenses = useMemo(() => {
     if (!expenses) return [];
@@ -359,11 +360,25 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
               </div>
             )}
           </div>
+          <button
+            onClick={() => setShowSplit(v => !v)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+              showSplit
+                ? "bg-violet-600 text-white border-violet-600"
+                : "bg-card text-muted-foreground border-border hover:border-primary hover:text-foreground"
+            }`}
+          >
+            <Calculator className="w-3.5 h-3.5" />
+            分帳
+          </button>
           <Button onClick={() => { setShowAdd(true); setForm(emptyForm(trip?.baseCurrency ?? "HKD")); }} size="sm" className="gap-1.5">
             <Plus className="w-4 h-4" />新增費用
           </Button>
         </div>
       </div>
+
+      {/* Split Summary Panel */}
+      {showSplit && <SplitSummaryPanel tripId={tripId} baseCurrency={baseCurrency} />}
 
       {/* Currency conversion notice */}
       {displayCurrency && (
@@ -544,6 +559,136 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
       )}
       {showDateFilter && (
         <div className="fixed inset-0 z-40" onClick={() => setShowDateFilter(false)} />
+      )}
+    </div>
+  );
+}
+
+// ─── Split Summary Panel ─────────────────────────────────────────────────────
+
+function SplitSummaryPanel({ tripId, baseCurrency }: { tripId: number; baseCurrency: string }) {
+  const [splitCurrency, setSplitCurrency] = useState(baseCurrency);
+
+  const { data, isLoading, error } = trpc.expenses.getSplitSummary.useQuery(
+    { tripId, baseCurrency: splitCurrency },
+    { staleTime: 60_000 }
+  );
+
+  return (
+    <div className="mb-6 bg-card border border-violet-200 dark:border-violet-800 rounded-2xl overflow-hidden">
+      {/* Panel header */}
+      <div className="flex items-center justify-between px-4 py-3 bg-violet-50 dark:bg-violet-950/40 border-b border-violet-200 dark:border-violet-800">
+        <div className="flex items-center gap-2">
+          <Calculator className="w-4 h-4 text-violet-600 dark:text-violet-400" />
+          <span className="font-semibold text-sm text-violet-900 dark:text-violet-200">分帳計算</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">換算為</span>
+          <Select value={splitCurrency} onValueChange={setSplitCurrency}>
+            <SelectTrigger className="h-7 w-24 text-xs border-violet-300 dark:border-violet-700">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {["HKD","USD","EUR","GBP","JPY","CNY","TWD","SGD","AUD","CAD","KRW","THB"].map(c => (
+                <SelectItem key={c} value={c}>{c}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {isLoading && (
+        <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground text-sm">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          計算中…
+        </div>
+      )}
+
+      {error && (
+        <div className="px-4 py-4 text-sm text-red-500 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4" />
+          計算失敗，請稍後再試
+        </div>
+      )}
+
+      {data && !isLoading && (
+        <div className="p-4 space-y-4">
+          {/* Per-member balance */}
+          <div>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">各人結餘</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {data.members.map(m => {
+                const balance = m.net;
+                const isPositive = balance > 0;
+                const isZero = Math.abs(balance) < 0.01;
+                return (
+                  <div
+                    key={m.userId}
+                    className={`flex items-center justify-between px-3 py-2 rounded-xl border text-sm ${
+                      isZero
+                        ? "bg-muted/40 border-border"
+                        : isPositive
+                          ? "bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800"
+                          : "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                        isZero ? "bg-muted text-muted-foreground" : isPositive ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300" : "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300"
+                      }`}>
+                        {m.name.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="font-medium text-foreground truncate">{m.name}</span>
+                    </div>
+                    <div className="text-right shrink-0 ml-2">
+                      <div className={`font-semibold ${isZero ? "text-muted-foreground" : isPositive ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
+                        {isPositive ? "+" : ""}{formatAmount(balance, splitCurrency)} {splitCurrency}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">
+                        {isZero ? "已結清" : isPositive ? "應收" : "應付"}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Settlement transactions */}
+          {data.settlements.length > 0 ? (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">最少轉帳方案</p>
+              <div className="space-y-2">
+                {data.settlements.map((s, i) => (
+                  <div key={i} className="flex items-center gap-2 px-3 py-2.5 bg-muted/40 rounded-xl border border-border text-sm">
+                    <div className="w-6 h-6 rounded-full bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 flex items-center justify-center text-xs font-bold shrink-0">
+                      {s.from.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="font-medium text-foreground">{s.from}</span>
+                    <ArrowRight className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                    <div className="w-6 h-6 rounded-full bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 flex items-center justify-center text-xs font-bold shrink-0">
+                      {s.to.charAt(0).toUpperCase()}
+                    </div>
+                    <span className="font-medium text-foreground">{s.to}</span>
+                    <span className="ml-auto font-semibold text-foreground shrink-0">
+                      {formatAmount(s.amount, splitCurrency)} {splitCurrency}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 px-3 py-3 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-xl text-sm text-green-700 dark:text-green-400">
+              <CheckCircle2 className="w-4 h-4 shrink-0" />
+              所有費用已平均分攤，無需轉帳！
+            </div>
+          )}
+
+          <p className="text-[10px] text-muted-foreground">
+            * 金額已按各筆費用付款日期換算為 {splitCurrency}（Frankfurter 歷史收市匯率）。
+  
+          </p>
+        </div>
       )}
     </div>
   );

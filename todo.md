@@ -208,3 +208,9 @@
 - [x] Frontend: TripLayout — userRole exposed via trips.get in each page
 - [x] Frontend: hide edit/delete buttons when user is viewer role (canEdit guard in ItineraryPage)
 - [x] Frontend: show "只讀模式" banner when user is viewer — implemented in ItineraryPage
+
+## Bill-Split Calculator (ExpensesPage)
+- [ ] Backend: expenses.getSplitSummary — per-member paid/owed totals + minimal-transfer settlement list
+- [ ] Frontend: ExpensesPage — "分帳計算" tab/panel with member balance cards (paid vs owed)
+- [ ] Frontend: settlement list showing who pays whom and how much
+- [ ] Frontend: support base currency display (same as existing currency toggle)
