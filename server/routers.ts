@@ -634,6 +634,31 @@ const itineraryRouter = router({
       return { success: true };
     }),
 
+  moveActivity: protectedProcedure
+    .input(z.object({
+      tripId: z.number(),
+      activityId: z.number(),
+      targetDayId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      // Validate activity belongs to this trip
+      const tripActivities = await db.getTripActivities(input.tripId);
+      const activity = tripActivities.find((a: any) => a.id === input.activityId);
+      if (!activity) throw new Error("Activity not found in this trip");
+      // Validate target day belongs to this trip
+      const days = await db.getItineraryDays(input.tripId);
+      const targetDay = days.find(d => d.id === input.targetDayId);
+      if (!targetDay) throw new Error("Target day not found in this trip");
+      // Assign sortOrder = end of target day
+      const targetDayActivities = await db.getTripActivities(input.tripId);
+      const targetActs = targetDayActivities.filter((a: any) => a.dayId === input.targetDayId);
+      const maxSort = targetActs.reduce((m: number, a: any) => Math.max(m, a.sortOrder ?? 0), -1);
+      await db.updateActivity(input.activityId, { dayId: input.targetDayId, sortOrder: maxSort + 1 });
+      return { success: true };
+    }),
+
   reorderActivities: protectedProcedure
     .input(z.object({
       tripId: z.number(),

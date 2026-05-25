@@ -6,7 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { Plus, Trash2, Loader2, DollarSign, TrendingUp, Users, Edit2, RefreshCw, ArrowLeftRight, AlertCircle } from "lucide-react";
+import { Plus, Trash2, Loader2, DollarSign, TrendingUp, Users, Edit2, RefreshCw, ArrowLeftRight, AlertCircle, CalendarRange, X } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 
@@ -52,9 +52,27 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
   const [displayCurrency, setDisplayCurrency] = useState<string | null>(null);
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
 
+  // Date range filter
+  const [filterStart, setFilterStart] = useState("");
+  const [filterEnd, setFilterEnd] = useState("");
+  const [showDateFilter, setShowDateFilter] = useState(false);
+
+  const filteredExpenses = useMemo(() => {
+    if (!expenses) return [];
+    if (!filterStart && !filterEnd) return expenses;
+    return expenses.filter(e => {
+      const d = getDateStr(e.date);
+      if (filterStart && d < filterStart) return false;
+      if (filterEnd && d > filterEnd) return false;
+      return true;
+    });
+  }, [expenses, filterStart, filterEnd]);
+
+  const isFiltered = !!(filterStart || filterEnd);
+
   const expenseInputs = useMemo(() => {
-    if (!expenses || !displayCurrency) return [];
-    return expenses.map(e => ({
+    if (!filteredExpenses || !displayCurrency) return [];
+    return filteredExpenses.map(e => ({
       id: e.id,
       amount: String(e.amount),
       currency: e.currency,
@@ -134,11 +152,11 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
   };
 
   const stats = useMemo(() => {
-    if (!expenses) return { total: 0, byCategory: [], byPayer: [] };
+    if (!filteredExpenses) return { total: 0, byCategory: [], byPayer: [] };
     let total = 0;
     const byCat: Record<string, number> = {};
     const byPayer: Record<string, number> = {};
-    expenses.forEach(e => {
+    filteredExpenses.forEach(e => {
       const { value } = getDisplayAmount(e);
       total += value;
       const cat = CATEGORIES.find(c => c.value === e.category);
@@ -156,10 +174,14 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
         name, value: Math.round(value * 100) / 100
       })),
     };
-  }, [expenses, conversionMap, displayCurrency]);
+  }, [filteredExpenses, conversionMap, displayCurrency]);
 
   const effectiveCurrency = displayCurrency ?? baseCurrency;
   const hasFallback = conversionData?.results.some(r => r.isFallback) ?? false;
+
+  // Trip date bounds for the date pickers
+  const tripStart = trip?.startDate ? getDateStr(trip.startDate) : "";
+  const tripEnd = trip?.endDate ? getDateStr(trip.endDate) : "";
 
   if (isLoading) return (
     <div className="flex items-center justify-center py-20">
@@ -269,6 +291,74 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
               </div>
             )}
           </div>
+          {/* Date range filter button */}
+          <div className="relative">
+            <button
+              onClick={() => setShowDateFilter(v => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+                isFiltered
+                  ? "bg-green-600 text-white border-green-600"
+                  : "bg-card text-muted-foreground border-border hover:border-primary hover:text-foreground"
+              }`}
+            >
+              <CalendarRange className="w-3.5 h-3.5" />
+              {isFiltered ? `${filterStart || "…"} ~ ${filterEnd || "…"}` : "篩選日期"}
+              {isFiltered && (
+                <span
+                  onClick={(e) => { e.stopPropagation(); setFilterStart(""); setFilterEnd(""); }}
+                  className="ml-0.5 hover:opacity-70"
+                >
+                  <X className="w-3 h-3" />
+                </span>
+              )}
+            </button>
+            {showDateFilter && (
+              <div className="absolute right-0 top-full mt-1 z-50 bg-popover border border-border rounded-xl shadow-lg p-4 w-72">
+                <p className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">日期範圍篩選</p>
+                <div className="space-y-3">
+                  <div>
+                    <Label className="text-xs">開始日期</Label>
+                    <Input
+                      type="date"
+                      className="mt-1 h-8 text-sm"
+                      value={filterStart}
+                      min={tripStart || undefined}
+                      max={filterEnd || tripEnd || undefined}
+                      onChange={e => setFilterStart(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">結束日期</Label>
+                    <Input
+                      type="date"
+                      className="mt-1 h-8 text-sm"
+                      value={filterEnd}
+                      min={filterStart || tripStart || undefined}
+                      max={tripEnd || undefined}
+                      onChange={e => setFilterEnd(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 h-8 text-xs"
+                      onClick={() => { setFilterStart(""); setFilterEnd(""); setShowDateFilter(false); }}
+                    >
+                      清除
+                    </Button>
+                    <Button
+                      size="sm"
+                      className="flex-1 h-8 text-xs"
+                      onClick={() => setShowDateFilter(false)}
+                    >
+                      套用
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
           <Button onClick={() => { setShowAdd(true); setForm(emptyForm(trip?.baseCurrency ?? "HKD")); }} size="sm" className="gap-1.5">
             <Plus className="w-4 h-4" />新增費用
           </Button>
@@ -347,8 +437,19 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
         </div>
       )}
 
+      {/* Active filter notice */}
+      {isFiltered && (
+        <div className="mb-4 px-3 py-2 border rounded-lg flex items-center gap-2 text-xs bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400">
+          <CalendarRange className="w-3.5 h-3.5 shrink-0" />
+          <span>篩選中：{filterStart || "最早"} 至 {filterEnd || "最新"} · 顯示 {filteredExpenses.length} / {expenses?.length ?? 0} 筆</span>
+          <button onClick={() => { setFilterStart(""); setFilterEnd(""); }} className="ml-auto hover:opacity-70">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
       {/* Expense list */}
-      {!expenses || expenses.length === 0 ? (
+      {!filteredExpenses || filteredExpenses.length === 0 ? (
         <div className="text-center py-16">
           <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
             <DollarSign className="w-8 h-8 text-muted-foreground" />
@@ -358,7 +459,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
         </div>
       ) : (
         <div className="space-y-3">
-          {expenses.map(expense => {
+          {filteredExpenses.map(expense => {
             const cat = CATEGORIES.find(c => c.value === expense.category);
             const rawAmount = parseFloat(String(expense.amount));
             const display = getDisplayAmount(expense);
@@ -440,6 +541,9 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
 
       {showCurrencyPicker && (
         <div className="fixed inset-0 z-40" onClick={() => setShowCurrencyPicker(false)} />
+      )}
+      {showDateFilter && (
+        <div className="fixed inset-0 z-40" onClick={() => setShowDateFilter(false)} />
       )}
     </div>
   );

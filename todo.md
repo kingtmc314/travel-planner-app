@@ -183,3 +183,8 @@
 - [x] Frontend: each activity card becomes a SortableItem with drag handle icon
 - [x] Frontend: optimistic update on drag end, persist via reorderActivities mutation
 - [x] Frontend: touch-sensor support for mobile drag
+
+## Three New Features (Round 4)
+- [x] ExpensesPage: date-range filter (start/end date pickers in header, client-side filter on expense list + charts)
+- [x] ItineraryPage: move-to-another-day — backend moveActivity procedure + day picker dialog in activity action menu
+- [x] ItineraryPage: export as PDF — "匯出行程" button generates printable HTML page and triggers browser print

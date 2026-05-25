@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import {
   Plus, MapPin, Clock, Trash2, Edit2, Sparkles, Loader2,
-  Car, Home, Utensils, Camera, ShoppingBag, MoreHorizontal, CalendarPlus, GripVertical
+  Car, Home, Utensils, Camera, ShoppingBag, MoreHorizontal, CalendarPlus, GripVertical, MoveRight, FileDown
 } from "lucide-react";
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
@@ -76,6 +76,7 @@ function SortableActivityCard({
   tripId,
   onEdit,
   onDelete,
+  onMove,
 }: {
   activity: any;
   idx: number;
@@ -83,6 +84,7 @@ function SortableActivityCard({
   tripId: number;
   onEdit: (activity: any) => void;
   onDelete: (activityId: number) => void;
+  onMove: (activity: any) => void;
 }) {
   const {
     attributes,
@@ -145,20 +147,29 @@ function SortableActivityCard({
               <p className="text-muted-foreground text-xs mt-1 leading-relaxed">{activity.notes}</p>
             )}
           </div>
-          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
-            <button
-              onClick={() => onEdit(activity)}
-              className="p-1.5 rounded-lg hover:bg-accent transition-colors"
-            >
-              <Edit2 className="w-3.5 h-3.5 text-muted-foreground" />
-            </button>
-            <button
-              onClick={() => onDelete(activity.id)}
-              className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5 text-destructive" />
-            </button>
-          </div>
+            <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
+              <button
+                onClick={() => onEdit(activity)}
+                className="p-1.5 rounded-lg hover:bg-accent transition-colors"
+                title="編輯"
+              >
+                <Edit2 className="w-3.5 h-3.5 text-muted-foreground" />
+              </button>
+              <button
+                onClick={() => onMove(activity)}
+                className="p-1.5 rounded-lg hover:bg-blue-50 transition-colors"
+                title="移至其他天"
+              >
+                <MoveRight className="w-3.5 h-3.5 text-blue-500" />
+              </button>
+              <button
+                onClick={() => onDelete(activity.id)}
+                className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
+                title="刪除"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-destructive" />
+              </button>
+            </div>
         </div>
       </div>
     </div>
@@ -174,6 +185,108 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
 
   const [addingDayId, setAddingDayId] = useState<number | null>(null);
   const [editingActivity, setEditingActivity] = useState<any | null>(null);
+  const [movingActivity, setMovingActivity] = useState<any | null>(null);
+
+  const exportToPDF = () => {
+    if (!days || days.length === 0) { toast.error("沒有行程可以匯出"); return; }
+    const tripName = trip?.name ?? "行程";
+    const tripDest = trip?.destination ?? "";
+    const tripDates = trip?.startDate && trip?.endDate
+      ? `${getDateStr(trip.startDate)} – ${getDateStr(trip.endDate)}`
+      : "";
+
+    const catColors: Record<string, string> = {
+      transport: "#3b82f6", accommodation: "#8b5cf6", hotel: "#8b5cf6",
+      food: "#f97316", attraction: "#22c55e", shopping: "#ec4899", other: "#94a3b8",
+    };
+    const catLabels: Record<string, string> = {
+      transport: "交通", accommodation: "住宿", hotel: "住宿",
+      food: "餐飲", attraction: "景點", shopping: "購物", other: "其他",
+    };
+
+    const daysHtml = days.map(day => {
+      const acts = getActivitiesForDay(day);
+      const actsHtml = acts.length === 0
+        ? `<p style="color:#9ca3af;font-size:13px;margin:8px 0">未安排活動</p>`
+        : acts.map(a => {
+            const color = catColors[a.category] ?? "#94a3b8";
+            const label = catLabels[a.category] ?? "其他";
+            return `
+              <div style="display:flex;gap:12px;margin-bottom:12px;align-items:flex-start">
+                <div style="width:8px;height:8px;border-radius:50%;background:${color};margin-top:5px;flex-shrink:0"></div>
+                <div style="flex:1">
+                  <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                    <span style="font-weight:600;font-size:14px">${a.title}</span>
+                    <span style="background:${color}22;color:${color};font-size:11px;padding:1px 6px;border-radius:4px">${label}</span>
+                    ${a.startTime ? `<span style="color:#6b7280;font-size:12px">${a.startTime}${a.endTime ? ` – ${a.endTime}` : ""}</span>` : ""}
+                  </div>
+                  ${a.location ? `<div style="color:#6b7280;font-size:12px;margin-top:2px">📍 ${a.location}</div>` : ""}
+                  ${a.notes ? `<div style="color:#9ca3af;font-size:12px;margin-top:2px">${a.notes}</div>` : ""}
+                </div>
+              </div>`;
+          }).join("");
+
+      const dateStr = day.date
+        ? new Date(day.date).toLocaleDateString("zh-TW", { year: "numeric", month: "long", day: "numeric", weekday: "long" })
+        : "";
+
+      return `
+        <div style="margin-bottom:28px;page-break-inside:avoid">
+          <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #e5e7eb">
+            <div style="width:28px;height:28px;border-radius:50%;background:#1e40af;color:white;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${day.dayNumber}</div>
+            <div>
+              <div style="font-weight:700;font-size:15px">${day.title ?? `第 ${day.dayNumber} 天`}</div>
+              ${dateStr ? `<div style="color:#6b7280;font-size:12px">${dateStr}</div>` : ""}
+            </div>
+          </div>
+          ${actsHtml}
+        </div>`;
+    }).join("");
+
+    const html = `
+      <!DOCTYPE html>
+      <html lang="zh-TW">
+      <head>
+        <meta charset="UTF-8">
+        <title>${tripName} 行程</title>
+        <style>
+          * { box-sizing: border-box; }
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 32px; color: #111827; max-width: 800px; margin: 0 auto; }
+          @media print {
+            body { padding: 16px; }
+            .no-print { display: none !important; }
+          }
+        </style>
+      </head>
+      <body>
+        <div style="text-align:center;margin-bottom:32px;padding-bottom:24px;border-bottom:3px solid #1e40af">
+          <h1 style="font-size:28px;font-weight:800;color:#1e40af;margin:0 0 8px">${tripName}</h1>
+          ${tripDest ? `<p style="color:#6b7280;font-size:15px;margin:0 0 4px">📍 ${tripDest}</p>` : ""}
+          ${tripDates ? `<p style="color:#6b7280;font-size:14px;margin:0">📅 ${tripDates}</p>` : ""}
+          <p style="color:#9ca3af;font-size:12px;margin:8px 0 0">產生時間：${new Date().toLocaleString("zh-TW")}</p>
+        </div>
+        ${daysHtml}
+        <div class="no-print" style="text-align:center;margin-top:32px">
+          <button onclick="window.print()" style="background:#1e40af;color:white;border:none;padding:10px 24px;border-radius:8px;font-size:14px;cursor:pointer">🖨️ 列印 / 儲存為 PDF</button>
+        </div>
+      </body>
+      </html>`;
+
+    const win = window.open("", "_blank");
+    if (win) {
+      win.document.write(html);
+      win.document.close();
+      setTimeout(() => win.print(), 500);
+    } else {
+      toast.error("請允許彈出視窗以匯出 PDF");
+    }
+  };
+
+  function getDateStr(d: Date | string | null | undefined) {
+    if (!d) return "";
+    if (d instanceof Date) return d.toISOString().split("T")[0];
+    return String(d).split("T")[0];
+  }
   const [form, setForm] = useState<ActivityFormData>(defaultForm);
   const [aiDayId, setAiDayId] = useState<number | null>(null);
   const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
@@ -198,6 +311,15 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
     onSuccess: () => { refetch(); toast.success("已新增一天"); },
     onError: () => toast.error("新增失敗"),
   });
+  const moveActivity = trpc.itinerary.moveActivity.useMutation({
+    onSuccess: () => {
+      refetch();
+      setMovingActivity(null);
+      toast.success("活動已移至其他天");
+    },
+    onError: () => toast.error("移動失敗"),
+  });
+
   const reorderActivities = trpc.itinerary.reorderActivities.useMutation({
     onError: () => { refetch(); toast.error("排序儲存失敗，已還原"); },
   });
@@ -321,10 +443,16 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
           <h2 className="text-xl font-bold text-foreground">每日行程</h2>
           <p className="text-muted-foreground text-sm mt-0.5">{days?.length ?? 0} 天行程</p>
         </div>
-        <Button variant="outline" size="sm" onClick={handleAddDay} disabled={addDay.isPending} className="gap-1.5 shrink-0">
-          {addDay.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarPlus className="w-3.5 h-3.5" />}
-          新增一天
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={exportToPDF} className="gap-1.5 shrink-0">
+            <FileDown className="w-3.5 h-3.5" />
+            匯出 PDF
+          </Button>
+          <Button variant="outline" size="sm" onClick={handleAddDay} disabled={addDay.isPending} className="gap-1.5 shrink-0">
+            {addDay.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarPlus className="w-3.5 h-3.5" />}
+            新增一天
+          </Button>
+        </div>
       </div>
 
       {/* Empty state */}
@@ -461,6 +589,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                               setEditingActivity(a);
                               setForm({ title: a.title, location: a.location ?? "", startTime: a.startTime ?? "", endTime: a.endTime ?? "", notes: a.notes ?? "", category: a.category });
                             }}
+                            onMove={(a) => setMovingActivity(a)}
                             onDelete={(id) => deleteActivity.mutate({ activityId: id, tripId })}
                           />
                         ))}
@@ -491,6 +620,51 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
             <DialogTitle>編輯活動</DialogTitle>
           </DialogHeader>
           <ActivityForm form={form} setForm={setForm} onSubmit={handleUpdate} loading={updateActivity.isPending} submitLabel="儲存變更" />
+        </DialogContent>
+      </Dialog>
+
+      {/* Move to Another Day Dialog */}
+      <Dialog open={!!movingActivity} onOpenChange={(o) => !o && setMovingActivity(null)}>
+        <DialogContent className="sm:max-w-sm max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MoveRight className="w-4 h-4 text-blue-500" />
+              移至其他天
+            </DialogTitle>
+          </DialogHeader>
+          {movingActivity && (
+            <div className="mt-2">
+              <p className="text-sm text-muted-foreground mb-3">
+                選擇要將「<span className="font-medium text-foreground">{movingActivity.title}</span>」移至哪一天：
+              </p>
+              <div className="space-y-2">
+                {days?.filter(d => d.id !== movingActivity.dayId).map(d => (
+                  <button
+                    key={d.id}
+                    onClick={() => moveActivity.mutate({ tripId, activityId: movingActivity.id, targetDayId: d.id })}
+                    disabled={moveActivity.isPending}
+                    className="w-full text-left p-3 rounded-xl border border-border hover:border-primary hover:bg-primary/5 transition-all flex items-center gap-3"
+                  >
+                    <div className="w-8 h-8 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center shrink-0">
+                      {d.dayNumber}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-foreground">{d.title ?? `第 ${d.dayNumber} 天`}</p>
+                      {d.date && (
+                        <p className="text-xs text-muted-foreground">
+                          {new Date(d.date).toLocaleDateString("zh-TW", { month: "long", day: "numeric", weekday: "short" })}
+                        </p>
+                      )}
+                    </div>
+                    {moveActivity.isPending ? <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" /> : <MoveRight className="w-4 h-4 text-primary" />}
+                  </button>
+                ))}
+                {days?.filter(d => d.id !== movingActivity.dayId).length === 0 && (
+                  <p className="text-center text-muted-foreground text-sm py-4">只有一天行程，無法移動</p>
+                )}
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
