@@ -266,7 +266,7 @@ const tripsRouter = router({
       for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
         await db.addItineraryDay({
           tripId,
-          date: new Date(d),
+          date: d.toISOString().slice(0, 10),
           dayNumber: dayNum++,
           title: `Day ${dayNum - 1}`,
         });
@@ -366,7 +366,7 @@ const tripsRouter = router({
     for (let i = 0; i < days.length; i++) {
       const dayId = await db.addItineraryDay({
         tripId,
-        date: new Date(days[i].date),
+        date: new Date(days[i].date).toISOString().slice(0, 10),
         dayNumber: i + 1,
         title: days[i].title,
       });
@@ -474,7 +474,7 @@ const tripsRouter = router({
         const end = new Date(t.endDate);
         let dayNum = 1;
         for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
-          await db.addItineraryDay({ tripId, date: new Date(d), dayNumber: dayNum++, title: `Day ${dayNum - 1}` });
+          await db.addItineraryDay({ tripId, date: d.toISOString().slice(0, 10), dayNumber: dayNum++, title: `Day ${dayNum - 1}` });
         }
         created.push(tripId);
       }
@@ -758,7 +758,7 @@ const itineraryRouter = router({
       if (!membership || membership.role === "viewer") throw new Error("Permission denied");
       const dayId = await db.addItineraryDay({
         tripId: input.tripId,
-        date: new Date(input.date),
+        date: new Date(input.date).toISOString().slice(0, 10),
         dayNumber: input.dayNumber,
         title: input.title ?? `Day ${input.dayNumber}`,
       });

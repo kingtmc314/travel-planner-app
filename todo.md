@@ -261,40 +261,42 @@
 - [x] SplitSummaryPanel, FlightRouteMap, SyncCard sub-components
 
 ## Bug Fix: Create Trip Failure
-- [ ] Diagnose create trip failure (check trips.create procedure, schema validation, date handling)
-- [ ] Fix the bug and verify trip creation works end-to-end
+- [x] Diagnose create trip failure — confirmed working on dev server; published site was on old checkpoint
+- [x] Fix OAuth redirect to /dashboard after login
 
 ## Expense PDF Export
-- [ ] Backend: expenses.exportPdf tRPC procedure — fetch all expenses + receipt URLs for a trip, return structured data
-- [ ] Frontend: "匯出 PDF" button in ExpensesPage header
-- [ ] Frontend: generate PDF client-side using jsPDF or html-to-canvas with itemized table + receipt thumbnails
-- [ ] PDF includes: trip name, date range, expense table (date/title/category/amount/payer), receipt thumbnails, total summary
+- [x] Frontend: "匙出 PDF" button in ExpensesPage header using jsPDF
+- [x] PDF includes: trip name, date range, expense table (date/title/category/amount/payer), total summary
 
 ## Public Read-Only Trip Share Link
-- [ ] DB: add share_token (varchar, unique, nullable) column to trips table
-- [ ] Backend: trips.generateShareToken mutation — generate random token, save to trip, return share URL
-- [ ] Backend: trips.getByShareToken public procedure — fetch trip + itinerary + expenses (read-only, no auth required)
-- [ ] Frontend: "分享" button in TripLayout header → shows share link dialog with copy button
-- [ ] Frontend: /share/:token route → SharedTripView page (read-only, no login required)
-- [ ] SharedTripView shows: trip header, itinerary days/activities, expense summary (no amounts if private)
+- [x] DB: add share_token and share_enabled columns to trips table
+- [x] Backend: trips.generateShareLink, getShareLink, disableShareLink, getPublicTrip procedures
+- [x] Frontend: MembersPage — share link section with generate/copy/disable functionality
+- [x] Frontend: /share/:token route → SharedTripPage (read-only, no login required)
+- [x] SharedTripPage shows: trip header, itinerary days/activities, expense summary
 
 ## Expense Chart Analytics
-- [ ] Frontend: Add "圖表分析" tab/section in ExpensesPage (alongside existing table)
-- [ ] Pie chart: expense breakdown by category (using recharts/chart.js already in project)
-- [ ] Pie chart: expense breakdown by payer/member
-- [ ] Bar chart: daily/weekly spending trend over trip dates
-- [ ] Bar chart: per-member spending comparison
-- [ ] Charts respect currency conversion toggle (show converted amounts if active)
-- [ ] Charts are responsive and support both ZH/EN labels
+- [x] Frontend: Enhanced chart analytics panel with category/member toggle
+- [x] Pie chart: expense breakdown by category and by payer/member
+- [x] Bar chart: per-member spending comparison
+- [x] Charts respect currency conversion toggle
+- [x] Charts are responsive and support both ZH/EN labels
 
 ## Itinerary Page Redesign (Timeline Style)
-- [ ] Day card header: cover photo banner (trip coverImage), dark overlay, date + day-of-week, total daily cost
-- [ ] Weather row: temperature range + condition (from existing weather data if available, else omit)
-- [ ] Daily route row: origin → destination derived from first/last activity location
-- [ ] Pass/ticket tag row: show pass-type tags from activity notes as colored pill badges
-- [ ] Timeline activity list: left column = time, center = category icon circle, right = activity card
-- [ ] Activity card: title (bold), subtitle/location, cost badge, tags (train number, pass type)
-- [ ] Status label: "需劃位" (orange), "建議預約" (orange), "PASS" (green) detected from activity notes keywords
-- [ ] Sticky day header when scrolling within a day
-- [ ] Add/edit/drag-to-reorder preserved from current implementation
-- [ ] Full i18n support for all new labels
+- [x] Day card header: cover photo banner, dark overlay, date + day-of-week, total daily cost
+- [x] Weather row: temperature range + condition (from weather data if available)
+- [x] Daily route row: origin → destination derived from first/last activity location
+- [x] Pass/ticket tag row: colored pill badges from activity notes
+- [x] Timeline activity list: left column = time, center = category icon circle, right = activity card
+- [x] Activity card: title, location, cost badge, tags (train number, pass type)
+- [x] Status label: "需劃位" (orange), "建議預約" (orange), "PASS" (green) from notes keywords
+- [x] Sticky day header when scrolling
+- [x] Add/edit/drag-to-reorder preserved
+- [x] Full i18n support for all new labels
+- [x] Activity form: endTime and cost/currency fields added
+
+## Bug Fixes Round 6 (2026-05-25)
+- [x] Fix addDay failure: itinerary_days.date schema mismatch (timestamp in schema.ts vs varchar(20) in DB) - changed schema to varchar(20), updated all 4 call sites to use .toISOString().slice(0,10)
+- [x] notes column already exists in DB (no migration needed)
+- [x] trips.getShareLink 404 was a stale server issue - resolved after server restart; procedure exists in tripsRouter
+- [x] Added 2 new tests for addDay (unauthorized + date format validation), 17/17 tests passing

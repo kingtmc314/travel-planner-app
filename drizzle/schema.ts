@@ -76,7 +76,7 @@ export type InsertInviteLink = typeof inviteLinks.$inferInsert;
 export const itineraryDays = mysqlTable("itinerary_days", {
   id: int("id").autoincrement().primaryKey(),
   tripId: int("tripId").notNull(),
-  date: timestamp("date").notNull(),
+  date: varchar("date", { length: 20 }).notNull(),
   dayNumber: int("dayNumber").notNull(),
   title: varchar("title", { length: 255 }),
   notes: text("notes"),

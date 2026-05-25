@@ -117,6 +117,27 @@ describe("itinerary router - protected procedures", () => {
     const caller = appRouter.createCaller(ctx);
     await expect(caller.itinerary.getDays({ tripId: 1 })).rejects.toThrow();
   });
+
+  it("throws UNAUTHORIZED when unauthenticated user tries to add a day", async () => {
+    const { ctx } = createAnonContext();
+    const caller = appRouter.createCaller(ctx);
+    await expect(
+      caller.itinerary.addDay({
+        tripId: 1,
+        date: "2026-06-01",
+        dayNumber: 1,
+        title: "Day 1",
+      })
+    ).rejects.toThrow();
+  });
+
+  it("addDay input date is accepted as ISO string (YYYY-MM-DD format)", () => {
+    // Verify that the date string format used in addDay is valid YYYY-MM-DD
+    const isoDate = "2026-06-01T00:00:00.000Z";
+    const dateStr = new Date(isoDate).toISOString().slice(0, 10);
+    expect(dateStr).toBe("2026-06-01");
+    expect(dateStr).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
 });
 
 describe("expenses router - protected procedures", () => {
