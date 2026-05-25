@@ -233,3 +233,12 @@
 - [x] Frontend: after upload, show thumbnail in the row; click thumbnail to open full-size lightbox
 - [x] Frontend: lightbox has "刪除收據" button to remove the receipt
 - [x] Frontend: receipt count badge on expenses page header (e.g. "3 張收據")
+
+## AI Receipt OCR (Auto-fill from Photo)
+- [x] Backend: expenses.analyzeReceipt tRPC mutation — accept base64 image, call vision LLM with JSON schema, return { title, amount, currency, date, category }
+- [x] Backend: LLM prompt instructs model to extract merchant name, total amount, currency, date, and best-fit category from receipt image
+- [x] Frontend: after successful upload, automatically call analyzeReceipt with the same base64 data
+- [x] Frontend: show AI result confirmation dialog with extracted fields (editable before applying)
+- [x] Frontend: "套用" button applies extracted fields to the expense row via expenses.update
+- [x] Frontend: show loading spinner on the row while AI analysis is running
+- [x] Frontend: graceful fallback if OCR fails (show toast, skip dialog)

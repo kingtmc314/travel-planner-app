@@ -1140,6 +1140,73 @@ Respond ONLY with a JSON object matching the schema. No markdown, no explanation
       await db.updateExpense(input.expenseId, { receiptUrl: null, receiptKey: null });
       return { success: true };
     }),
+  // AI receipt OCR: extract fields from a receipt image
+  analyzeReceipt: protectedProcedure
+    .input(z.object({
+      tripId: z.number(),
+      // base64-encoded image (same data used for upload)
+      imageData: z.string().min(1),
+      mimeType: z.string().default("image/jpeg"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership) throw new Error("Access denied");
+      const dataUrl = `data:${input.mimeType};base64,${input.imageData}`;
+      const schema = {
+        type: "object",
+        properties: {
+          title:    { type: "string",  description: "Merchant or store name extracted from the receipt. Use the most prominent business name. If unclear, use a short description of the purchase." },
+          amount:   { type: "string",  description: "Total amount paid as a plain decimal string, e.g. \"123.50\". Extract the final total (after tax/service charge). If not found, return empty string." },
+          currency: { type: "string",  description: "ISO 4217 currency code, e.g. HKD, TWD, JPY, USD, EUR. Infer from currency symbol or country context. If unknown, return empty string." },
+          date:     { type: "string",  description: "Transaction date in YYYY-MM-DD format. If not found, return empty string." },
+          category: { type: "string",  description: "Best-fit category from: transport, food, accommodation, attraction, shopping, other." },
+          confidence: { type: "number", description: "Overall extraction confidence 0-1." },
+        },
+        required: ["title", "amount", "currency", "date", "category", "confidence"],
+        additionalProperties: false,
+      };
+      const response = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: "You are a receipt OCR assistant. Extract structured data from receipt images. Return only the JSON fields requested — no extra commentary.",
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "image_url",
+                image_url: { url: dataUrl, detail: "high" },
+              },
+              {
+                type: "text",
+                text: "Please extract the merchant name, total amount, currency, transaction date, and expense category from this receipt.",
+              },
+            ],
+          },
+        ],
+        response_format: {
+          type: "json_schema",
+          json_schema: { name: "receipt_ocr", strict: true, schema },
+        },
+      });
+      const rawContent = response.choices?.[0]?.message?.content ?? "{}";
+      const raw = typeof rawContent === "string" ? rawContent : JSON.stringify(rawContent);
+      let parsed: { title: string; amount: string; currency: string; date: string; category: string; confidence: number };
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        throw new Error("AI returned invalid JSON");
+      }
+      return {
+        title:      parsed.title ?? "",
+        amount:     parsed.amount ?? "",
+        currency:   parsed.currency ?? "",
+        date:       parsed.date ?? "",
+        category:   (parsed.category ?? "other") as "transport" | "food" | "accommodation" | "attraction" | "shopping" | "other",
+        confidence: parsed.confidence ?? 0,
+      };
+    }),
 });
 // ─── Map Router ───────────────────────────────────────────────────────────────
 const mapRouter = router({

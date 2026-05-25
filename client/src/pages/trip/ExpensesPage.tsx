@@ -183,6 +183,14 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
   const [uploadingReceiptId, setUploadingReceiptId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const pendingUploadExpenseId = useRef<number | null>(null);
+  // AI OCR confirmation dialog
+  const [ocrDialog, setOcrDialog] = useState<{
+    expenseId: number;
+    title: string; amount: string; currency: string; date: string;
+    category: "transport" | "food" | "accommodation" | "attraction" | "shopping" | "other";
+    confidence: number;
+  } | null>(null);
+  const [analyzingReceiptId, setAnalyzingReceiptId] = useState<number | null>(null);
 
   // CSV import
   const [showImport, setShowImport] = useState(false);
@@ -250,13 +258,30 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
     },
     onError: () => toast.error("匯入失敗"),
   });
-  const uploadReceipt = trpc.expenses.uploadReceipt.useMutation({
-    onSuccess: () => { refetch(); toast.success("收據已上傳"); setUploadingReceiptId(null); },
-    onError: (e) => { toast.error(`上傳失敗: ${e.message}`); setUploadingReceiptId(null); },
-  });
+  const uploadReceipt = trpc.expenses.uploadReceipt.useMutation();
   const removeReceipt = trpc.expenses.removeReceipt.useMutation({
     onSuccess: () => { refetch(); toast.success("收據已刪除"); },
     onError: () => toast.error("刪除失敗"),
+  });
+  const analyzeReceipt = trpc.expenses.analyzeReceipt.useMutation({
+    onSuccess: (data, vars) => {
+      setAnalyzingReceiptId(null);
+      // Only show dialog if we got at least a title or amount
+      if (data.title || data.amount) {
+        setOcrDialog({
+          expenseId: (vars as any)._expenseId as number,
+          title: data.title,
+          amount: data.amount,
+          currency: data.currency,
+          date: data.date,
+          category: data.category,
+          confidence: data.confidence,
+        });
+      } else {
+        toast("AI 未能辨識收據內容，請手動填寫");
+      }
+    },
+    onError: () => { setAnalyzingReceiptId(null); toast("AI 辨識失敗，請手動填寫"); },
   });
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -268,15 +293,35 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
     const reader = new FileReader();
     reader.onload = (ev) => {
       const dataUrl = ev.target?.result as string;
-      // dataUrl = "data:image/jpeg;base64,XXXX"
       const [header, base64] = dataUrl.split(",");
       const mimeType = header.match(/:(.*?);/)?.[1] ?? "image/jpeg";
-      uploadReceipt.mutate({ expenseId: expId, tripId, imageData: base64, mimeType, fileName: file.name });
+      // 1. Upload receipt image
+      uploadReceipt.mutate(
+        { expenseId: expId, tripId, imageData: base64, mimeType, fileName: file.name },
+        {
+          onSuccess: () => {
+            refetch();
+            toast.success("收據已上傳，AI 辨識中…");
+            setUploadingReceiptId(null);
+            // 2. Trigger AI OCR in parallel
+            setAnalyzingReceiptId(expId);
+            // Pass expenseId via a custom property on the input object
+            const ocrInput = Object.assign(
+              { tripId, imageData: base64, mimeType },
+              { _expenseId: expId }
+            );
+            analyzeReceipt.mutate(ocrInput as any);
+          },
+          onError: (err) => {
+            toast.error(`上傳失敗: ${err.message}`);
+            setUploadingReceiptId(null);
+          },
+        }
+      );
     };
     reader.readAsDataURL(file);
-    // reset input so same file can be re-selected
     e.target.value = "";
-  }, [tripId, uploadReceipt]);
+  }, [tripId, uploadReceipt, analyzeReceipt]);
 
   const stats = useMemo(() => {
     if (!filteredExpenses) return { total: 0, byCategory: [], byPayer: [] };
@@ -834,29 +879,37 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                     {renderCell(expense, "amount", rowIdx)}
                     {renderCell(expense, "paidByName", rowIdx)}
                     <td className="px-1 py-1.5 text-center align-middle">
-                      {expense.receiptUrl ? (
-                        <button
-                          onClick={() => setLightboxUrl(expense.receiptUrl!)}
-                          className="relative group/thumb w-8 h-8 rounded overflow-hidden border border-border hover:border-primary transition-colors inline-flex items-center justify-center"
-                          title="查看收據"
-                        >
-                          <img src={expense.receiptUrl} alt="收據" className="w-full h-full object-cover" />
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center">
-                            <ZoomIn className="w-3 h-3 text-white" />
+                      <div className="relative inline-flex items-center justify-center">
+                        {expense.receiptUrl ? (
+                          <button
+                            onClick={() => setLightboxUrl(expense.receiptUrl!)}
+                            className="relative group/thumb w-8 h-8 rounded overflow-hidden border border-border hover:border-primary transition-colors inline-flex items-center justify-center"
+                            title="查看收據"
+                          >
+                            <img src={expense.receiptUrl} alt="收據" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center">
+                              <ZoomIn className="w-3 h-3 text-white" />
+                            </div>
+                          </button>
+                        ) : canEdit ? (
+                          <button
+                            onClick={() => { pendingUploadExpenseId.current = expense.id; fileInputRef.current?.click(); }}
+                            disabled={uploadingReceiptId === expense.id}
+                            className="w-8 h-8 rounded border border-dashed border-border hover:border-primary hover:text-primary text-muted-foreground transition-colors inline-flex items-center justify-center opacity-0 group-hover:opacity-100"
+                            title="上傳收據"
+                          >
+                            {uploadingReceiptId === expense.id
+                              ? <Loader2 className="w-3 h-3 animate-spin" />
+                              : <Camera className="w-3 h-3" />}
+                          </button>
+                        ) : null}
+                        {/* AI analyzing spinner overlay */}
+                        {analyzingReceiptId === expense.id && (
+                          <div className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-primary flex items-center justify-center" title="AI 辨識中…">
+                            <Loader2 className="w-2.5 h-2.5 text-primary-foreground animate-spin" />
                           </div>
-                        </button>
-                      ) : canEdit ? (
-                        <button
-                          onClick={() => { pendingUploadExpenseId.current = expense.id; fileInputRef.current?.click(); }}
-                          disabled={uploadingReceiptId === expense.id}
-                          className="w-8 h-8 rounded border border-dashed border-border hover:border-primary hover:text-primary text-muted-foreground transition-colors inline-flex items-center justify-center opacity-0 group-hover:opacity-100"
-                          title="上傳收據"
-                        >
-                          {uploadingReceiptId === expense.id
-                            ? <Loader2 className="w-3 h-3 animate-spin" />
-                            : <Camera className="w-3 h-3" />}
-                        </button>
-                      ) : null}
+                        )}
+                      </div>
                     </td>
                     {renderCell(expense, "actions", rowIdx)}
                   </tr>
@@ -950,6 +1003,112 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
           </div>
         </div>
       )}
+
+      {/* AI OCR Confirmation Dialog */}
+      <Dialog open={!!ocrDialog} onOpenChange={(o) => { if (!o) setOcrDialog(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <span className="text-lg">✨</span> AI 收據辨識結果
+            </DialogTitle>
+          </DialogHeader>
+          {ocrDialog && (
+            <div className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                AI 已從收據中擷取以下資訊，請確認或修改後點「套用」。
+                {ocrDialog.confidence < 0.6 && (
+                  <span className="ml-1 text-amber-500">（信心度較低，請仔細核對）</span>
+                )}
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <Label className="text-xs">商家名稱</Label>
+                  <Input
+                    className="h-8 text-sm mt-1"
+                    value={ocrDialog.title}
+                    onChange={e => setOcrDialog(d => d ? { ...d, title: e.target.value } : d)}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">金額</Label>
+                  <Input
+                    className="h-8 text-sm mt-1"
+                    value={ocrDialog.amount}
+                    onChange={e => setOcrDialog(d => d ? { ...d, amount: e.target.value } : d)}
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">貨幣</Label>
+                  <Select
+                    value={ocrDialog.currency || ""}
+                    onValueChange={v => setOcrDialog(d => d ? { ...d, currency: v } : d)}
+                  >
+                    <SelectTrigger className="h-8 text-sm mt-1">
+                      <SelectValue placeholder="選擇貨幣" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CURRENCIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label className="text-xs">日期</Label>
+                  <Input
+                    type="date"
+                    className="h-8 text-sm mt-1"
+                    value={ocrDialog.date}
+                    onChange={e => setOcrDialog(d => d ? { ...d, date: e.target.value } : d)}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <Label className="text-xs">類別</Label>
+                  <Select
+                    value={ocrDialog.category}
+                    onValueChange={v => setOcrDialog(d => d ? { ...d, category: v as typeof d.category } : d)}
+                  >
+                    <SelectTrigger className="h-8 text-sm mt-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => setOcrDialog(null)}
+                >
+                  跳過
+                </Button>
+                <Button
+                  size="sm"
+                  className="flex-1"
+                  disabled={updateExpense.isPending}
+                  onClick={() => {
+                    if (!ocrDialog) return;
+                    const updates: Record<string, string> = {};
+                    if (ocrDialog.title)    updates.title    = ocrDialog.title;
+                    if (ocrDialog.amount)   updates.amount   = ocrDialog.amount;
+                    if (ocrDialog.currency) updates.currency = ocrDialog.currency;
+                    if (ocrDialog.date)     updates.date     = ocrDialog.date;
+                    if (ocrDialog.category) updates.category = ocrDialog.category;
+                    updateExpense.mutate(
+                      { expenseId: ocrDialog.expenseId, tripId, ...updates } as any,
+                      { onSuccess: () => { setOcrDialog(null); toast.success("資訊已套用"); } }
+                    );
+                  }}
+                >
+                  {updateExpense.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "✔ 套用"}
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Click outside overlays */}
       {showCurrencyPicker && <div className="fixed inset-0 z-40" onClick={() => setShowCurrencyPicker(false)} />}
