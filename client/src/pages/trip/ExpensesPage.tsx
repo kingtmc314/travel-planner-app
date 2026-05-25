@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useI18n } from "@/hooks/useI18n";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -14,7 +15,7 @@ import {
 import { useState, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
 
-const CATEGORIES = [
+const CATEGORIES_ZH = [
   { value: "transport", label: "交通", color: "#3b82f6" },
   { value: "accommodation", label: "住宿", color: "#8b5cf6" },
   { value: "food", label: "餐飲", color: "#f97316" },
@@ -22,6 +23,15 @@ const CATEGORIES = [
   { value: "shopping", label: "購物", color: "#ec4899" },
   { value: "other", label: "其他", color: "#94a3b8" },
 ];
+const CATEGORIES_EN = [
+  { value: "transport", label: "Transport", color: "#3b82f6" },
+  { value: "accommodation", label: "Accommodation", color: "#8b5cf6" },
+  { value: "food", label: "Food & Drink", color: "#f97316" },
+  { value: "attraction", label: "Attraction", color: "#22c55e" },
+  { value: "shopping", label: "Shopping", color: "#ec4899" },
+  { value: "other", label: "Other", color: "#94a3b8" },
+];
+const CATEGORIES = CATEGORIES_ZH; // default; overridden per-component with useCats()
 const CURRENCIES = ["HKD","USD","EUR","GBP","JPY","CNY","TWD","SGD","AUD","CAD","KRW","THB","EGP","MYR","IDR","PHP","VND"];
 const NO_DECIMAL_CURRENCIES = new Set(["JPY", "KRW", "IDR", "VND"]);
 
@@ -161,6 +171,8 @@ type EditingCell = { rowIdx: number; col: string } | null;
 
 // ─── Main component ──────────────────────────────────────────────────────────
 export default function ExpensesPage({ tripId }: { tripId: number }) {
+  const { t, lang } = useI18n();
+  const CATS = lang === "zh" ? CATEGORIES_ZH : CATEGORIES_EN;
   const { data: expenses, refetch, isLoading } = trpc.expenses.list.useQuery({ tripId }, { refetchInterval: 15000 });
   const { data: trip } = trpc.trips.get.useQuery({ tripId });
   const baseCurrency = trip?.baseCurrency ?? "HKD";
@@ -241,27 +253,27 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
   }
 
   const updateExpense = trpc.expenses.update.useMutation({
-    onSuccess: () => { refetch(); toast.success("已儲存"); },
-    onError: () => toast.error("儲存失敗"),
+    onSuccess: () => { refetch(); toast.success(lang === "zh" ? "已儲存" : "Saved"); },
+    onError: () => toast.error(lang === "zh" ? "儲存失敗" : "Save failed"),
   });
   const deleteExpense = trpc.expenses.delete.useMutation({
-    onSuccess: () => { refetch(); toast.success("費用已刪除"); },
+    onSuccess: () => { refetch(); toast.success(lang === "zh" ? "費用已刪除" : "Expense deleted"); },
   });
   const addExpense = trpc.expenses.add.useMutation({
-    onSuccess: () => { refetch(); toast.success("費用已新增"); },
-    onError: () => toast.error("新增失敗"),
+    onSuccess: () => { refetch(); toast.success(lang === "zh" ? "費用已新增" : "Expense added"); },
+    onError: () => toast.error(lang === "zh" ? "新增失敗" : "Add failed"),
   });
     const bulkAdd = trpc.expenses.bulkAdd.useMutation({
     onSuccess: (data) => {
-      refetch(); toast.success(`成功匯入 ${data.inserted} 筆費用`);
+      refetch(); toast.success(lang === "zh" ? `成功匯入 ${data.inserted} 筆費用` : `Imported ${data.inserted} expenses`);
       setShowImport(false); setCsvText(""); setParsedRows([]); setImportParsed(false);
     },
-    onError: () => toast.error("匯入失敗"),
+    onError: () => toast.error(lang === "zh" ? "匯入失敗" : "Import failed"),
   });
   const uploadReceipt = trpc.expenses.uploadReceipt.useMutation();
   const removeReceipt = trpc.expenses.removeReceipt.useMutation({
-    onSuccess: () => { refetch(); toast.success("收據已刪除"); },
-    onError: () => toast.error("刪除失敗"),
+    onSuccess: () => { refetch(); toast.success(lang === "zh" ? "收據已刪除" : "Receipt deleted"); },
+    onError: () => toast.error(lang === "zh" ? "刪除失敗" : "Delete failed"),
   });
   const analyzeReceipt = trpc.expenses.analyzeReceipt.useMutation({
     onSuccess: (data, vars) => {
@@ -278,17 +290,17 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
           confidence: data.confidence,
         });
       } else {
-        toast("AI 未能辨識收據內容，請手動填寫");
+        toast(lang === "zh" ? "AI 未能辨識收據內容，請手動填寫" : "AI could not read the receipt, please fill in manually");
       }
     },
-    onError: () => { setAnalyzingReceiptId(null); toast("AI 辨識失敗，請手動填寫"); },
+    onError: () => { setAnalyzingReceiptId(null); toast(lang === "zh" ? "AI 辨識失敗，請手動填寫" : "AI analysis failed, please fill in manually"); },
   });
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     const expId = pendingUploadExpenseId.current;
     if (!file || !expId) return;
-    if (file.size > 10 * 1024 * 1024) { toast.error("檔案過大，最大 10MB"); return; }
+    if (file.size > 10 * 1024 * 1024) { toast.error(lang === "zh" ? "檔案過大，最大 10MB" : "File too large, max 10MB"); return; }
     setUploadingReceiptId(expId);
     const reader = new FileReader();
     reader.onload = (ev) => {
@@ -301,7 +313,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
         {
           onSuccess: () => {
             refetch();
-            toast.success("收據已上傳，AI 辨識中…");
+            toast.success(lang === "zh" ? "收據已上傳，AI 辨識中…" : "Receipt uploaded, AI analysing…");
             setUploadingReceiptId(null);
             // 2. Trigger AI OCR in parallel
             setAnalyzingReceiptId(expId);
@@ -313,7 +325,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
             analyzeReceipt.mutate(ocrInput as any);
           },
           onError: (err) => {
-            toast.error(`上傳失敗: ${err.message}`);
+            toast.error(lang === "zh" ? `上傳失敗: ${err.message}` : `Upload failed: ${err.message}`);
             setUploadingReceiptId(null);
           },
         }
@@ -331,16 +343,17 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
     filteredExpenses.forEach(e => {
       const { value } = getDisplayAmount(e);
       total += value;
-      const cat = CATEGORIES.find(c => c.value === e.category);
-      byCat[cat?.label ?? "其他"] = (byCat[cat?.label ?? "其他"] ?? 0) + value;
-      const payer = e.paidByName ?? "未知";
+      const cat = CATS.find(c => c.value === e.category);
+      const catLabel = cat?.label ?? (lang === "zh" ? "其他" : "Other");
+      byCat[catLabel] = (byCat[catLabel] ?? 0) + value;
+      const payer = e.paidByName ?? (lang === "zh" ? "未知" : "Unknown");
       byPayer[payer] = (byPayer[payer] ?? 0) + value;
     });
     return {
       total,
       byCategory: Object.entries(byCat).map(([name, value]) => ({
         name, value: Math.round(value * 100) / 100,
-        color: CATEGORIES.find(c => c.label === name)?.color ?? "#94a3b8"
+        color: CATS.find(c => c.label === name)?.color ?? "#94a3b8"
       })),
       byPayer: Object.entries(byPayer).map(([name, value]) => ({ name, value: Math.round(value * 100) / 100 })),
     };
@@ -362,7 +375,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
   }
 
   function commitEdit(expense: any) {
-    if (!editValues.title || !editValues.amount) { toast.error("名稱和金額為必填"); return; }
+    if (!editValues.title || !editValues.amount) { toast.error(lang === "zh" ? "名稱和金額為必填" : "Name and amount are required"); return; }
     updateExpense.mutate({
       expenseId: expense.id, tripId,
       title: editValues.title, amount: editValues.amount, currency: editValues.currency,
@@ -409,16 +422,16 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
 
   // ─── CSV import ──────────────────────────────────────────────────────────
   function handleParseCsv() {
-    if (!csvText.trim()) { toast.error("請貼上數據"); return; }
+    if (!csvText.trim()) { toast.error(lang === "zh" ? "請貼上數據" : "Please paste data first"); return; }
     const rows = parseCsvText(csvText);
-    if (rows.length === 0) { toast.error("無法解析數據"); return; }
+    if (rows.length === 0) { toast.error(lang === "zh" ? "無法解析數據" : "Could not parse data"); return; }
     const parsed = rowsToExpenses(rows, csvHasHeader, baseCurrency);
     setParsedRows(parsed); setImportParsed(true);
   }
 
   function handleConfirmImport() {
     const valid = parsedRows.filter(r => !r._error);
-    if (valid.length === 0) { toast.error("沒有有效的費用記錄"); return; }
+    if (valid.length === 0) { toast.error(lang === "zh" ? "沒有有效的費用記錄" : "No valid expense records found"); return; }
     bulkAdd.mutate({
       tripId,
       expenses: valid.map(r => ({
@@ -442,11 +455,11 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
           <td key="actions" className={`${base} whitespace-nowrap`}>
             <div className="flex items-center gap-1">
               <button onClick={() => isNew ? commitNewRow(rowIdx) : commitEdit(expense)}
-                className="p-1 rounded hover:bg-green-100 dark:hover:bg-green-900/40 text-green-600" title="儲存">
+                className="p-1 rounded hover:bg-green-100 dark:hover:bg-green-900/40 text-green-600" title={lang === "zh" ? "儲存" : "Save"}>
                 <Check className="w-4 h-4" />
               </button>
               <button onClick={() => isNew ? cancelNewRow(rowIdx) : cancelEdit()}
-                className="p-1 rounded hover:bg-muted text-muted-foreground" title="取消">
+                className="p-1 rounded hover:bg-muted text-muted-foreground" title={lang === "zh" ? "取消" : "Cancel"}>
                 <X className="w-4 h-4" />
               </button>
             </div>
@@ -457,11 +470,11 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
         <td key="actions" className={`${base} whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity`}>
           <div className="flex items-center gap-1">
             <button onClick={() => startEdit(rowIdx, "title", expense)}
-              className="p-1 rounded hover:bg-accent text-muted-foreground" title="編輯">
+              className="p-1 rounded hover:bg-accent text-muted-foreground" title={lang === "zh" ? "編輯" : "Edit"}>
               <Edit2 className="w-3.5 h-3.5" />
             </button>
             <button onClick={() => deleteExpense.mutate({ expenseId: expense.id, tripId })}
-              className="p-1 rounded hover:bg-destructive/10 text-destructive" title="刪除">
+              className="p-1 rounded hover:bg-destructive/10 text-destructive" title={lang === "zh" ? "刪除" : "Delete"}>
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -507,7 +520,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
       if (isEditing) {
         return (
           <td key="title" className={base}>
-            <Input className="h-7 text-xs min-w-[120px]" placeholder="費用名稱"
+            <Input className="h-7 text-xs min-w-[120px]" placeholder={lang === "zh" ? "費用名稱" : "Expense name"}
               value={editValues.title ?? ""}
               onChange={e => setEditValues(v => ({ ...v, title: e.target.value }))}
               onKeyDown={e => {
@@ -520,21 +533,21 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
       }
       return (
         <td key="title" className={`${base} cursor-pointer hover:bg-accent/50 rounded`} onClick={startCellEdit}>
-          <span className="font-medium text-foreground">{displayTitle || <span className="text-muted-foreground italic text-xs">點擊輸入</span>}</span>
+          <span className="font-medium text-foreground">{displayTitle || <span className="text-muted-foreground italic text-xs">{lang === "zh" ? "點擊輸入" : "Click to enter"}</span>}</span>
         </td>
       );
     }
 
     if (col === "category") {
       const displayCat = isRowEditing ? (editValues.category ?? "other") : (expense?.category ?? "other");
-      const cat = CATEGORIES.find(c => c.value === displayCat);
+      const cat = CATS.find(c => c.value === displayCat);
       if (isEditing) {
         return (
           <td key="category" className={base}>
             <Select value={editValues.category ?? "other"}
               onValueChange={v => { setEditValues(ev => ({ ...ev, category: v })); setEditingCell({ rowIdx, col: "currency" }); }}>
               <SelectTrigger className="h-7 text-xs w-24"><SelectValue /></SelectTrigger>
-              <SelectContent>{CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
+              <SelectContent>{CATS.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}</SelectContent>
             </Select>
           </td>
         );
@@ -543,7 +556,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
         <td key="category" className={`${base} cursor-pointer`} onClick={startCellEdit}>
           <span className="px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap"
             style={{ background: `${cat?.color}20`, color: cat?.color }}>
-            {cat?.label ?? "其他"}
+            {cat?.label ?? (lang === "zh" ? "其他" : "Other")}
           </span>
         </td>
       );
@@ -607,7 +620,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
       if (isEditing) {
         return (
           <td key="paidByName" className={base}>
-            <Input className="h-7 text-xs w-24" placeholder="付款人"
+            <Input className="h-7 text-xs w-24" placeholder={lang === "zh" ? "付款人" : "Payer"}
               value={editValues.paidByName ?? ""}
               onChange={e => setEditValues(v => ({ ...v, paidByName: e.target.value }))}
               onKeyDown={e => {
@@ -641,8 +654,8 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
       {/* Header */}
       <div className="flex items-start justify-between mb-6 gap-3">
         <div>
-          <h2 className="text-xl font-bold text-foreground">費用記帳</h2>
-          <p className="text-muted-foreground text-sm mt-0.5">基本貨幣：{baseCurrency}</p>
+          <h2 className="text-xl font-bold text-foreground">{lang === "zh" ? "費用記帳" : "Expenses"}</h2>
+          <p className="text-muted-foreground text-sm mt-0.5">{lang === "zh" ? "基本貨幣：" : "Base currency: "}{baseCurrency}</p>
         </div>
         <div className="flex items-center gap-2 flex-wrap justify-end">
           {/* Currency conversion toggle */}
@@ -655,7 +668,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
               }`}
             >
               <ArrowLeftRight className="w-3.5 h-3.5" />
-              {displayCurrency ? displayCurrency : "換算"}
+              {displayCurrency ? displayCurrency : (lang === "zh" ? "換算" : "Convert")}
               {conversionLoading && <Loader2 className="w-3 h-3 animate-spin" />}
             </button>
             {showCurrencyPicker && (
@@ -664,7 +677,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                   {displayCurrency && (
                     <button onClick={() => { setDisplayCurrency(null); setShowCurrencyPicker(false); }}
                       className="col-span-3 text-xs px-2 py-1.5 rounded-lg hover:bg-destructive/10 text-destructive text-center mb-1">
-                      取消換算
+                        {lang === "zh" ? "取消換算" : "Clear"}
                     </button>
                   )}
                   {CURRENCIES.map(c => (
@@ -687,28 +700,28 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
               }`}
             >
               <CalendarRange className="w-3.5 h-3.5" />
-              {isFiltered ? "篩選中" : "日期"}
+              {isFiltered ? (lang === "zh" ? "篩選中" : "Filtered") : (lang === "zh" ? "日期" : "Date")}
             </button>
             {showDateFilter && (
               <div className="absolute right-0 top-full mt-1 z-50 bg-popover border border-border rounded-xl shadow-lg p-4 w-72">
-                <p className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">日期範圍篩選</p>
+                <p className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">{lang === "zh" ? "日期範圍篩選" : "Date Range Filter"}</p>
                 <div className="space-y-3">
                   <div>
-                    <Label className="text-xs">開始日期</Label>
+                    <Label className="text-xs">{lang === "zh" ? "開始日期" : "From"}</Label>
                     <Input type="date" className="mt-1 h-8 text-sm" value={filterStart}
                       min={tripStart || undefined} max={filterEnd || tripEnd || undefined}
                       onChange={e => setFilterStart(e.target.value)} />
                   </div>
                   <div>
-                    <Label className="text-xs">結束日期</Label>
+                    <Label className="text-xs">{lang === "zh" ? "結束日期" : "To"}</Label>
                     <Input type="date" className="mt-1 h-8 text-sm" value={filterEnd}
                       min={filterStart || tripStart || undefined} max={tripEnd || undefined}
                       onChange={e => setFilterEnd(e.target.value)} />
                   </div>
                   <div className="flex gap-2 pt-1">
                     <Button size="sm" variant="outline" className="flex-1 h-8 text-xs"
-                      onClick={() => { setFilterStart(""); setFilterEnd(""); setShowDateFilter(false); }}>清除</Button>
-                    <Button size="sm" className="flex-1 h-8 text-xs" onClick={() => setShowDateFilter(false)}>套用</Button>
+                      onClick={() => { setFilterStart(""); setFilterEnd(""); setShowDateFilter(false); }}>{lang === "zh" ? "清除" : "Clear"}</Button>
+                    <Button size="sm" className="flex-1 h-8 text-xs" onClick={() => setShowDateFilter(false)}>{lang === "zh" ? "套用" : "Apply"}</Button>
                   </div>
                 </div>
               </div>
@@ -723,7 +736,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
             }`}
           >
             <Calculator className="w-3.5 h-3.5" />
-            分帳
+            {lang === "zh" ? "分帳" : "Split"}
           </button>
           {/* CSV import */}
           {canEdit && (
@@ -732,13 +745,13 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm font-medium transition-colors bg-card text-muted-foreground border-border hover:border-primary hover:text-foreground"
             >
               <ClipboardPaste className="w-3.5 h-3.5" />
-              貼上數據
+              {lang === "zh" ? "貼上數據" : "Paste Data"}
             </button>
           )}
           {/* Add row */}
           {canEdit && (
             <Button onClick={addNewRow} size="sm" className="gap-1.5">
-              <Plus className="w-4 h-4" />新增
+              <Plus className="w-4 h-4" />{lang === "zh" ? "新增" : "Add"}
             </Button>
           )}
         </div>
@@ -756,9 +769,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
         }`}>
           {hasFallback ? <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" /> : <ArrowLeftRight className="w-3.5 h-3.5 shrink-0 mt-0.5" />}
           <span>
-            {conversionLoading ? `正在查詢 ${displayCurrency} 歷史匯率…`
-              : hasFallback ? `部分費用使用估算匯率（API 暫時無法取得歷史數據）`
-              : `已按各筆費用付款日期換算為 ${displayCurrency}（收市匯率，資料來源：Frankfurter / 55 家央行）`}
+            {conversionLoading ? (lang === "zh" ? `正在查詢 ${displayCurrency} 歷史匯率…` : `Fetching ${displayCurrency} historical rates…`) : hasFallback ? (lang === "zh" ? `部分費用使用估算匯率（API 暫時無法取得歷史數據）` : `Some expenses use estimated rates (historical data unavailable)`) : (lang === "zh" ? `已按各筆費用付款日期換算為 ${displayCurrency}（收市匯率，資料來源：Frankfurter / 55 家央行）` : `Converted to ${displayCurrency} by payment date (closing rates, Frankfurter / 55 central banks)`)}
           </span>
         </div>
       )}
@@ -766,12 +777,12 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3 mb-6">
         {[
-          { icon: DollarSign, label: "總費用",
+          { icon: DollarSign, label: lang === "zh" ? "總費用" : "Total",
             value: conversionLoading && displayCurrency ? "計算中…" : `${effectiveCurrency} ${formatAmount(stats.total, effectiveCurrency)}`,
             color: "text-blue-500 bg-blue-50 dark:bg-blue-950/30" },
-          { icon: TrendingUp, label: "筆數", value: `${expenses?.length ?? 0} 筆`, color: "text-green-500 bg-green-50 dark:bg-green-950/30" },
-          { icon: Users, label: "付款人", value: `${stats.byPayer.length} 人`, color: "text-purple-500 bg-purple-50 dark:bg-purple-950/30" },
-          { icon: ImageIcon, label: "收據", value: `${expenses?.filter(e => e.receiptUrl).length ?? 0} 張`, color: "text-orange-500 bg-orange-50 dark:bg-orange-950/30" },
+          { icon: TrendingUp, label: lang === "zh" ? "筆數" : "Count", value: lang === "zh" ? `${expenses?.length ?? 0} 筆` : `${expenses?.length ?? 0}`, color: "text-green-500 bg-green-50 dark:bg-green-950/30" },
+          { icon: Users, label: lang === "zh" ? "付款人" : "Payers", value: lang === "zh" ? `${stats.byPayer.length} 人` : `${stats.byPayer.length}`, color: "text-purple-500 bg-purple-50 dark:bg-purple-950/30" },
+          { icon: ImageIcon, label: lang === "zh" ? "收據" : "Receipts", value: lang === "zh" ? `${expenses?.filter(e => e.receiptUrl).length ?? 0} 張` : `${expenses?.filter(e => e.receiptUrl).length ?? 0}`, color: "text-orange-500 bg-orange-50 dark:bg-orange-950/30" },
         ].map(s => (
           <div key={s.label} className="bg-card rounded-2xl border border-border p-3 text-center">
             <div className={`w-8 h-8 rounded-xl ${s.color} flex items-center justify-center mx-auto mb-1.5`}>
@@ -787,7 +798,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
       {expenses && expenses.length > 0 && (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
           <div className="bg-card rounded-2xl border border-border p-4">
-            <h3 className="text-sm font-semibold text-foreground mb-3">類別分佈</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-3">{lang === "zh" ? "類別分佈" : "By Category"}</h3>
             <ResponsiveContainer width="100%" height={180}>
               <PieChart>
                 <Pie data={stats.byCategory} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3} dataKey="value">
@@ -799,7 +810,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
             </ResponsiveContainer>
           </div>
           <div className="bg-card rounded-2xl border border-border p-4">
-            <h3 className="text-sm font-semibold text-foreground mb-3">各人支出</h3>
+            <h3 className="text-sm font-semibold text-foreground mb-3">{lang === "zh" ? "各人支出" : "By Payer"}</h3>
             <ResponsiveContainer width="100%" height={180}>
               <BarChart data={stats.byPayer} layout="vertical">
                 <XAxis type="number" hide />
@@ -816,7 +827,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
       {!canEdit && trip && (
         <div className="mb-4 px-3 py-2 border rounded-lg flex items-center gap-2 text-xs bg-amber-50 dark:bg-amber-950/30 border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-400">
           <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-          <span>只讀模式：您是此行程的檢視者，無法新增或編輯費用</span>
+          <span>{lang === "zh" ? "只讀模式：您是此行程的檢視者，無法新增或編輯費用" : "Read-only: you are a viewer of this trip and cannot add or edit expenses"}</span>
         </div>
       )}
 
@@ -824,7 +835,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
       {isFiltered && (
         <div className="mb-4 px-3 py-2 border rounded-lg flex items-center gap-2 text-xs bg-green-50 dark:bg-green-950/30 border-green-200 dark:border-green-800 text-green-700 dark:text-green-400">
           <CalendarRange className="w-3.5 h-3.5 shrink-0" />
-          <span>篩選中：{filterStart || "最早"} 至 {filterEnd || "最新"} · 顯示 {filteredExpenses.length} / {expenses?.length ?? 0} 筆</span>
+          <span>{lang === "zh" ? `篩選中：${filterStart || "最早"} 至 ${filterEnd || "最新"} · 顯示 ${filteredExpenses.length} / ${expenses?.length ?? 0} 筆` : `Filtered: ${filterStart || "earliest"} to ${filterEnd || "latest"} · showing ${filteredExpenses.length} / ${expenses?.length ?? 0}`}</span>
           <button onClick={() => { setFilterStart(""); setFilterEnd(""); }} className="ml-auto hover:opacity-70">
             <X className="w-3.5 h-3.5" />
           </button>
@@ -837,13 +848,13 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
           <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
             <DollarSign className="w-8 h-8 text-muted-foreground" />
           </div>
-          <p className="text-muted-foreground">還沒有費用記錄</p>
+          <p className="text-muted-foreground">{lang === "zh" ? "還沒有費用記錄" : "No expenses yet"}</p>
           {canEdit && (
             <div className="flex items-center justify-center gap-3 mt-3">
-              <button onClick={addNewRow} className="text-primary hover:underline text-sm">+ 新增第一筆費用</button>
-              <span className="text-muted-foreground text-xs">或</span>
+              <button onClick={addNewRow} className="text-primary hover:underline text-sm">+ {lang === "zh" ? "新增第一筆費用" : "Add first expense"}</button>
+              <span className="text-muted-foreground text-xs">{lang === "zh" ? "或" : "or"}</span>
               <button onClick={() => setShowImport(true)} className="text-primary hover:underline text-sm flex items-center gap-1">
-                <ClipboardPaste className="w-3.5 h-3.5" />貼上 CSV 數據
+                <ClipboardPaste className="w-3.5 h-3.5" />{lang === "zh" ? "貼上 CSV 數據" : "Paste CSV data"}
               </button>
             </div>
           )}
@@ -854,12 +865,12 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
             <table className="w-full text-sm border-collapse">
               <thead>
                 <tr className="border-b border-border bg-muted/40">
-                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">日期</th>
-                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">名稱</th>
-                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">類別</th>
-                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">貨幣</th>
-                  <th className="px-2 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap">金額</th>
-                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">付款人</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">{lang === "zh" ? "日期" : "Date"}</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground">{lang === "zh" ? "名稱" : "Name"}</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">{lang === "zh" ? "類別" : "Category"}</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">{lang === "zh" ? "貨幣" : "Currency"}</th>
+                  <th className="px-2 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap">{lang === "zh" ? "金額" : "Amount"}</th>
+                  <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">{lang === "zh" ? "付款人" : "Payer"}</th>
                   <th className="px-2 py-2 text-center text-xs font-medium text-muted-foreground whitespace-nowrap w-10" title="收據">
                     <ImageIcon className="w-3.5 h-3.5 mx-auto" />
                   </th>
@@ -884,9 +895,9 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                           <button
                             onClick={() => setLightboxUrl(expense.receiptUrl!)}
                             className="relative group/thumb w-8 h-8 rounded overflow-hidden border border-border hover:border-primary transition-colors inline-flex items-center justify-center"
-                            title="查看收據"
+                            title={lang === "zh" ? "查看收據" : "View receipt"}
                           >
-                            <img src={expense.receiptUrl} alt="收據" className="w-full h-full object-cover" />
+                            <img src={expense.receiptUrl} alt={lang === "zh" ? "收據" : "Receipt"} className="w-full h-full object-cover" />
                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center">
                               <ZoomIn className="w-3 h-3 text-white" />
                             </div>
@@ -896,7 +907,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                             onClick={() => { pendingUploadExpenseId.current = expense.id; fileInputRef.current?.click(); }}
                             disabled={uploadingReceiptId === expense.id}
                             className="w-8 h-8 rounded border border-dashed border-border hover:border-primary hover:text-primary text-muted-foreground transition-colors inline-flex items-center justify-center opacity-0 group-hover:opacity-100"
-                            title="上傳收據"
+                            title={lang === "zh" ? "上傳收據" : "Upload receipt"}
                           >
                             {uploadingReceiptId === expense.id
                               ? <Loader2 className="w-3 h-3 animate-spin" />
@@ -937,7 +948,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
             <div className="px-3 py-2 border-t border-border">
               <button onClick={addNewRow}
                 className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors">
-                <Plus className="w-3.5 h-3.5" />新增一行
+                <Plus className="w-3.5 h-3.5" />{lang === "zh" ? "新增一行" : "Add Row"}
               </button>
             </div>
           )}
@@ -964,7 +975,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between w-full mb-3 px-1">
-              <span className="text-white/80 text-sm font-medium">收據照片</span>
+              <span className="text-white/80 text-sm font-medium">{lang === "zh" ? "收據照片" : "Receipt"}</span>
               <div className="flex items-center gap-2">
                 <a
                   href={lightboxUrl}
@@ -974,7 +985,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs transition-colors"
                   onClick={e => e.stopPropagation()}
                 >
-                  <Download className="w-3.5 h-3.5" />下載
+                  <Download className="w-3.5 h-3.5" />{lang === "zh" ? "下載" : "Download"}
                 </a>
                 {canEdit && (
                   <button
@@ -984,7 +995,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                       if (exp) { removeReceipt.mutate({ expenseId: exp.id, tripId }); setLightboxUrl(null); }
                     }}
                   >
-                    <Trash2 className="w-3.5 h-3.5" />刪除收據
+                    <Trash2 className="w-3.5 h-3.5" />{lang === "zh" ? "刪除收據" : "Remove Receipt"}
                   </button>
                 )}
                 <button
@@ -997,7 +1008,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
             </div>
             <img
               src={lightboxUrl}
-              alt="收據"
+              alt={lang === "zh" ? "收據" : "Receipt"}
               className="max-w-full max-h-[75vh] object-contain rounded-xl shadow-2xl"
             />
           </div>
@@ -1009,20 +1020,20 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <span className="text-lg">✨</span> AI 收據辨識結果
+              <span className="text-lg">✨</span> {lang === "zh" ? "AI 收據辨識結果" : "AI Receipt Analysis"}
             </DialogTitle>
           </DialogHeader>
           {ocrDialog && (
             <div className="space-y-3">
               <p className="text-xs text-muted-foreground">
-                AI 已從收據中擷取以下資訊，請確認或修改後點「套用」。
+                {lang === "zh" ? 'AI 已從收據中擷取以下資訊，請確認或修改後點「套用」。' : "AI extracted the following from your receipt. Review and edit before applying."}
                 {ocrDialog.confidence < 0.6 && (
-                  <span className="ml-1 text-amber-500">（信心度較低，請仔細核對）</span>
+                  <span className="ml-1 text-amber-500">{lang === "zh" ? "（信心度較低，請仔細核對）" : "(Low confidence — please verify)"}</span>
                 )}
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <Label className="text-xs">商家名稱</Label>
+                  <Label className="text-xs">{lang === "zh" ? "商家名稱" : "Merchant"}</Label>
                   <Input
                     className="h-8 text-sm mt-1"
                     value={ocrDialog.title}
@@ -1030,7 +1041,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">金額</Label>
+                  <Label className="text-xs">{lang === "zh" ? "金額" : "Amount"}</Label>
                   <Input
                     className="h-8 text-sm mt-1"
                     value={ocrDialog.amount}
@@ -1038,13 +1049,13 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                   />
                 </div>
                 <div>
-                  <Label className="text-xs">貨幣</Label>
+                  <Label className="text-xs">{lang === "zh" ? "貨幣" : "Currency"}</Label>
                   <Select
                     value={ocrDialog.currency || ""}
                     onValueChange={v => setOcrDialog(d => d ? { ...d, currency: v } : d)}
                   >
                     <SelectTrigger className="h-8 text-sm mt-1">
-                      <SelectValue placeholder="選擇貨幣" />
+                      <SelectValue placeholder={lang === "zh" ? "選擇貨幣" : "Select currency"} />
                     </SelectTrigger>
                     <SelectContent>
                       {CURRENCIES.map(c => <SelectItem key={c} value={c}>{c}</SelectItem>)}
@@ -1052,7 +1063,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                   </Select>
                 </div>
                 <div>
-                  <Label className="text-xs">日期</Label>
+                  <Label className="text-xs">{lang === "zh" ? "日期" : "Date"}</Label>
                   <Input
                     type="date"
                     className="h-8 text-sm mt-1"
@@ -1061,7 +1072,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                   />
                 </div>
                 <div className="col-span-2">
-                  <Label className="text-xs">類別</Label>
+                  <Label className="text-xs">{lang === "zh" ? "類別" : "Category"}</Label>
                   <Select
                     value={ocrDialog.category}
                     onValueChange={v => setOcrDialog(d => d ? { ...d, category: v as typeof d.category } : d)}
@@ -1070,7 +1081,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                      {CATS.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1082,7 +1093,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                   className="flex-1"
                   onClick={() => setOcrDialog(null)}
                 >
-                  跳過
+                  {lang === "zh" ? "跳過" : "Skip"}
                 </Button>
                 <Button
                   size="sm"
@@ -1098,11 +1109,11 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                     if (ocrDialog.category) updates.category = ocrDialog.category;
                     updateExpense.mutate(
                       { expenseId: ocrDialog.expenseId, tripId, ...updates } as any,
-                      { onSuccess: () => { setOcrDialog(null); toast.success("資訊已套用"); } }
+                      { onSuccess: () => { setOcrDialog(null); toast.success(lang === "zh" ? "資訊已套用" : "Information applied"); } }
                     );
                   }}
                 >
-                  {updateExpense.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "✔ 套用"}
+                  {updateExpense.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : (lang === "zh" ? "✔ 套用" : "✔ Apply")}
                 </Button>
               </div>
             </div>
@@ -1122,30 +1133,30 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <ClipboardPaste className="w-4 h-4" />
-              貼上數據批量匯入
+              {lang === "zh" ? "貼上數據批量匯入" : "Paste Data to Import"}
             </DialogTitle>
           </DialogHeader>
           {!importParsed ? (
             <div className="space-y-4 mt-2">
               <div className="bg-muted/40 rounded-lg p-3 text-xs text-muted-foreground space-y-1">
-                <p className="font-medium text-foreground">支援格式：</p>
-                <p>• 從 Excel / Google Sheets 直接複製貼上（Tab 分隔）</p>
-                <p>• CSV 格式（逗號分隔）</p>
-                <p>• 欄位順序：日期、名稱、金額、貨幣、類別、付款人、備注</p>
-                <p>• 如有標題行，系統會自動識別欄位</p>
+<p className="font-medium text-foreground">{lang === "zh" ? "支援格式：" : "Supported formats:"}</p>
+<p>• {lang === "zh" ? "從 Excel / Google Sheets 直接複製貼上（Tab 分隔）" : "Copy-paste from Excel / Google Sheets (tab-separated)"}</p>
+<p>• {lang === "zh" ? "CSV 格式（逗號分隔）" : "CSV format (comma-separated)"}</p>
+<p>• {lang === "zh" ? "欄位順序：日期、名稱、金額、貨幣、類別、付款人、備注" : "Column order: date, name, amount, currency, category, payer, notes"}</p>
+<p>• {lang === "zh" ? "如有標題行，系統會自動識別欄位" : "Header row is auto-detected"}</p>
               </div>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input type="checkbox" checked={csvHasHeader}
                   onChange={e => setCsvHasHeader(e.target.checked)} className="rounded" />
-                第一行是標題行
+                {lang === "zh" ? "第一行是標題行" : "First row is header"}
               </label>
               <Textarea
-                placeholder={"貼上試算表數據，例如：\n2025-01-15\t午餐\t250\tHKD\t餐飲\t張三\n2025-01-16\t地鐵\t50\tHKD\t交通\t李四"}
+                placeholder={lang === "zh" ? "貼上試算表數據，例如：\n2025-01-15\t午餐\t250\tHKD\t餐飲\t張三\n2025-01-16\t地鐵\t50\tHKD\t交通\t李四" : "Paste spreadsheet data, e.g.:\n2025-01-15\tLunch\t250\tHKD\tFood\tAlice\n2025-01-16\tMTR\t50\tHKD\tTransport\tBob"}
                 value={csvText} onChange={e => setCsvText(e.target.value)}
                 rows={10} className="font-mono text-xs" />
               <div className="flex gap-3">
                 <Button variant="outline" className="flex-1" onClick={() => setShowImport(false)}>取消</Button>
-                <Button className="flex-1" onClick={handleParseCsv}>解析預覽</Button>
+                <Button className="flex-1" onClick={handleParseCsv}>{lang === "zh" ? "解析預覽" : "Preview"}</Button>
               </div>
             </div>
           ) : (
@@ -1155,23 +1166,23 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                   ? "bg-green-50 dark:bg-green-950/30 text-green-700 dark:text-green-400 border border-green-200 dark:border-green-800"
                   : "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800"
               }`}>
-                解析完成：{validImportCount} 筆有效 · {parsedRows.length - validImportCount} 筆錯誤
+                {lang === "zh" ? `解析完成：${validImportCount} 筆有效 · ${parsedRows.length - validImportCount} 筆錯誤` : `Parsed: ${validImportCount} valid · ${parsedRows.length - validImportCount} errors`}
               </div>
               <div className="overflow-x-auto rounded-lg border border-border">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-muted/40 border-b border-border">
-                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">狀態</th>
-                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">日期</th>
-                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">名稱</th>
-                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">類別</th>
-                      <th className="px-2 py-1.5 text-right font-medium text-muted-foreground">金額</th>
-                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">付款人</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">{lang === "zh" ? "狀態" : "Status"}</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">{lang === "zh" ? "日期" : "Date"}</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">{lang === "zh" ? "名稱" : "Name"}</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">{lang === "zh" ? "類別" : "Category"}</th>
+                      <th className="px-2 py-1.5 text-right font-medium text-muted-foreground">{lang === "zh" ? "金額" : "Amount"}</th>
+                      <th className="px-2 py-1.5 text-left font-medium text-muted-foreground">{lang === "zh" ? "付款人" : "Payer"}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {parsedRows.map((row, i) => {
-                      const cat = CATEGORIES.find(c => c.value === row.category);
+                      const cat = CATS.find(c => c.value === row.category);
                       return (
                         <tr key={i} className={`border-b border-border last:border-0 ${row._error ? "bg-red-50/50 dark:bg-red-950/20" : ""}`}>
                           <td className="px-2 py-1.5">
@@ -1184,7 +1195,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                           <td className="px-2 py-1.5">
                             <span className="px-1.5 py-0.5 rounded text-[10px] font-medium"
                               style={{ background: `${cat?.color}20`, color: cat?.color }}>
-                              {cat?.label ?? "其他"}
+                              {cat?.label ?? (lang === "zh" ? "其他" : "Other")}
                             </span>
                           </td>
                           <td className="px-2 py-1.5 text-right font-semibold">{row.currency} {row.amount}</td>
@@ -1196,11 +1207,11 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                 </table>
               </div>
               <div className="flex gap-3">
-                <Button variant="outline" className="flex-1" onClick={() => setImportParsed(false)}>返回修改</Button>
+                <Button variant="outline" className="flex-1" onClick={() => setImportParsed(false)}>{lang === "zh" ? "返回修改" : "Back"}</Button>
                 <Button className="flex-1" disabled={validImportCount === 0 || bulkAdd.isPending} onClick={handleConfirmImport}>
                   {bulkAdd.isPending
-                    ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />匯入中…</>
-                    : `確認匯入 ${validImportCount} 筆`}
+                    ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />{lang === "zh" ? "匯入中…" : "Importing…"}</>
+                    : (lang === "zh" ? `確認匯入 ${validImportCount} 筆` : `Import ${validImportCount} rows`)}
                 </Button>
               </div>
             </div>
@@ -1213,6 +1224,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
 
 // ─── Split Summary Panel ─────────────────────────────────────────────────────
 function SplitSummaryPanel({ tripId, baseCurrency }: { tripId: number; baseCurrency: string }) {
+  const { lang } = useI18n();
   const [splitCurrency, setSplitCurrency] = useState(baseCurrency);
   const { data, isLoading, error } = trpc.expenses.getSplitSummary.useQuery(
     { tripId, baseCurrency: splitCurrency },
@@ -1223,10 +1235,10 @@ function SplitSummaryPanel({ tripId, baseCurrency }: { tripId: number; baseCurre
       <div className="flex items-center justify-between px-4 py-3 bg-violet-50 dark:bg-violet-950/40 border-b border-violet-200 dark:border-violet-800">
         <div className="flex items-center gap-2">
           <Calculator className="w-4 h-4 text-violet-600 dark:text-violet-400" />
-          <span className="font-semibold text-sm text-violet-900 dark:text-violet-200">分帳計算</span>
+          <span className="font-semibold text-sm text-violet-900 dark:text-violet-200">{lang === "zh" ? "分帳計算" : "Split Calculator"}</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="text-xs text-muted-foreground">換算為</span>
+          <span className="text-xs text-muted-foreground">{lang === "zh" ? "換算為" : "Convert to"}</span>
           <Select value={splitCurrency} onValueChange={setSplitCurrency}>
             <SelectTrigger className="h-7 w-24 text-xs border-violet-300 dark:border-violet-700">
               <SelectValue />
@@ -1241,18 +1253,18 @@ function SplitSummaryPanel({ tripId, baseCurrency }: { tripId: number; baseCurre
       </div>
       {isLoading && (
         <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground text-sm">
-          <Loader2 className="w-4 h-4 animate-spin" />計算中…
+          <Loader2 className="w-4 h-4 animate-spin" />{lang === "zh" ? "計算中…" : "Calculating…"}
         </div>
       )}
       {error && (
         <div className="px-4 py-4 text-sm text-red-500 flex items-center gap-2">
-          <AlertCircle className="w-4 h-4" />計算失敗，請稍後再試
+          <AlertCircle className="w-4 h-4" />{lang === "zh" ? "計算失敗，請稍後再試" : "Calculation failed, please try again"}
         </div>
       )}
       {data && !isLoading && (
         <div className="p-4 space-y-4">
           <div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">各人結餘</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">{lang === "zh" ? "各人結餘" : "Balances"}</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               {data.members.map(m => {
                 const balance = m.net;
@@ -1280,7 +1292,7 @@ function SplitSummaryPanel({ tripId, baseCurrency }: { tripId: number; baseCurre
                           : isPositive ? "text-green-700 dark:text-green-400"
                           : "text-red-600 dark:text-red-400"
                       }`}>
-                        {isZero ? "已結清" : (isPositive ? "應收 +" : "應付 ")}
+                        {isZero ? (lang === "zh" ? "已結清" : "Settled") : (isPositive ? (lang === "zh" ? "應收 +" : "Owed +") : (lang === "zh" ? "應付 " : "Owes "))}
                         {!isZero && `${formatAmount(Math.abs(balance), splitCurrency)} ${splitCurrency}`}
                       </span>
                     </div>
@@ -1296,7 +1308,7 @@ function SplitSummaryPanel({ tripId, baseCurrency }: { tripId: number; baseCurre
           </div>
           {data.settlements.length > 0 ? (
             <div>
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">最少轉帳方案</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">{lang === "zh" ? "最少轉帳方案" : "Minimum Transfers"}</p>
               <div className="space-y-2">
                 {data.settlements.map((s, i) => (
                   <div key={i} className="flex items-center gap-2 px-3 py-2.5 bg-muted/40 rounded-xl border border-border text-sm">
@@ -1319,11 +1331,11 @@ function SplitSummaryPanel({ tripId, baseCurrency }: { tripId: number; baseCurre
           ) : (
             <div className="flex items-center gap-2 px-3 py-3 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-xl text-sm text-green-700 dark:text-green-400">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
-              所有費用已平均分攤，無需轉帳！
+              {lang === "zh" ? "所有費用已平均分攤，無需轉帳！" : "All expenses are evenly split — no transfers needed!"}
             </div>
           )}
           <p className="text-[10px] text-muted-foreground">
-            * 金額已按各筆費用付款日期換算為 {splitCurrency}（Frankfurter 歷史收市匯率）。
+            * {lang === "zh" ? `金額已按各筆費用付款日期換算為 ${splitCurrency}（Frankfurter 歷史收市匯率）。` : `Amounts converted to ${splitCurrency} using historical rates (Frankfurter).`}
           </p>
         </div>
       )}

@@ -14,14 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import AIAssistant from "@/components/AIAssistant";
 import NotificationsPanel from "@/components/NotificationsPanel";
 import { toast } from "sonner";
-
-const NAV_ITEMS = [
-  { key: "itinerary", label: "行程", icon: Calendar, path: "itinerary" },
-  { key: "expenses", label: "費用", icon: DollarSign, path: "expenses" },
-  { key: "map", label: "地圖", icon: Map, path: "map" },
-  { key: "members", label: "成員", icon: Users, path: "members" },
-  { key: "flights", label: "航班", icon: Plane, path: "flights" },
-];
+import { useI18n } from "@/hooks/useI18n";
 
 interface TripLayoutProps {
   tripId: number;
@@ -29,6 +22,14 @@ interface TripLayoutProps {
 }
 
 export default function TripLayout({ tripId, children }: TripLayoutProps) {
+  const { t } = useI18n();
+  const NAV_ITEMS = [
+    { key: "itinerary", label: t("itinerary"), icon: Calendar, path: "itinerary" },
+    { key: "expenses", label: t("expenses"), icon: DollarSign, path: "expenses" },
+    { key: "map", label: t("map"), icon: Map, path: "map" },
+    { key: "members", label: t("members"), icon: Users, path: "members" },
+    { key: "flights", label: t("flights"), icon: Plane, path: "flights" },
+  ];
   const { user, loading, logout } = useAuth();
   const [location, setLocation] = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -44,8 +45,8 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
   });
 
   const updateTrip = trpc.trips.update.useMutation({
-    onSuccess: () => { refetchTrip(); setShowEditTrip(false); toast.success("行程已更新"); },
-    onError: () => toast.error("更新失敗"),
+    onSuccess: () => { refetchTrip(); setShowEditTrip(false); toast.success(t("tripUpdated")); },
+    onError: () => toast.error(t("tripUpdateFailed")),
   });
 
   useEffect(() => {
@@ -67,7 +68,7 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
   };
 
   const handleUpdateTrip = () => {
-    if (!editForm.name || !editForm.destination) { toast.error("請填寫行程名稱和目的地"); return; }
+    if (!editForm.name || !editForm.destination) { toast.error(t("tripNameRequired")); return; }
     updateTrip.mutate({ tripId, ...editForm });
   };
 
@@ -80,6 +81,8 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
   const activeTab = NAV_ITEMS.find(n => location.includes(`/${n.path}`))?.key ?? "itinerary";
   const isOwnerOrEditor = trip?.userRole === "owner" || trip?.userRole === "editor";
 
+  const roleLabel = trip?.userRole === "owner" ? t("owner") : trip?.userRole === "editor" ? t("editor") : t("viewer");
+
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
       {/* Back to dashboard */}
@@ -89,7 +92,7 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
           className="flex items-center gap-2 text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors text-sm"
         >
           <ArrowLeft className="w-4 h-4" />
-          返回儀表板
+          {t("backToDashboard")}
         </button>
       </div>
 
@@ -111,11 +114,11 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
         )}
         <div className="flex items-start justify-between gap-2">
           <div className="flex-1 min-w-0">
-            <h2 className="font-bold text-sidebar-foreground text-base leading-tight line-clamp-2">{trip?.name ?? "載入中..."}</h2>
+            <h2 className="font-bold text-sidebar-foreground text-base leading-tight line-clamp-2">{trip?.name ?? t("loadingTrip")}</h2>
             <p className="text-sidebar-foreground/60 text-xs mt-1 line-clamp-1">{trip?.destination}</p>
             {trip?.startDate && (
               <p className="text-sidebar-foreground/50 text-xs mt-0.5">
-                {new Date(trip.startDate).toLocaleDateString("zh-HK")} – {new Date(trip.endDate).toLocaleDateString("zh-HK")}
+                {new Date(trip.startDate).toLocaleDateString()} – {new Date(trip.endDate).toLocaleDateString()}
               </p>
             )}
           </div>
@@ -158,7 +161,7 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-all"
         >
           <Sparkles className="w-4 h-4 shrink-0 text-purple-400" />
-          AI 旅遊助手
+          {t("aiAssistantName")}
         </button>
       </div>
 
@@ -203,7 +206,7 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
               <Menu className="w-5 h-5 text-foreground" />
             </button>
             <div className="flex-1 text-center">
-              <h1 className="font-semibold text-foreground text-sm line-clamp-1 px-2">{trip?.name ?? "行程"}</h1>
+              <h1 className="font-semibold text-foreground text-sm line-clamp-1 px-2">{trip?.name ?? t("itinerary")}</h1>
             </div>
             <div className="flex items-center gap-1">
               {isOwnerOrEditor && (
@@ -234,7 +237,7 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
                 trip.userRole === "editor" ? "bg-green-100 text-green-700" :
                 "bg-muted text-muted-foreground"
               }`}>
-                {trip.userRole === "owner" ? "擁有者" : trip.userRole === "editor" ? "編輯者" : "觀看者"}
+                {roleLabel}
               </span>
             )}
             {isOwnerOrEditor && (
@@ -252,7 +255,7 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
             </button>
             <Button variant="outline" size="sm" onClick={() => setShowAI(true)} className="gap-1.5">
               <Sparkles className="w-4 h-4 text-purple-500" />
-              AI 助手
+              {t("aiAssistant")}
             </Button>
           </div>
         </div>
@@ -299,42 +302,42 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
       <Dialog open={showEditTrip} onOpenChange={setShowEditTrip}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>修改行程資訊</DialogTitle>
+            <DialogTitle>{t("editTripTitle")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div>
-              <Label>行程名稱 *</Label>
-              <Input className="mt-1.5" placeholder="例：埃及探索之旅" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
+              <Label>{t("tripNameLabel")} *</Label>
+              <Input className="mt-1.5" placeholder={t("tripNamePlaceholder")} value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
             </div>
             <div>
-              <Label>目的地 *</Label>
-              <Input className="mt-1.5" placeholder="例：開羅 • 盧克索" value={editForm.destination} onChange={e => setEditForm({...editForm, destination: e.target.value})} />
+              <Label>{t("destination")} *</Label>
+              <Input className="mt-1.5" placeholder={t("destinationPlaceholder")} value={editForm.destination} onChange={e => setEditForm({...editForm, destination: e.target.value})} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>出發日期</Label>
+                <Label>{t("startDate")}</Label>
                 <Input className="mt-1.5" type="date" value={editForm.startDate} onChange={e => setEditForm({...editForm, startDate: e.target.value})} />
               </div>
               <div>
-                <Label>回程日期</Label>
+                <Label>{t("endDate")}</Label>
                 <Input className="mt-1.5" type="date" value={editForm.endDate} onChange={e => setEditForm({...editForm, endDate: e.target.value})} />
               </div>
             </div>
             <div>
-              <Label>基本貨幣</Label>
+              <Label>{t("baseCurrency")}</Label>
               <Input className="mt-1.5" placeholder="HKD" value={editForm.baseCurrency} onChange={e => setEditForm({...editForm, baseCurrency: e.target.value})} />
             </div>
             <div>
-              <Label>封面圖片網址</Label>
-              <Input className="mt-1.5" placeholder="https://..." value={editForm.coverImage} onChange={e => setEditForm({...editForm, coverImage: e.target.value})} />
+              <Label>{t("coverImageUrl")}</Label>
+              <Input className="mt-1.5" placeholder={t("tripCoverPlaceholder")} value={editForm.coverImage} onChange={e => setEditForm({...editForm, coverImage: e.target.value})} />
             </div>
             <div>
-              <Label>行程描述</Label>
-              <Textarea className="mt-1.5" placeholder="簡介這次旅行..." value={editForm.description} onChange={e => setEditForm({...editForm, description: e.target.value})} rows={3} />
+              <Label>{t("description")}</Label>
+              <Textarea className="mt-1.5" placeholder={t("tripDescPlaceholder")} value={editForm.description} onChange={e => setEditForm({...editForm, description: e.target.value})} rows={3} />
             </div>
             <Button className="w-full" onClick={handleUpdateTrip} disabled={updateTrip.isPending}>
               {updateTrip.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              儲存變更
+              {t("saveChanges")}
             </Button>
           </div>
         </DialogContent>

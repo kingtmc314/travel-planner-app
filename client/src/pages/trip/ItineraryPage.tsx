@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useI18n } from "@/hooks/useI18n";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -12,7 +13,7 @@ import {
 import { useState, useCallback } from "react";
 import { toast } from "sonner";
 import { format, addDays } from "date-fns";
-import { zhTW } from "date-fns/locale";
+import { zhTW, enUS } from "date-fns/locale";
 import {
   DndContext,
   closestCenter,
@@ -32,19 +33,28 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 
-const CATEGORIES = [
-  { value: "transport", label: "交通", icon: Car, color: "bg-blue-100 text-blue-600" },
-  { value: "accommodation", label: "住宿", icon: Home, color: "bg-purple-100 text-purple-600" },
-  // "hotel" is the DB value for accommodation
-  { value: "hotel", label: "住宿", icon: Home, color: "bg-purple-100 text-purple-600" },
-  { value: "food", label: "餐飲", icon: Utensils, color: "bg-orange-100 text-orange-600" },
-  { value: "attraction", label: "景點", icon: Camera, color: "bg-green-100 text-green-600" },
-  { value: "shopping", label: "購物", icon: ShoppingBag, color: "bg-pink-100 text-pink-600" },
-  { value: "other", label: "其他", icon: MoreHorizontal, color: "bg-muted text-muted-foreground" },
+const CATEGORY_DEFS = [
+  { value: "transport", icon: Car, color: "bg-blue-100 text-blue-600" },
+  { value: "accommodation", icon: Home, color: "bg-purple-100 text-purple-600" },
+  { value: "hotel", icon: Home, color: "bg-purple-100 text-purple-600" },
+  { value: "food", icon: Utensils, color: "bg-orange-100 text-orange-600" },
+  { value: "attraction", icon: Camera, color: "bg-green-100 text-green-600" },
+  { value: "shopping", icon: ShoppingBag, color: "bg-pink-100 text-pink-600" },
+  { value: "other", icon: MoreHorizontal, color: "bg-muted text-muted-foreground" },
 ];
 
-function getCategoryStyle(cat: string) {
-  return CATEGORIES.find(c => c.value === cat) ?? CATEGORIES[6];
+function getCategoryStyle(cat: string, t: (k: any) => string) {
+  const labels: Record<string, string> = {
+    transport: t("catTransport"),
+    accommodation: t("catAccommodation"),
+    hotel: t("catAccommodation"),
+    food: t("catFood"),
+    attraction: t("catAttraction"),
+    shopping: t("catShopping"),
+    other: t("catOther"),
+  };
+  const def = CATEGORY_DEFS.find(c => c.value === cat) ?? CATEGORY_DEFS[6];
+  return { ...def, label: labels[cat] ?? labels.other };
 }
 
 interface ActivityFormData {
@@ -78,6 +88,7 @@ function SortableActivityCard({
   onDelete,
   onMove,
   canEdit,
+  t,
 }: {
   activity: any;
   idx: number;
@@ -87,6 +98,7 @@ function SortableActivityCard({
   onDelete: (activityId: number) => void;
   onMove: (activity: any) => void;
   canEdit: boolean;
+  t: (k: any) => string;
 }) {
   const {
     attributes,
@@ -104,7 +116,7 @@ function SortableActivityCard({
     zIndex: isDragging ? 50 : undefined,
   };
 
-  const cat = getCategoryStyle(activity.category);
+  const cat = getCategoryStyle(activity.category, t);
   const Icon = cat.icon;
 
   return (
@@ -121,7 +133,7 @@ function SortableActivityCard({
         {...attributes}
         {...listeners}
         className="absolute -left-5 top-2 p-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing touch-none"
-        aria-label="拖曳排序"
+        aria-label={t("dragToReorder")}
         tabIndex={-1}
       >
         <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
@@ -149,26 +161,26 @@ function SortableActivityCard({
               <p className="text-muted-foreground text-xs mt-1 leading-relaxed">{activity.notes}</p>
             )}
           </div>
-            {canEdit && (
+          {canEdit && (
             <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0">
               <button
                 onClick={() => onEdit(activity)}
                 className="p-1.5 rounded-lg hover:bg-accent transition-colors"
-                title="編輯"
+                title={t("edit")}
               >
                 <Edit2 className="w-3.5 h-3.5 text-muted-foreground" />
               </button>
               <button
                 onClick={() => onMove(activity)}
                 className="p-1.5 rounded-lg hover:bg-blue-50 transition-colors"
-                title="移至其他天"
+                title={t("moveToDay")}
               >
                 <MoveRight className="w-3.5 h-3.5 text-blue-500" />
               </button>
               <button
                 onClick={() => onDelete(activity.id)}
                 className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
-                title="刪除"
+                title={t("delete")}
               >
                 <Trash2 className="w-3.5 h-3.5 text-destructive" />
               </button>
@@ -182,6 +194,7 @@ function SortableActivityCard({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function ItineraryPage({ tripId }: { tripId: number }) {
+  const { t, lang } = useI18n();
   const utils = trpc.useUtils();
   const { data: days, refetch, isLoading } = trpc.itinerary.getDays.useQuery({ tripId }, { refetchInterval: 15000 });
   const { data: trip } = trpc.trips.get.useQuery({ tripId });
@@ -193,8 +206,8 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
   const [movingActivity, setMovingActivity] = useState<any | null>(null);
 
   const exportToPDF = () => {
-    if (!days || days.length === 0) { toast.error("沒有行程可以匯出"); return; }
-    const tripName = trip?.name ?? "行程";
+    if (!days || days.length === 0) { toast.error(lang === "zh" ? "沒有行程可以匯出" : "No itinerary to export"); return; }
+    const tripName = trip?.name ?? (lang === "zh" ? "行程" : "Trip");
     const tripDest = trip?.destination ?? "";
     const tripDates = trip?.startDate && trip?.endDate
       ? `${getDateStr(trip.startDate)} – ${getDateStr(trip.endDate)}`
@@ -204,18 +217,15 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
       transport: "#3b82f6", accommodation: "#8b5cf6", hotel: "#8b5cf6",
       food: "#f97316", attraction: "#22c55e", shopping: "#ec4899", other: "#94a3b8",
     };
-    const catLabels: Record<string, string> = {
-      transport: "交通", accommodation: "住宿", hotel: "住宿",
-      food: "餐飲", attraction: "景點", shopping: "購物", other: "其他",
-    };
 
     const daysHtml = days.map(day => {
       const acts = getActivitiesForDay(day);
+      const noActLabel = lang === "zh" ? "未安排活動" : "No activities scheduled";
       const actsHtml = acts.length === 0
-        ? `<p style="color:#9ca3af;font-size:13px;margin:8px 0">未安排活動</p>`
+        ? `<p style="color:#9ca3af;font-size:13px;margin:8px 0">${noActLabel}</p>`
         : acts.map(a => {
             const color = catColors[a.category] ?? "#94a3b8";
-            const label = catLabels[a.category] ?? "其他";
+            const label = getCategoryStyle(a.category, t).label;
             return `
               <div style="display:flex;gap:12px;margin-bottom:12px;align-items:flex-start">
                 <div style="width:8px;height:8px;border-radius:50%;background:${color};margin-top:5px;flex-shrink:0"></div>
@@ -232,15 +242,16 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
           }).join("");
 
       const dateStr = day.date
-        ? new Date(day.date).toLocaleDateString("zh-TW", { year: "numeric", month: "long", day: "numeric", weekday: "long" })
+        ? new Date(day.date).toLocaleDateString(lang === "zh" ? "zh-TW" : "en-US", { year: "numeric", month: "long", day: "numeric", weekday: "long" })
         : "";
+      const dayTitle = day.title ?? (lang === "zh" ? `第 ${day.dayNumber} 天` : `Day ${day.dayNumber}`);
 
       return `
         <div style="margin-bottom:28px;page-break-inside:avoid">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #e5e7eb">
             <div style="width:28px;height:28px;border-radius:50%;background:#1e40af;color:white;font-weight:700;font-size:13px;display:flex;align-items:center;justify-content:center;flex-shrink:0">${day.dayNumber}</div>
             <div>
-              <div style="font-weight:700;font-size:15px">${day.title ?? `第 ${day.dayNumber} 天`}</div>
+              <div style="font-weight:700;font-size:15px">${dayTitle}</div>
               ${dateStr ? `<div style="color:#6b7280;font-size:12px">${dateStr}</div>` : ""}
             </div>
           </div>
@@ -248,12 +259,15 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
         </div>`;
     }).join("");
 
+    const printLabel = lang === "zh" ? "🖨️ 列印 / 儲存為 PDF" : "🖨️ Print / Save as PDF";
+    const generatedLabel = lang === "zh" ? `產生時間：${new Date().toLocaleString("zh-TW")}` : `Generated: ${new Date().toLocaleString("en-US")}`;
+
     const html = `
       <!DOCTYPE html>
-      <html lang="zh-TW">
+      <html lang="${lang === "zh" ? "zh-TW" : "en"}">
       <head>
         <meta charset="UTF-8">
-        <title>${tripName} 行程</title>
+        <title>${tripName}</title>
         <style>
           * { box-sizing: border-box; }
           body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 0; padding: 32px; color: #111827; max-width: 800px; margin: 0 auto; }
@@ -268,11 +282,11 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
           <h1 style="font-size:28px;font-weight:800;color:#1e40af;margin:0 0 8px">${tripName}</h1>
           ${tripDest ? `<p style="color:#6b7280;font-size:15px;margin:0 0 4px">📍 ${tripDest}</p>` : ""}
           ${tripDates ? `<p style="color:#6b7280;font-size:14px;margin:0">📅 ${tripDates}</p>` : ""}
-          <p style="color:#9ca3af;font-size:12px;margin:8px 0 0">產生時間：${new Date().toLocaleString("zh-TW")}</p>
+          <p style="color:#9ca3af;font-size:12px;margin:8px 0 0">${generatedLabel}</p>
         </div>
         ${daysHtml}
         <div class="no-print" style="text-align:center;margin-top:32px">
-          <button onclick="window.print()" style="background:#1e40af;color:white;border:none;padding:10px 24px;border-radius:8px;font-size:14px;cursor:pointer">🖨️ 列印 / 儲存為 PDF</button>
+          <button onclick="window.print()" style="background:#1e40af;color:white;border:none;padding:10px 24px;border-radius:8px;font-size:14px;cursor:pointer">${printLabel}</button>
         </div>
       </body>
       </html>`;
@@ -283,7 +297,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
       win.document.close();
       setTimeout(() => win.print(), 500);
     } else {
-      toast.error("請允許彈出視窗以匯出 PDF");
+      toast.error(lang === "zh" ? "請允許彈出視窗以匯出 PDF" : "Please allow popups to export PDF");
     }
   };
 
@@ -302,35 +316,35 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
   const [localOrders, setLocalOrders] = useState<Record<number, any[]>>({});
 
   const addActivity = trpc.itinerary.addActivity.useMutation({
-    onSuccess: () => { refetch(); setAddingDayId(null); setForm(defaultForm); toast.success("活動已新增"); },
-    onError: () => toast.error("新增失敗"),
+    onSuccess: () => { refetch(); setAddingDayId(null); setForm(defaultForm); toast.success(t("activityAdded")); },
+    onError: () => toast.error(t("addFailed")),
   });
   const updateActivity = trpc.itinerary.updateActivity.useMutation({
-    onSuccess: () => { refetch(); setEditingActivity(null); toast.success("活動已更新"); },
-    onError: () => toast.error("更新失敗"),
+    onSuccess: () => { refetch(); setEditingActivity(null); toast.success(t("activityUpdated")); },
+    onError: () => toast.error(t("updateFailed")),
   });
   const deleteActivity = trpc.itinerary.deleteActivity.useMutation({
-    onSuccess: () => { refetch(); toast.success("活動已刪除"); },
+    onSuccess: () => { refetch(); toast.success(t("activityDeleted")); },
   });
   const addDay = trpc.itinerary.addDay.useMutation({
-    onSuccess: () => { refetch(); toast.success("已新增一天"); },
-    onError: () => toast.error("新增失敗"),
+    onSuccess: () => { refetch(); toast.success(lang === "zh" ? "已新增一天" : "Day added"); },
+    onError: () => toast.error(t("addFailed")),
   });
   const moveActivity = trpc.itinerary.moveActivity.useMutation({
     onSuccess: () => {
       refetch();
       setMovingActivity(null);
-      toast.success("活動已移至其他天");
+      toast.success(t("activityMoved"));
     },
-    onError: () => toast.error("移動失敗"),
+    onError: () => toast.error(t("updateFailed")),
   });
 
   const reorderActivities = trpc.itinerary.reorderActivities.useMutation({
-    onError: () => { refetch(); toast.error("排序儲存失敗，已還原"); },
+    onError: () => { refetch(); toast.error(lang === "zh" ? "排序儲存失敗，已還原" : "Reorder failed, reverted"); },
   });
   const suggestActivities = trpc.ai.suggestActivities.useMutation({
     onSuccess: (data) => setAiSuggestions(data.activities ?? []),
-    onError: () => toast.error("AI 建議失敗，請重試"),
+    onError: () => toast.error(t("aiSuggestFailed")),
   });
 
   // dnd-kit sensors: pointer (desktop) + touch (mobile) + keyboard (a11y)
@@ -354,9 +368,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
     if (oldIndex === -1 || newIndex === -1) return;
 
     const reordered = arrayMove(currentActivities, oldIndex, newIndex);
-    // Optimistic update
     setLocalOrders(prev => ({ ...prev, [dayId]: reordered }));
-    // Persist to server
     reorderActivities.mutate({
       tripId,
       orderedIds: reordered.map(a => a.id),
@@ -364,7 +376,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
   }, [tripId, reorderActivities]);
 
   const handleAdd = () => {
-    if (!addingDayId || !form.title) { toast.error("請填寫活動名稱"); return; }
+    if (!addingDayId || !form.title) { toast.error(lang === "zh" ? "請填寫活動名稱" : "Please enter activity name"); return; }
     addActivity.mutate({
       dayId: addingDayId, tripId, ...form,
       category: (form.category === "accommodation" ? "hotel" : form.category) as "transport" | "food" | "attraction" | "hotel" | "shopping" | "other",
@@ -402,7 +414,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
       category: (suggestion.category === "accommodation" ? "hotel" : (suggestion.category ?? "other")) as "transport" | "food" | "attraction" | "hotel" | "shopping" | "other",
       sortOrder: 99,
     });
-    toast.success(`已新增：${suggestion.title}`);
+    toast.success(lang === "zh" ? `已新增：${suggestion.title}` : `Added: ${suggestion.title}`);
   };
 
   const handleAddDay = () => {
@@ -430,7 +442,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
       category: mappedCategory as "transport" | "food" | "attraction" | "hotel" | "shopping" | "other",
       sortOrder: 99,
     });
-    toast.success(`已匯入：${pin.title}`);
+    toast.success(lang === "zh" ? `已匯入：${pin.title}` : `Imported: ${pin.title}`);
   };
 
   if (isLoading) return (
@@ -440,29 +452,33 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
   );
 
   const hasPins = pins && pins.length > 0;
+  const dateLocale = lang === "zh" ? zhTW : enUS;
+  const dateFormatStr = lang === "zh" ? "M月d日 (EEEE)" : "MMM d (EEEE)";
 
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
       {!canEdit && (
         <div className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-sm">
           <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-          <span>只讀模式 — 你是此行程的檢視者，無法修改內容</span>
+          <span>{t("viewerCannotEdit")}</span>
         </div>
       )}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-foreground">每日行程</h2>
-          <p className="text-muted-foreground text-sm mt-0.5">{days?.length ?? 0} 天行程</p>
+          <h2 className="text-xl font-bold text-foreground">{lang === "zh" ? "每日行程" : "Daily Itinerary"}</h2>
+          <p className="text-muted-foreground text-sm mt-0.5">
+            {lang === "zh" ? `${days?.length ?? 0} 天行程` : `${days?.length ?? 0} day${(days?.length ?? 0) !== 1 ? "s" : ""}`}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={exportToPDF} className="gap-1.5 shrink-0">
             <FileDown className="w-3.5 h-3.5" />
-            匯出 PDF
+            {t("exportItinerary")}
           </Button>
           {canEdit && (
             <Button variant="outline" size="sm" onClick={handleAddDay} disabled={addDay.isPending} className="gap-1.5 shrink-0">
               {addDay.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarPlus className="w-3.5 h-3.5" />}
-              新增一天
+              {lang === "zh" ? "新增一天" : "Add Day"}
             </Button>
           )}
         </div>
@@ -474,13 +490,17 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
           <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-4">
             <CalendarPlus className="w-8 h-8 text-primary" />
           </div>
-          <h3 className="text-lg font-semibold text-foreground mb-1">還沒有行程天數</h3>
+          <h3 className="text-lg font-semibold text-foreground mb-1">
+            {lang === "zh" ? "還沒有行程天數" : "No days yet"}
+          </h3>
           <p className="text-muted-foreground text-sm mb-4 max-w-xs">
-            點擊「新增一天」開始規劃每日行程，或修改行程日期讓系統自動生成
+            {lang === "zh"
+              ? "點擊「新增一天」開始規劃每日行程，或修改行程日期讓系統自動生成"
+              : "Click \"Add Day\" to start planning, or update trip dates to auto-generate days"}
           </p>
           <Button onClick={handleAddDay} disabled={addDay.isPending} className="gap-2">
             {addDay.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <CalendarPlus className="w-4 h-4" />}
-            新增第一天
+            {lang === "zh" ? "新增第一天" : "Add First Day"}
           </Button>
         </div>
       )}
@@ -489,6 +509,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
         {days?.map((day) => {
           const activities = getActivitiesForDay(day);
           const activityIds = activities.map((a: any) => a.id);
+          const dayTitle = day.title ?? (lang === "zh" ? `第 ${day.dayNumber} 天` : `Day ${day.dayNumber}`);
 
           return (
             <div key={day.id} className="bg-card rounded-2xl border border-border overflow-hidden">
@@ -499,10 +520,10 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                     <span className="w-7 h-7 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center">
                       {day.dayNumber}
                     </span>
-                    <span className="font-semibold text-foreground">{day.title ?? `第 ${day.dayNumber} 天`}</span>
+                    <span className="font-semibold text-foreground">{dayTitle}</span>
                   </div>
                   <p className="text-muted-foreground text-xs mt-0.5 ml-9">
-                    {day.date ? format(new Date(day.date), "M月d日 (EEEE)", { locale: zhTW }) : ""}
+                    {day.date ? format(new Date(day.date), dateFormatStr, { locale: dateLocale }) : ""}
                   </p>
                 </div>
                 <div className="flex items-center gap-1">
@@ -514,7 +535,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                       className="gap-1.5 text-blue-600 hover:text-blue-700 hover:bg-blue-50 text-xs"
                     >
                       <MapPin className="w-3.5 h-3.5" />
-                      匯入地點
+                      {lang === "zh" ? "匯入地點" : "Import Location"}
                     </Button>
                   )}
                   {canEdit && (
@@ -529,7 +550,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                         ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                         : <Sparkles className="w-3.5 h-3.5" />
                       }
-                      AI 建議
+                      {t("aiSuggest")}
                     </Button>
                   )}
                   {canEdit && (
@@ -540,7 +561,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                       className="gap-1.5 text-xs"
                     >
                       <Plus className="w-3.5 h-3.5" />
-                      新增
+                      {t("add")}
                     </Button>
                   )}
                 </div>
@@ -551,11 +572,11 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                 <div className="px-4 py-3 bg-purple-50 border-b border-purple-100">
                   <p className="text-purple-700 text-xs font-medium mb-2 flex items-center gap-1">
                     <Sparkles className="w-3.5 h-3.5" />
-                    AI 推薦活動（點擊新增）
+                    {lang === "zh" ? "AI 推薦活動（點擊新增）" : "AI Suggestions (click to add)"}
                   </p>
                   <div className="space-y-2">
                     {aiSuggestions.map((s, i) => {
-                      const cat = getCategoryStyle(s.category);
+                      const cat = getCategoryStyle(s.category, t);
                       return (
                         <button
                           key={i}
@@ -582,9 +603,9 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
               <div className="p-4">
                 {activities.length === 0 ? (
                   <div className="text-center py-6 text-muted-foreground text-sm">
-                    <p>還沒有活動</p>
+                    <p>{t("noActivities")}</p>
                     <button onClick={() => { setAddingDayId(day.id); setForm(defaultForm); }} className="text-primary hover:underline mt-1 text-sm">
-                      + 新增第一個活動
+                      + {lang === "zh" ? "新增第一個活動" : "Add first activity"}
                     </button>
                   </div>
                 ) : (
@@ -603,6 +624,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                             totalCount={activities.length}
                             tripId={tripId}
                             canEdit={canEdit}
+                            t={t}
                             onEdit={(a) => {
                               setEditingActivity(a);
                               setForm({ title: a.title, location: a.location ?? "", startTime: a.startTime ?? "", endTime: a.endTime ?? "", notes: a.notes ?? "", category: a.category });
@@ -625,9 +647,9 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
       <Dialog open={!!addingDayId} onOpenChange={(o) => !o && setAddingDayId(null)}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>新增活動</DialogTitle>
+            <DialogTitle>{t("addActivity")}</DialogTitle>
           </DialogHeader>
-          <ActivityForm form={form} setForm={setForm} onSubmit={handleAdd} loading={addActivity.isPending} submitLabel="新增活動" />
+          <ActivityForm form={form} setForm={setForm} onSubmit={handleAdd} loading={addActivity.isPending} submitLabel={t("addActivity")} t={t} lang={lang} />
         </DialogContent>
       </Dialog>
 
@@ -635,9 +657,9 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
       <Dialog open={!!editingActivity} onOpenChange={(o) => !o && setEditingActivity(null)}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>編輯活動</DialogTitle>
+            <DialogTitle>{t("editActivity")}</DialogTitle>
           </DialogHeader>
-          <ActivityForm form={form} setForm={setForm} onSubmit={handleUpdate} loading={updateActivity.isPending} submitLabel="儲存變更" />
+          <ActivityForm form={form} setForm={setForm} onSubmit={handleUpdate} loading={updateActivity.isPending} submitLabel={t("saveChanges")} t={t} lang={lang} />
         </DialogContent>
       </Dialog>
 
@@ -647,13 +669,16 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <MoveRight className="w-4 h-4 text-blue-500" />
-              移至其他天
+              {t("moveToDay")}
             </DialogTitle>
           </DialogHeader>
           {movingActivity && (
             <div className="mt-2">
               <p className="text-sm text-muted-foreground mb-3">
-                選擇要將「<span className="font-medium text-foreground">{movingActivity.title}</span>」移至哪一天：
+                {lang === "zh"
+                  ? <>選擇要將「<span className="font-medium text-foreground">{movingActivity.title}</span>」移至哪一天：</>
+                  : <>Select a day to move <span className="font-medium text-foreground">"{movingActivity.title}"</span> to:</>
+                }
               </p>
               <div className="space-y-2">
                 {days?.filter(d => d.id !== movingActivity.dayId).map(d => (
@@ -667,10 +692,10 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                       {d.dayNumber}
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-foreground">{d.title ?? `第 ${d.dayNumber} 天`}</p>
+                      <p className="text-sm font-medium text-foreground">{d.title ?? (lang === "zh" ? `第 ${d.dayNumber} 天` : `Day ${d.dayNumber}`)}</p>
                       {d.date && (
                         <p className="text-xs text-muted-foreground">
-                          {new Date(d.date).toLocaleDateString("zh-TW", { month: "long", day: "numeric", weekday: "short" })}
+                          {format(new Date(d.date), dateFormatStr, { locale: dateLocale })}
                         </p>
                       )}
                     </div>
@@ -678,7 +703,9 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
                   </button>
                 ))}
                 {days?.filter(d => d.id !== movingActivity.dayId).length === 0 && (
-                  <p className="text-center text-muted-foreground text-sm py-4">只有一天行程，無法移動</p>
+                  <p className="text-center text-muted-foreground text-sm py-4">
+                    {lang === "zh" ? "只有一天行程，無法移動" : "Only one day, cannot move"}
+                  </p>
                 )}
               </div>
             </div>
@@ -692,21 +719,23 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <MapPin className="w-4 h-4 text-blue-600" />
-              從地圖標記匯入景點
+              {lang === "zh" ? "從地圖標記匯入景點" : "Import from Map Pins"}
             </DialogTitle>
           </DialogHeader>
           <div className="mt-2">
             {!pins || pins.length === 0 ? (
               <div className="text-center py-8 text-muted-foreground text-sm">
                 <MapPin className="w-8 h-8 mx-auto mb-2 opacity-40" />
-                <p>地圖上還沒有標記</p>
-                <p className="text-xs mt-1">先在地圖頁面新增地點標記</p>
+                <p>{lang === "zh" ? "地圖上還沒有標記" : "No map pins yet"}</p>
+                <p className="text-xs mt-1">{lang === "zh" ? "先在地圖頁面新增地點標記" : "Add pins on the Map page first"}</p>
               </div>
             ) : (
               <div className="space-y-2">
-                <p className="text-xs text-muted-foreground mb-3">點擊地點即可加入當天行程</p>
+                <p className="text-xs text-muted-foreground mb-3">
+                  {lang === "zh" ? "點擊地點即可加入當天行程" : "Click a pin to add it to this day"}
+                </p>
                 {pins.map((pin) => {
-                  const cat = getCategoryStyle(PIN_CATEGORY_MAP[pin.category ?? "other"] ?? "other");
+                  const cat = getCategoryStyle(PIN_CATEGORY_MAP[pin.category ?? "other"] ?? "other", t);
                   const Icon = cat.icon;
                   return (
                     <button
@@ -738,47 +767,61 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
   );
 }
 
-function ActivityForm({ form, setForm, onSubmit, loading, submitLabel }: {
+function ActivityForm({ form, setForm, onSubmit, loading, submitLabel, t, lang }: {
   form: ActivityFormData;
   setForm: (f: ActivityFormData) => void;
   onSubmit: () => void;
   loading: boolean;
   submitLabel: string;
+  t: (k: any) => string;
+  lang: string;
 }) {
+  const categories = CATEGORY_DEFS.filter(c => c.value !== "accommodation").map(c => ({
+    ...c,
+    label: {
+      transport: t("catTransport"),
+      hotel: t("catAccommodation"),
+      food: t("catFood"),
+      attraction: t("catAttraction"),
+      shopping: t("catShopping"),
+      other: t("catOther"),
+    }[c.value] ?? c.value,
+  }));
+
   return (
     <div className="space-y-4 mt-2">
       <div>
-        <Label>活動名稱 *</Label>
-        <Input className="mt-1.5" placeholder="例：參觀吉薩金字塔" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
+        <Label>{t("activityTitle")} *</Label>
+        <Input className="mt-1.5" placeholder={lang === "zh" ? "例：參觀吉薩金字塔" : "e.g. Visit the Pyramids"} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />
       </div>
       <div>
-        <Label>類別</Label>
+        <Label>{t("activityCategory")}</Label>
         <Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}>
           <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
           <SelectContent>
-            {CATEGORIES.filter(c => c.value !== "accommodation").map(c => (
+            {categories.map(c => (
               <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
             ))}
           </SelectContent>
         </Select>
       </div>
       <div>
-        <Label>地點</Label>
-        <Input className="mt-1.5" placeholder="例：吉薩高原" value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} />
+        <Label>{t("activityLocation")}</Label>
+        <Input className="mt-1.5" placeholder={lang === "zh" ? "例：吉薩高原" : "e.g. Giza Plateau"} value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label>開始時間</Label>
+          <Label>{t("activityStartTime")}</Label>
           <Input className="mt-1.5" type="time" value={form.startTime} onChange={e => setForm({ ...form, startTime: e.target.value })} />
         </div>
         <div>
-          <Label>結束時間</Label>
+          <Label>{t("activityEndTime")}</Label>
           <Input className="mt-1.5" type="time" value={form.endTime} onChange={e => setForm({ ...form, endTime: e.target.value })} />
         </div>
       </div>
       <div>
-        <Label>備注</Label>
-        <Textarea className="mt-1.5" placeholder="任何備注或提示..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} />
+        <Label>{t("activityNotes")}</Label>
+        <Textarea className="mt-1.5" placeholder={t("activityNotesPlaceholder")} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} rows={2} />
       </div>
       <Button className="w-full" onClick={onSubmit} disabled={loading}>
         {loading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}

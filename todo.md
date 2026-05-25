@@ -242,3 +242,20 @@
 - [x] Frontend: "套用" button applies extracted fields to the expense row via expenses.update
 - [x] Frontend: show loading spinner on the row while AI analysis is running
 - [x] Frontend: graceful fallback if OCR fails (show toast, skip dialog)
+
+## Full Bilingual Support (ZH/EN)
+- [x] Expand i18n translation dictionary with all missing keys for every page (460+ keys)
+- [x] TripLayout.tsx: nav tabs (行程/費用/地圖/航班/成員), trip header, settings
+- [x] Dashboard.tsx: trip cards, new trip dialog, date/destination fields, search, filters
+- [x] ItineraryPage.tsx: all labels, buttons, dialogs, AI suggestions
+- [x] ExpensesPage.tsx: all labels, buttons, dialogs, stats, CSV import, OCR dialog
+- [x] FlightsPage.tsx: all labels, buttons, dialogs
+- [x] MembersPage.tsx: all labels, role names, invite dialog
+- [x] MapPage.tsx: all labels, buttons, search
+- [x] JoinPage.tsx: join trip page
+- [x] NotFound.tsx: 404 page
+- [x] TravelHistory.tsx: all labels
+- [x] FlightPassport.tsx: all labels
+- [x] AppLayout.tsx: tagline, user fallback name
+- [x] SyncPage.tsx, GuestMergeBanner.tsx, NotificationsPanel.tsx
+- [x] SplitSummaryPanel, FlightRouteMap, SyncCard sub-components

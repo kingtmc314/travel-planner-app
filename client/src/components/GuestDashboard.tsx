@@ -19,6 +19,7 @@ const COVER_COLORS = [
 ];
 
 function GuestTripCard({ trip, onDelete }: { trip: GuestTrip; onDelete: () => void }) {
+  const { t, lang } = useI18n();
   const nights = Math.max(
     0,
     Math.round((new Date(trip.endDate).getTime() - new Date(trip.startDate).getTime()) / 86400000)
@@ -36,18 +37,18 @@ function GuestTripCard({ trip, onDelete }: { trip: GuestTrip; onDelete: () => vo
         <div className="flex items-center gap-1.5 text-muted-foreground text-xs mb-3">
           <Calendar className="w-3.5 h-3.5" />
           <span>{trip.startDate} — {trip.endDate}</span>
-          <span className="ml-1">({nights} 晚)</span>
+          <span className="ml-1">({nights} {lang === "zh" ? "晚" : "nights"})</span>
         </div>
         <div className="flex items-center gap-2 text-xs text-amber-600 bg-amber-50 dark:bg-amber-950/30 rounded-lg px-3 py-2 mb-3">
           <Sparkles className="w-3.5 h-3.5 shrink-0" />
-          <span>訪客模式 — 登入後可同步至雲端</span>
+          <span>{lang === "zh" ? "訪客模式 — 登入後可同步至雲端" : "Guest mode — sign in to sync to cloud"}</span>
         </div>
         <button
           onClick={onDelete}
           className="flex items-center gap-1.5 text-xs text-destructive hover:text-destructive/80 transition-colors"
         >
           <Trash2 className="w-3.5 h-3.5" />
-          刪除
+          {t("delete")}
         </button>
       </div>
     </div>
@@ -56,7 +57,7 @@ function GuestTripCard({ trip, onDelete }: { trip: GuestTrip; onDelete: () => vo
 
 export default function GuestDashboard() {
   const { trips, addTrip, deleteTrip } = useGuestTrips();
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({
     name: "",
@@ -68,20 +69,20 @@ export default function GuestDashboard() {
 
   const handleCreate = () => {
     if (!form.name.trim() || !form.destination.trim()) {
-      toast.error("請填寫行程名稱和目的地");
+      toast.error(lang === "zh" ? "請填寫行程名稱和目的地" : "Please enter trip name and destination");
       return;
     }
     if (!form.startDate || !form.endDate) {
-      toast.error("請選擇出發和回程日期");
+      toast.error(lang === "zh" ? "請選擇出發和回程日期" : "Please select departure and return dates");
       return;
     }
     if (new Date(form.startDate) > new Date(form.endDate)) {
-      toast.error("出發日期不能晚於回程日期");
+      toast.error(lang === "zh" ? "出發日期不能晚於回程日期" : "Departure date cannot be after return date");
       return;
     }
     const colorIndex = trips.length % COVER_COLORS.length;
     addTrip({ ...form, coverColor: COVER_COLORS[colorIndex] });
-    toast.success("行程已建立（訪客模式）");
+    toast.success(lang === "zh" ? "行程已建立（訪客模式）" : "Trip created (guest mode)");
     setShowCreate(false);
     setForm({ name: "", destination: "", startDate: "", endDate: "", baseCurrency: "HKD" });
   };
@@ -91,9 +92,9 @@ export default function GuestDashboard() {
       {/* Guest banner */}
       <div className="mb-6 rounded-2xl border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 p-4 flex flex-col sm:flex-row items-start sm:items-center gap-4">
         <div className="flex-1">
-          <p className="font-semibold text-amber-800 dark:text-amber-300 text-sm">你正在使用訪客模式</p>
+          <p className="font-semibold text-amber-800 dark:text-amber-300 text-sm">{lang === "zh" ? "你正在使用訪客模式" : "You are in guest mode"}</p>
           <p className="text-amber-700/70 dark:text-amber-400/70 text-xs mt-0.5">
-            行程資料暫存於本機。登入後可將本機行程同步至雲端，並解鎖多人協作、費用分帳等功能。
+            {lang === "zh" ? "行程資料暫存於本機。登入後可將本機行程同步至雲端，並解鎖多人協作、費用分帳等功能。" : "Trip data is stored locally. Sign in to sync to cloud and unlock collaboration and expense splitting."}
           </p>
         </div>
         <Button
@@ -139,7 +140,7 @@ export default function GuestDashboard() {
               key={trip.id}
               trip={trip}
               onDelete={() => {
-                if (confirm(`確定要刪除「${trip.name}」？`)) deleteTrip(trip.id);
+                if (confirm(lang === "zh" ? `確定要刪除「${trip.name}」？` : `Delete "${trip.name}"?`)) deleteTrip(trip.id);
               }}
             />
           ))}
@@ -161,22 +162,22 @@ export default function GuestDashboard() {
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>建立新行程（訪客模式）</DialogTitle>
+            <DialogTitle>{lang === "zh" ? "建立新行程（訪客模式）" : "Create New Trip (Guest Mode)"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div>
-              <Label>行程名稱 *</Label>
+              <Label>{lang === "zh" ? "行程名稱" : "Trip Name"} *</Label>
               <Input
-                placeholder="例：2026年日本春遊"
+                placeholder={lang === "zh" ? "例：2026年日本春遊" : "e.g. Japan Spring 2026"}
                 value={form.name}
                 onChange={e => setForm({ ...form, name: e.target.value })}
                 className="mt-1.5"
               />
             </div>
             <div>
-              <Label>目的地 *</Label>
+              <Label>{lang === "zh" ? "目的地" : "Destination"} *</Label>
               <Input
-                placeholder="例：東京 • 京都 • 大阪"
+                placeholder={lang === "zh" ? "例：東京 • 京都 • 大阪" : "e.g. Tokyo • Kyoto • Osaka"}
                 value={form.destination}
                 onChange={e => setForm({ ...form, destination: e.target.value })}
                 className="mt-1.5"
@@ -184,20 +185,20 @@ export default function GuestDashboard() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label>出發日期 *</Label>
+                <Label>{lang === "zh" ? "出發日期" : "Departure"} *</Label>
                 <Input type="date" value={form.startDate} onChange={e => setForm({ ...form, startDate: e.target.value })} className="mt-1.5" />
               </div>
               <div>
-                <Label>回程日期 *</Label>
+                <Label>{lang === "zh" ? "回程日期" : "Return"} *</Label>
                 <Input type="date" value={form.endDate} onChange={e => setForm({ ...form, endDate: e.target.value })} className="mt-1.5" />
               </div>
             </div>
             <div className="rounded-xl bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 p-3 text-xs text-amber-700 dark:text-amber-400">
-              訪客模式下行程只儲存在本機。登入後可一鍵同步至雲端。
+              {lang === "zh" ? "訪客模式下行程只儲存在本機。登入後可一鍵同步至雲端。" : "In guest mode, trips are stored locally. Sign in to sync to cloud."}
             </div>
             <div className="flex gap-3 pt-2">
-              <Button variant="outline" className="flex-1" onClick={() => setShowCreate(false)}>取消</Button>
-              <Button className="flex-1" onClick={handleCreate}>建立行程</Button>
+              <Button variant="outline" className="flex-1" onClick={() => setShowCreate(false)}>{t("cancel")}</Button>
+              <Button className="flex-1" onClick={handleCreate}>{t("createTrip")}</Button>
             </div>
           </div>
         </DialogContent>

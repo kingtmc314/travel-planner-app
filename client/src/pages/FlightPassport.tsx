@@ -9,6 +9,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plane, Plus, Trash2, Loader2, Clock, Globe, Building2, Share2, Edit2, RefreshCw } from "lucide-react";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
+import { useI18n } from "@/hooks/useI18n";
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEAR_TABS = ["All-Time", ...Array.from({ length: 6 }, (_, i) => String(CURRENT_YEAR - i))];
@@ -105,15 +106,16 @@ const defaultForm = {
 };
 
 export default function FlightPassport() {
+  const { t, lang } = useI18n();
   const { data: flights, refetch, isLoading } = trpc.passport.getFlights.useQuery();
   // We derive visited countries directly from flight records so the map stays in sync
   // without requiring a separate sync step
   const addFlight = trpc.passport.addFlight.useMutation({
-    onSuccess: () => { refetch(); setShowAdd(false); setForm(defaultForm); toast.success("航班已記錄"); },
-    onError: () => toast.error("新增失敗"),
+    onSuccess: () => { refetch(); setShowAdd(false); setForm(defaultForm); toast.success(t("flightRecordAdded")); },
+    onError: () => toast.error(t("addFlightFailed")),
   });
   const deleteFlight = trpc.passport.deleteFlight.useMutation({
-    onSuccess: () => { refetch(); toast.success("已刪除"); },
+    onSuccess: () => { refetch(); toast.success(t("flightRecordDeleted")); },
   });
   const [importResult, setImportResult] = useState<{ flights: number; countries: number } | null>(null);
 
@@ -122,19 +124,19 @@ export default function FlightPassport() {
       refetch();
       setImportResult({ flights: data.count, countries: data.countriesSynced ?? 0 });
     },
-    onError: () => toast.error("匯入失敗"),
+    onError: () => toast.error(t("importFailed")),
   });
 
   const syncCountries = trpc.passport.syncCountriesFromFlights.useMutation({
     onSuccess: (data) => {
-      toast.success(`已同步 ${data.synced} 個國家到旅遊足跡地圖！`);
+      toast.success(lang === "zh" ? `已同步 ${data.synced} 個國家到旅遊足跡地圖！` : `Synced ${data.synced} countries to travel map!`);
     },
-    onError: () => toast.error("同步失敗"),
+    onError: () => toast.error(t("syncFailed")),
   });
 
   const updateFlight = trpc.passport.updateFlight.useMutation({
-    onSuccess: () => { refetch(); setEditingFlight(null); toast.success("航班已更新"); },
-    onError: () => toast.error("更新失敗"),
+    onSuccess: () => { refetch(); setEditingFlight(null); toast.success(t("flightUpdated")); },
+    onError: () => toast.error(t("updateFailed")),
   });
 
   const [showAdd, setShowAdd] = useState(false);
@@ -205,7 +207,7 @@ export default function FlightPassport() {
   };
 
   const handleUpdate = () => {
-    if (!editingFlight || !form.departureAirport || !form.arrivalAirport) { toast.error("請填寫出發和抵達機場"); return; }
+    if (!editingFlight || !form.departureAirport || !form.arrivalAirport) { toast.error(t("airportRequired")); return; }
     const dist = form.distanceKm ? parseInt(form.distanceKm) : estimateDistance(form.departureAirport, form.arrivalAirport);
     updateFlight.mutate({
       flightId: editingFlight.id,
@@ -232,7 +234,7 @@ export default function FlightPassport() {
   };
 
   const handleAdd = () => {
-    if (!form.departureAirport || !form.arrivalAirport) { toast.error("請填寫出發和抵達機場"); return; }
+    if (!form.departureAirport || !form.arrivalAirport) { toast.error(t("airportRequired")); return; }
     const dist = form.distanceKm ? parseInt(form.distanceKm) : estimateDistance(form.departureAirport, form.arrivalAirport);
     addFlight.mutate({
       flightNumber: form.flightNumber || undefined,
@@ -319,25 +321,25 @@ export default function FlightPassport() {
                 <div className="w-8 h-8 rounded-full bg-sky-100 flex items-center justify-center">
                   <Plane className="w-4 h-4 text-sky-600" />
                 </div>
-                匯入完成！
+                {t("importComplete")}
               </DialogTitle>
             </DialogHeader>
             <div className="space-y-4 pt-2">
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-sky-50 rounded-xl p-4 text-center">
                   <p className="text-3xl font-bold text-sky-600">{importResult.flights}</p>
-                  <p className="text-xs text-muted-foreground mt-1">筆航班已匯入</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t("flightsImported")}</p>
                 </div>
                 <div className="bg-emerald-50 rounded-xl p-4 text-center">
                   <p className="text-3xl font-bold text-emerald-600">{importResult.countries}</p>
-                  <p className="text-xs text-muted-foreground mt-1">個國家已加入地圖</p>
+                  <p className="text-xs text-muted-foreground mt-1">{t("countriesAddedToMap")}</p>
                 </div>
               </div>
               <p className="text-sm text-muted-foreground text-center">
-                前往<span className="font-medium text-foreground">旅遊足跡</span>查看世界地圖上已高亮的國家 🌍
+                {lang === "zh" ? <>前往<span className="font-medium text-foreground">旅遊足跡</span>查看世界地圖上已高亮的國家 🌍</> : <>Go to <span className="font-medium text-foreground">Travel History</span> to see highlighted countries on the world map 🌍</>}
               </p>
               <Button className="w-full bg-sky-600 hover:bg-sky-700" onClick={() => setImportResult(null)}>
-                太好了！
+                {t("great")}
               </Button>
             </div>
           </DialogContent>
@@ -351,7 +353,7 @@ export default function FlightPassport() {
               <Plane className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="font-bold text-foreground text-lg leading-tight">飛行護照</h1>
+              <h1 className="font-bold text-foreground text-lg leading-tight">{t("flightPassportTitle")}</h1>
               <p className="text-muted-foreground text-xs">Flight Passport</p>
             </div>
           </div>
@@ -363,10 +365,10 @@ export default function FlightPassport() {
                 className="gap-1.5 border-sky-300 text-sky-600 hover:bg-sky-50 px-2 sm:px-3"
                 onClick={() => seedFlights.mutate()}
                 disabled={seedFlights.isPending}
-                title="匯入歷史航班"
+                title={t("importHistoryFlights")}
               >
                 {seedFlights.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plane className="w-4 h-4" />}
-                <span className="hidden sm:inline">匯入歷史航班</span>
+                <span className="hidden sm:inline">{t("importHistoryFlights")}</span>
               </Button>
             ) : (
               <Button
@@ -375,20 +377,20 @@ export default function FlightPassport() {
                 className="gap-1.5 border-emerald-300 text-emerald-600 hover:bg-emerald-50 px-2 sm:px-3"
                 onClick={() => syncCountries.mutate()}
                 disabled={syncCountries.isPending}
-                title="從航班記錄同步到旅遊足跡地圖"
+                title={t("syncMap")}
               >
                 {syncCountries.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-                <span className="hidden sm:inline">同步地圖</span>
+                <span className="hidden sm:inline">{t("syncMap")}</span>
               </Button>
             )}
             {/* Share button: icon-only on mobile */}
-            <Button variant="outline" size="sm" className="gap-1.5 hidden sm:flex" onClick={() => toast.info("分享功能即將推出")}>
+            <Button variant="outline" size="sm" className="gap-1.5 hidden sm:flex" onClick={() => toast.info(lang === "zh" ? "分享功能即將推出" : "Share feature coming soon")}>
               <Share2 className="w-4 h-4" />
-              分享
+              {t("share")}
             </Button>
             <Button onClick={() => setShowAdd(true)} size="sm" className="gap-1.5 bg-sky-600 hover:bg-sky-700 px-2 sm:px-3">
               <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">記錄</span>
+              <span className="hidden sm:inline">{t("record")}</span>
             </Button>
           </div>
         </div>
@@ -425,10 +427,10 @@ export default function FlightPassport() {
               <Plane className="w-10 h-10 text-sky-400" />
             </div>
             <h3 className="font-semibold text-foreground mb-1">
-              {activeYear === "All-Time" ? "還沒有飛行記錄" : `${activeYear} 年沒有飛行記錄`}
+              {activeYear === "All-Time" ? t("noFlightRecords") : lang === "zh" ? `${activeYear} 年沒有飛行記錄` : `No flights in ${activeYear}`}
             </h3>
-            <p className="text-muted-foreground text-sm">記錄你的每一次飛行旅程</p>
-            <button onClick={() => setShowAdd(true)} className="text-sky-600 hover:underline mt-3 text-sm">+ 新增第一個航班</button>
+            <p className="text-muted-foreground text-sm">{t("noFlightRecordsDesc")}</p>
+            <button onClick={() => setShowAdd(true)} className="text-sky-600 hover:underline mt-3 text-sm">+ {t("addFlightRecord")}</button>
           </div>
         ) : (
           <>
@@ -492,8 +494,8 @@ export default function FlightPassport() {
             {/* Flight List */}
             <div>
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-semibold text-foreground">航班記錄</h3>
-                <p className="text-sm text-muted-foreground">{stats.totalFlights} 個航班</p>
+                <h3 className="font-semibold text-foreground">{t("flightRecordsTitle")}</h3>
+                <p className="text-sm text-muted-foreground">{stats.totalFlights} {t("flightsCount")}</p>
               </div>
               <div className="space-y-2">
                 {stats.filtered.map(flight => {
@@ -529,7 +531,7 @@ export default function FlightPassport() {
                                 flight.seatClass === "first" ? "bg-purple-100 text-purple-700" :
                                 "bg-muted text-muted-foreground"
                               }`}>
-                                {flight.seatClass === "economy" ? "經濟" : flight.seatClass === "business" ? "商務" : flight.seatClass === "first" ? "頭等" : flight.seatClass}
+                                {flight.seatClass === "economy" ? t("seatEconomy") : flight.seatClass === "business" ? t("seatBusiness") : flight.seatClass === "first" ? t("seatFirst") : flight.seatClass}
                               </span>
                             )}
                           </div>
@@ -562,64 +564,64 @@ export default function FlightPassport() {
       <Dialog open={!!editingFlight} onOpenChange={(o) => !o && setEditingFlight(null)}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>修改航班記錄</DialogTitle>
+            <DialogTitle>{t("editFlightRecord")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm font-medium text-foreground">出發機場 * (IATA)</label>
-                <Input className="mt-1.5 uppercase" placeholder="例：HKG" value={form.departureAirport} onChange={e => handleAirportChange("departureAirport", e.target.value.toUpperCase())} maxLength={3} />
+                <label className="text-sm font-medium text-foreground">{t("departureAirport")} * (IATA)</label>
+                <Input className="mt-1.5 uppercase" placeholder="e.g. HKG" value={form.departureAirport} onChange={e => handleAirportChange("departureAirport", e.target.value.toUpperCase())} maxLength={3} />
               </div>
               <div>
-                <label className="text-sm font-medium text-foreground">抵達機場 * (IATA)</label>
-                <Input className="mt-1.5 uppercase" placeholder="例：NRT" value={form.arrivalAirport} onChange={e => handleAirportChange("arrivalAirport", e.target.value.toUpperCase())} maxLength={3} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="text-sm font-medium text-foreground">航班號碼</label>
-                <Input className="mt-1.5" placeholder="例：CX 543" value={form.flightNumber} onChange={e => setForm({ ...form, flightNumber: e.target.value })} />
-              </div>
-              <div>
-                <label className="text-sm font-medium text-foreground">航空公司</label>
-                <Input className="mt-1.5" placeholder="例：Cathay Pacific" value={form.airline} onChange={e => setForm({ ...form, airline: e.target.value })} />
+                <label className="text-sm font-medium text-foreground">{t("arrivalAirport")} * (IATA)</label>
+                <Input className="mt-1.5 uppercase" placeholder="e.g. NRT" value={form.arrivalAirport} onChange={e => handleAirportChange("arrivalAirport", e.target.value.toUpperCase())} maxLength={3} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm font-medium text-foreground">出發日期</label>
+                <label className="text-sm font-medium text-foreground">{t("flightNumber")}</label>
+                <Input className="mt-1.5" placeholder="e.g. CX 543" value={form.flightNumber} onChange={e => setForm({ ...form, flightNumber: e.target.value })} />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground">{t("airline")}</label>
+                <Input className="mt-1.5" placeholder="e.g. Cathay Pacific" value={form.airline} onChange={e => setForm({ ...form, airline: e.target.value })} />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-foreground">{t("departureDate")}</label>
                 <Input className="mt-1.5" type="date" value={form.departureDate} onChange={e => setForm({ ...form, departureDate: e.target.value })} />
               </div>
               <div>
-                <label className="text-sm font-medium text-foreground">艙等</label>
+                <label className="text-sm font-medium text-foreground">{t("seatClass")}</label>
                 <Select value={form.seatClass} onValueChange={v => setForm({ ...form, seatClass: v })}>
                   <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="economy">經濟艙</SelectItem>
-                    <SelectItem value="premium_economy">豪華經濟</SelectItem>
-                    <SelectItem value="business">商務艙</SelectItem>
-                    <SelectItem value="first">頭等艙</SelectItem>
+                    <SelectItem value="economy">{t("seatEconomyFull")}</SelectItem>
+                    <SelectItem value="premium_economy">{t("seatPremiumEconomy")}</SelectItem>
+                    <SelectItem value="business">{t("seatBusinessFull")}</SelectItem>
+                    <SelectItem value="first">{t("seatFirstFull")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm font-medium text-foreground">距離 (km)</label>
-                <Input className="mt-1.5" type="number" placeholder="自動估算" value={form.distanceKm} onChange={e => setForm({ ...form, distanceKm: e.target.value })} />
+                <label className="text-sm font-medium text-foreground">{t("distanceKm")}</label>
+                <Input className="mt-1.5" type="number" placeholder={t("autoEstimate")} value={form.distanceKm} onChange={e => setForm({ ...form, distanceKm: e.target.value })} />
               </div>
               <div>
-                <label className="text-sm font-medium text-foreground">飛行時間 (分鐘)</label>
-                <Input className="mt-1.5" type="number" placeholder="例：165" value={form.durationMinutes} onChange={e => setForm({ ...form, durationMinutes: e.target.value })} />
+                <label className="text-sm font-medium text-foreground">{t("durationMinutes")}</label>
+                <Input className="mt-1.5" type="number" placeholder="e.g. 165" value={form.durationMinutes} onChange={e => setForm({ ...form, durationMinutes: e.target.value })} />
               </div>
             </div>
             <div>
-              <label className="text-sm font-medium text-foreground">備注</label>
-              <Input className="mt-1.5" placeholder="選填" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
+              <label className="text-sm font-medium text-foreground">{t("notes")}</label>
+              <Input className="mt-1.5" placeholder={t("optional")} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
             </div>
             <Button className="w-full bg-sky-600 hover:bg-sky-700" onClick={handleUpdate} disabled={updateFlight.isPending}>
               {updateFlight.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              儲存變更
+              {t("saveChanges")}
             </Button>
           </div>
         </DialogContent>
@@ -629,25 +631,25 @@ export default function FlightPassport() {
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>記錄航班</DialogTitle>
+            <DialogTitle>{t("addFlightRecord")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm font-medium text-foreground">出發機場 * (IATA)</label>
+                <label className="text-sm font-medium text-foreground">{t("departureAirport")} * (IATA)</label>
                 <Input
                   className="mt-1.5 uppercase"
-                  placeholder="例：HKG"
+                  placeholder="e.g. HKG"
                   value={form.departureAirport}
                   onChange={e => handleAirportChange("departureAirport", e.target.value.toUpperCase())}
                   maxLength={3}
                 />
               </div>
               <div>
-                <label className="text-sm font-medium text-foreground">抵達機場 * (IATA)</label>
+                <label className="text-sm font-medium text-foreground">{t("arrivalAirport")} * (IATA)</label>
                 <Input
                   className="mt-1.5 uppercase"
-                  placeholder="例：NRT"
+                  placeholder="e.g. NRT"
                   value={form.arrivalAirport}
                   onChange={e => handleAirportChange("arrivalAirport", e.target.value.toUpperCase())}
                   maxLength={3}
@@ -656,61 +658,61 @@ export default function FlightPassport() {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm font-medium text-foreground">航班號碼</label>
-                <Input className="mt-1.5" placeholder="例：CX 543" value={form.flightNumber} onChange={e => setForm({ ...form, flightNumber: e.target.value })} />
+                <label className="text-sm font-medium text-foreground">{t("flightNumber")}</label>
+                <Input className="mt-1.5" placeholder="e.g. CX 543" value={form.flightNumber} onChange={e => setForm({ ...form, flightNumber: e.target.value })} />
               </div>
               <div>
-                <label className="text-sm font-medium text-foreground">航空公司</label>
-                <Input className="mt-1.5" placeholder="例：Cathay Pacific" value={form.airline} onChange={e => setForm({ ...form, airline: e.target.value })} />
+                <label className="text-sm font-medium text-foreground">{t("airline")}</label>
+                <Input className="mt-1.5" placeholder="e.g. Cathay Pacific" value={form.airline} onChange={e => setForm({ ...form, airline: e.target.value })} />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm font-medium text-foreground">出發日期</label>
+                <label className="text-sm font-medium text-foreground">{t("departureDate")}</label>
                 <Input className="mt-1.5" type="date" value={form.departureDate} onChange={e => setForm({ ...form, departureDate: e.target.value })} />
               </div>
               <div>
-                <label className="text-sm font-medium text-foreground">艙等</label>
+                <label className="text-sm font-medium text-foreground">{t("seatClass")}</label>
                 <Select value={form.seatClass} onValueChange={v => setForm({ ...form, seatClass: v })}>
                   <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="economy">經濟艙</SelectItem>
-                    <SelectItem value="premium_economy">豪華經濟</SelectItem>
-                    <SelectItem value="business">商務艙</SelectItem>
-                    <SelectItem value="first">頭等艙</SelectItem>
+                    <SelectItem value="economy">{t("seatEconomyFull")}</SelectItem>
+                    <SelectItem value="premium_economy">{t("seatPremiumEconomy")}</SelectItem>
+                    <SelectItem value="business">{t("seatBusinessFull")}</SelectItem>
+                    <SelectItem value="first">{t("seatFirstFull")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-sm font-medium text-foreground">距離 (km)</label>
+                <label className="text-sm font-medium text-foreground">{t("distanceKm")}</label>
                 <Input
                   className="mt-1.5"
                   type="number"
-                  placeholder="自動估算"
+                  placeholder={t("autoEstimate")}
                   value={form.distanceKm}
                   onChange={e => setForm({ ...form, distanceKm: e.target.value })}
                 />
               </div>
               <div>
-                <label className="text-sm font-medium text-foreground">飛行時間 (分鐘)</label>
+                <label className="text-sm font-medium text-foreground">{t("durationMinutes")}</label>
                 <Input
                   className="mt-1.5"
                   type="number"
-                  placeholder="例：165"
+                  placeholder="e.g. 165"
                   value={form.durationMinutes}
                   onChange={e => setForm({ ...form, durationMinutes: e.target.value })}
                 />
               </div>
             </div>
             <div>
-              <label className="text-sm font-medium text-foreground">備注</label>
-              <Input className="mt-1.5" placeholder="選填" value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
+              <label className="text-sm font-medium text-foreground">{t("notes")}</label>
+              <Input className="mt-1.5" placeholder={t("optional")} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
             </div>
             <Button className="w-full bg-sky-600 hover:bg-sky-700" onClick={handleAdd} disabled={addFlight.isPending}>
               {addFlight.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              記錄航班
+              {t("addFlightRecord")}
             </Button>
           </div>
         </DialogContent>
@@ -722,6 +724,7 @@ export default function FlightPassport() {
 
 // Flight Route Map Component
 function FlightRouteMap({ flights }: { flights: PastFlight[] }) {
+  const { lang } = useI18n();
   const routes = useMemo(() => {
     return flights
       .filter(f => f.departureAirport && f.arrivalAirport)
@@ -755,7 +758,7 @@ function FlightRouteMap({ flights }: { flights: PastFlight[] }) {
     return (
       <div className="flex items-center justify-center py-6 text-white/40 text-sm">
         <Globe className="w-4 h-4 mr-2" />
-        航班路線圖
+        {lang === "zh" ? "航班路線圖" : "Flight Route Map"}
       </div>
     );
   }

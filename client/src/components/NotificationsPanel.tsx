@@ -4,6 +4,7 @@ import { Bell, CheckCheck, DollarSign, MapPin, Users, Calendar } from "lucide-re
 import { Button } from "@/components/ui/button";
 import { formatDistanceToNow } from "date-fns";
 import { zhTW } from "date-fns/locale";
+import { useI18n } from "@/hooks/useI18n";
 
 const typeIcon: Record<string, React.ElementType> = {
   expense_added: DollarSign,
@@ -24,6 +25,7 @@ const typeColor: Record<string, string> = {
 };
 
 export default function NotificationsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { lang } = useI18n();
   const { data: notifications, refetch } = trpc.notifications.list.useQuery(undefined, { enabled: open });
   const markAllRead = trpc.notifications.markAllRead.useMutation({ onSuccess: () => refetch() });
 
@@ -31,11 +33,11 @@ export default function NotificationsPanel({ open, onClose }: { open: boolean; o
     <Sheet open={open} onOpenChange={onClose}>
       <SheetContent side="right" className="w-full sm:max-w-md p-0 flex flex-col">
         <SheetHeader className="px-6 py-4 border-b border-border flex-row items-center justify-between">
-          <SheetTitle className="text-lg font-semibold">通知</SheetTitle>
+          <SheetTitle className="text-lg font-semibold">{lang === "zh" ? "通知" : "Notifications"}</SheetTitle>
           {notifications && notifications.some(n => !n.isRead) && (
             <Button variant="ghost" size="sm" onClick={() => markAllRead.mutate()} className="gap-1.5 text-muted-foreground">
               <CheckCheck className="w-4 h-4" />
-              全部已讀
+              {lang === "zh" ? "全部已讀" : "Mark all read"}
             </Button>
           )}
         </SheetHeader>
@@ -45,7 +47,7 @@ export default function NotificationsPanel({ open, onClose }: { open: boolean; o
               <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mb-4">
                 <Bell className="w-8 h-8 text-muted-foreground" />
               </div>
-              <p className="text-muted-foreground">目前沒有通知</p>
+              <p className="text-muted-foreground">{lang === "zh" ? "目前沒有通知" : "No notifications yet"}</p>
             </div>
           ) : (
             <div className="divide-y divide-border">
@@ -64,7 +66,7 @@ export default function NotificationsPanel({ open, onClose }: { open: boolean; o
                       </div>
                       <p className="text-sm text-muted-foreground mt-0.5 leading-relaxed">{n.message}</p>
                       <p className="text-xs text-muted-foreground/60 mt-1">
-                        {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true, locale: zhTW })}
+                        {formatDistanceToNow(new Date(n.createdAt), { addSuffix: true, locale: lang === "zh" ? zhTW : undefined })}
                       </p>
                     </div>
                   </div>

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
+import { useI18n } from "@/hooks/useI18n";
 import { Loader2, CheckCircle2, XCircle, Plane } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useLocation } from "wouter";
@@ -9,6 +10,7 @@ import { useLocation } from "wouter";
 export default function JoinPage() {
   const [, setLocation] = useLocation();
   const { user, loading: authLoading } = useAuth();
+  const { t } = useI18n();
   const [token, setToken] = useState<string | null>(null);
   const [status, setStatus] = useState<"idle" | "joining" | "success" | "error" | "already">("idle");
   const [errorMsg, setErrorMsg] = useState("");
@@ -16,8 +18,8 @@ export default function JoinPage() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const t = params.get("token");
-    setToken(t);
+    const tk = params.get("token");
+    setToken(tk);
   }, []);
 
   const joinMutation = trpc.members.joinViaInvite.useMutation({
@@ -26,7 +28,7 @@ export default function JoinPage() {
       setStatus(data.alreadyMember ? "already" : "success");
     },
     onError: (e) => {
-      setErrorMsg(e.message || "加入失敗，請重試");
+      setErrorMsg(e.message || t("joinFailed"));
       setStatus("error");
     },
   });
@@ -54,17 +56,14 @@ export default function JoinPage() {
             <Plane className="w-8 h-8 text-white rotate-45" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-foreground">你收到了行程邀請</h1>
-            <p className="text-muted-foreground mt-2">請先登入以加入共享行程</p>
+            <h1 className="text-2xl font-bold text-foreground">{t("joinInviteTitle")}</h1>
+            <p className="text-muted-foreground mt-2">{t("joinInviteDesc")}</p>
           </div>
           <Button
             className="w-full"
-            onClick={() => {
-              const returnPath = `/join?token=${token}`;
-              window.location.href = getLoginUrl();
-            }}
+            onClick={() => { window.location.href = getLoginUrl(); }}
           >
-            登入以加入行程
+            {t("joinLoginBtn")}
           </Button>
         </div>
       </div>
@@ -76,8 +75,8 @@ export default function JoinPage() {
       <div className="min-h-screen flex items-center justify-center bg-background px-4">
         <div className="text-center space-y-4">
           <XCircle className="w-12 h-12 text-destructive mx-auto" />
-          <h1 className="text-xl font-bold text-foreground">無效的邀請連結</h1>
-          <Button variant="outline" onClick={() => setLocation("/")}>返回首頁</Button>
+          <h1 className="text-xl font-bold text-foreground">{t("joinInvalidLink")}</h1>
+          <Button variant="outline" onClick={() => setLocation("/")}>{t("backHome")}</Button>
         </div>
       </div>
     );
@@ -89,18 +88,18 @@ export default function JoinPage() {
         {status === "joining" && (
           <>
             <Loader2 className="w-12 h-12 animate-spin text-primary mx-auto" />
-            <p className="text-foreground font-medium">正在加入行程...</p>
+            <p className="text-foreground font-medium">{t("joiningTrip")}</p>
           </>
         )}
         {status === "success" && (
           <>
             <CheckCircle2 className="w-12 h-12 text-green-500 mx-auto" />
             <div>
-              <h1 className="text-xl font-bold text-foreground">成功加入行程！</h1>
-              <p className="text-muted-foreground mt-1">你已成為行程成員，可以開始查看或編輯行程</p>
+              <h1 className="text-xl font-bold text-foreground">{t("joinSuccess")}</h1>
+              <p className="text-muted-foreground mt-1">{t("joinSuccessDesc")}</p>
             </div>
             <Button className="w-full" onClick={() => setLocation(tripId ? `/trips/${tripId}/itinerary` : "/")}>
-              前往行程
+              {t("goToTrip")}
             </Button>
           </>
         )}
@@ -108,11 +107,11 @@ export default function JoinPage() {
           <>
             <CheckCircle2 className="w-12 h-12 text-blue-500 mx-auto" />
             <div>
-              <h1 className="text-xl font-bold text-foreground">你已是行程成員</h1>
-              <p className="text-muted-foreground mt-1">直接前往行程即可</p>
+              <h1 className="text-xl font-bold text-foreground">{t("alreadyMember")}</h1>
+              <p className="text-muted-foreground mt-1">{t("alreadyMemberDesc")}</p>
             </div>
             <Button className="w-full" onClick={() => setLocation(tripId ? `/trips/${tripId}/itinerary` : "/")}>
-              前往行程
+              {t("goToTrip")}
             </Button>
           </>
         )}
@@ -120,10 +119,10 @@ export default function JoinPage() {
           <>
             <XCircle className="w-12 h-12 text-destructive mx-auto" />
             <div>
-              <h1 className="text-xl font-bold text-foreground">加入失敗</h1>
+              <h1 className="text-xl font-bold text-foreground">{t("joinFailed")}</h1>
               <p className="text-muted-foreground mt-1">{errorMsg}</p>
             </div>
-            <Button variant="outline" className="w-full" onClick={() => setLocation("/")}>返回首頁</Button>
+            <Button variant="outline" className="w-full" onClick={() => setLocation("/")}>{t("backHome")}</Button>
           </>
         )}
       </div>

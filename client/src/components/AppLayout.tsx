@@ -43,7 +43,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <AppLogo size={32} />
           <div className="flex flex-col leading-none">
             <span className="font-bold text-foreground text-sm tracking-tight">VoyageAI</span>
-            <span className="text-[10px] text-muted-foreground tracking-widest">旅跡</span>
+            <span className="text-[10px] text-muted-foreground tracking-widest">{lang === "zh" ? "旅跡" : "Travel"}</span>
           </div>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
@@ -83,7 +83,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs shrink-0">
                 {user?.name?.charAt(0).toUpperCase() ?? "U"}
               </div>
-              <span className="text-sm text-foreground flex-1 truncate">{user?.name ?? "旅人"}</span>
+              <span className="text-sm text-foreground flex-1 truncate">{user?.name ?? (lang === "zh" ? "旅人" : "Traveller")}</span>
             </div>
             <button onClick={logout} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-accent transition-colors shrink-0">
               <LogOut className="w-3.5 h-3.5 text-muted-foreground" />
@@ -101,7 +101,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <AppLogo size={30} />
               <div className="flex flex-col leading-none">
                 <span className="font-bold text-foreground text-sm tracking-tight">VoyageAI</span>
-                <span className="text-[9px] text-muted-foreground tracking-widest">旅跡</span>
+                <span className="text-[9px] text-muted-foreground tracking-widest">{lang === "zh" ? "旅跡" : "Travel"}</span>
               </div>
             </div>
             <div className="flex items-center gap-2">

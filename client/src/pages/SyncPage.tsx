@@ -1,3 +1,4 @@
+import { useI18n } from "@/hooks/useI18n";
 import { useState, useMemo } from "react";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
@@ -14,13 +15,20 @@ import {
 
 type SyncStatus = "idle" | "syncing" | "done" | "error";
 
-const CATEGORY_LABELS: Record<string, string> = {
+const getCategoryLabels = (lang: string): Record<string, string> => lang === "zh" ? {
   transport: "交通",
   food: "餐飲",
   accommodation: "住宿",
   attraction: "景點",
   shopping: "購物",
   other: "其他",
+} : {
+  transport: "Transport",
+  food: "Food",
+  accommodation: "Accommodation",
+  attraction: "Attraction",
+  shopping: "Shopping",
+  other: "Other",
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
@@ -44,6 +52,7 @@ interface SyncCardProps {
 }
 
 function SyncCard({ icon, title, description, count, countLabel, status, onSync, result }: SyncCardProps) {
+  const { t, lang } = useI18n();
   return (
     <Card className={`transition-all duration-300 ${status === "done" ? "border-green-300 bg-green-50/50 dark:bg-green-950/20" : status === "error" ? "border-destructive/30 bg-destructive/5" : ""}`}>
       <CardContent className="p-5">
@@ -64,14 +73,14 @@ function SyncCard({ icon, title, description, count, countLabel, status, onSync,
                 <h3 className="font-semibold text-foreground text-sm">{title}</h3>
                 {count !== undefined && (
                   <Badge variant="secondary" className="text-xs font-mono">
-                    {count} {countLabel ?? "筆"}
+                    {count} {countLabel ?? t("syncItems")}
                   </Badge>
                 )}
                 {status === "done" && (
-                  <Badge className="text-xs bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-400">已同步</Badge>
+                  <Badge className="text-xs bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-400">{t("syncDone")}</Badge>
                 )}
                 {status === "error" && (
-                  <Badge variant="destructive" className="text-xs">失敗</Badge>
+                  <Badge variant="destructive" className="text-xs">{t("syncFailed")}</Badge>
                 )}
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
@@ -94,7 +103,7 @@ function SyncCard({ icon, title, description, count, countLabel, status, onSync,
             ) : (
               <RefreshCw className="w-3.5 h-3.5" />
             )}
-            <span className="ml-1.5 hidden sm:inline">{status === "done" ? "重新同步" : "同步"}</span>
+            <span className="ml-1.5 hidden sm:inline">{status === "done" ? lang === "zh" ? "重新同步" : "Resync" : t("syncNow")}</span>
           </Button>
         </div>
       </CardContent>
@@ -112,6 +121,7 @@ type Suggestion = {
 };
 
 function AiClassifyCard({ trips, uncategorisedCount }: { trips: Array<{ id: number; name: string }>; uncategorisedCount?: number }) {
+  const { t, lang } = useI18n();
   const [phase, setPhase] = useState<ClassifyPhase>("idle");
   const [selectedTripId, setSelectedTripId] = useState<number | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
@@ -131,20 +141,20 @@ function AiClassifyCard({ trips, uncategorisedCount }: { trips: Array<{ id: numb
 
   const applyClassification = trpc.expenses.applyClassification.useMutation({
     onSuccess: (data) => {
-      setApplyResult(`已成功更新 ${data.updated} 筆費用的分類`);
+      setApplyResult(lang === "zh" ? `已成功更新 ${data.updated} 筆費用的分類` : `Successfully updated ${data.updated} expense categories`);
       setPhase("done");
-      toast.success(`AI 分類完成：${data.updated} 筆費用已更新`);
+      toast.success(lang === "zh" ? `AI 分類完成：${data.updated} 筆費用已更新` : `AI classification done: ${data.updated} expenses updated`);
       utils.expenses.list.invalidate();
     },
     onError: (e) => {
-      toast.error(`套用失敗：${e.message}`);
+      toast.error(lang === "zh" ? `套用失敗：${e.message}` : `Apply failed: ${e.message}`);
       setPhase("reviewing");
     },
   });
 
   const handleStartClassify = async () => {
     if (!selectedTripId) {
-      toast.error("請先選擇行程");
+      toast.error(lang === "zh" ? "請先選擇行程" : "Please select a trip first");
       return;
     }
     setPhase("classifying");
@@ -154,16 +164,16 @@ function AiClassifyCard({ trips, uncategorisedCount }: { trips: Array<{ id: numb
     try {
       const result = await utils.expenses.autoClassify.fetch({ tripId: selectedTripId });
       if (result.suggestions.length === 0) {
-        toast.info("此行程沒有未分類的費用");
+        toast.info(lang === "zh" ? "此行程沒有未分類的費用" : "No uncategorised expenses in this trip");
         setPhase("done");
-        setApplyResult("此行程所有費用已有分類，無需更新。");
+        setApplyResult(lang === "zh" ? "此行程所有費用已有分類，無需更新。" : "All expenses already categorised.");
         return;
       }
       setSuggestions(result.suggestions);
       setPhase("reviewing");
       setExpanded(true);
     } catch (e: any) {
-      toast.error(`AI 分類失敗：${e.message}`);
+      toast.error(lang === "zh" ? `AI 分類失敗：${e.message}` : `AI classification failed: ${e.message}`);
       setPhase("idle");
     }
   };
@@ -210,20 +220,20 @@ function AiClassifyCard({ trips, uncategorisedCount }: { trips: Array<{ id: numb
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-semibold text-foreground text-sm">AI 自動分類費用</h3>
+                <h3 className="font-semibold text-foreground text-sm">{lang === "zh" ? "AI 自動分類費用" : "AI Auto-Classify Expenses"}</h3>
                 <Badge className="text-xs bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-400">AI</Badge>
                 {uncategorisedCount !== undefined && uncategorisedCount > 0 && phase === "idle" && (
-                  <Badge variant="secondary" className="text-xs font-mono">{uncategorisedCount} 筆未分類</Badge>
+                  <Badge variant="secondary" className="text-xs font-mono">{uncategorisedCount} {lang === "zh" ? "筆未分類" : "uncategorised"}</Badge>
                 )}
                 {suggestions.length > 0 && phase === "reviewing" && (
-                  <Badge variant="secondary" className="text-xs font-mono">{suggestions.length} 筆待確認</Badge>
+                  <Badge variant="secondary" className="text-xs font-mono">{suggestions.length} {lang === "zh" ? "筆待確認" : "to review"}</Badge>
                 )}
                 {isDone && (
-                  <Badge className="text-xs bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-400">完成</Badge>
+                  <Badge className="text-xs bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-400">{t("syncDone")}</Badge>
                 )}
               </div>
               <p className="text-xs text-muted-foreground mt-0.5">
-                使用 AI 分析費用名稱，自動將「其他」類別歸類為餐飲、交通、購物等正確分類
+                {lang === "zh" ? "使用 AI 分析費用名稱，自動將「其他」類別歸類為餐飲、交通、購物等正確分類" : "Use AI to analyse expense names and auto-categorise them into food, transport, shopping, etc."}
               </p>
               {applyResult && (
                 <p className={`text-xs mt-1.5 font-medium ${isDone ? "text-green-600" : "text-muted-foreground"}`}>
@@ -242,12 +252,12 @@ function AiClassifyCard({ trips, uncategorisedCount }: { trips: Array<{ id: numb
               onClick={() => setPhase("selecting-trip")}
             >
               <Sparkles className="w-3.5 h-3.5" />
-              <span className="ml-1.5 hidden sm:inline">開始分類</span>
+              <span className="ml-1.5 hidden sm:inline">{lang === "zh" ? "開始分類" : "Start"}</span>
             </Button>
           ) : isDone ? (
             <Button size="sm" variant="outline" onClick={handleReset} className="shrink-0">
               <RefreshCw className="w-3.5 h-3.5" />
-              <span className="ml-1.5 hidden sm:inline">重新分類</span>
+              <span className="ml-1.5 hidden sm:inline">{lang === "zh" ? "重新分類" : "Retry"}</span>
             </Button>
           ) : null}
         </div>
@@ -261,7 +271,7 @@ function AiClassifyCard({ trips, uncategorisedCount }: { trips: Array<{ id: numb
               disabled={isClassifying || isApplying}
             >
               <SelectTrigger className="flex-1 min-w-0 h-8 text-sm">
-                <SelectValue placeholder="選擇行程…" />
+                <SelectValue placeholder={lang === "zh" ? "選擇行程…" : "Select trip…"} />
               </SelectTrigger>
               <SelectContent>
                 {trips.map(t => (
@@ -277,13 +287,13 @@ function AiClassifyCard({ trips, uncategorisedCount }: { trips: Array<{ id: numb
                 disabled={!selectedTripId}
               >
                 {isClassifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                <span className="ml-1.5">分析</span>
+                <span className="ml-1.5">{lang === "zh" ? "分析" : "Analyse"}</span>
               </Button>
             )}
             {isClassifying && (
               <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
                 <Loader2 className="w-3 h-3 animate-spin" />
-                AI 分析中，請稍候…
+                {lang === "zh" ? "AI 分析中，請稍候…" : "AI analysing, please wait…"}
               </div>
             )}
           </div>
@@ -297,14 +307,14 @@ function AiClassifyCard({ trips, uncategorisedCount }: { trips: Array<{ id: numb
               onClick={() => setExpanded(v => !v)}
             >
               {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              {expanded ? "收起" : "展開"} AI 建議（{suggestions.length} 筆）
+              {expanded ? (lang === "zh" ? "收起" : "Collapse") : (lang === "zh" ? "展開" : "Expand")} {lang === "zh" ? "AI 建議" : "AI suggestions"} ({suggestions.length})
             </button>
 
             {expanded && (
               <div className="border border-border rounded-xl overflow-hidden">
                 <div className="grid grid-cols-[1fr_auto] text-[10px] font-semibold text-muted-foreground uppercase tracking-wide bg-muted/50 px-3 py-2 gap-3">
-                  <span>費用名稱</span>
-                  <span className="text-right">AI 建議分類</span>
+                  <span>{lang === "zh" ? "費用名稱" : "Expense"}</span>
+                  <span className="text-right">{lang === "zh" ? "AI 建議分類" : "AI Category"}</span>
                 </div>
                 <div className="divide-y divide-border max-h-64 overflow-y-auto">
                   {suggestions.map(s => {
@@ -318,11 +328,11 @@ function AiClassifyCard({ trips, uncategorisedCount }: { trips: Array<{ id: numb
                         >
                           <SelectTrigger className="h-7 text-xs w-28 shrink-0">
                             <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${CATEGORY_COLORS[effective] ?? ""}`}>
-                              {CATEGORY_LABELS[effective] ?? effective}
+                              {getCategoryLabels(lang)[effective] ?? effective}
                             </span>
                           </SelectTrigger>
                           <SelectContent>
-                            {Object.entries(CATEGORY_LABELS).map(([val, label]) => (
+                            {Object.entries(getCategoryLabels(lang)).map(([val, label]) => (
                               <SelectItem key={val} value={val}>
                                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${CATEGORY_COLORS[val]}`}>{label}</span>
                               </SelectItem>
@@ -344,10 +354,10 @@ function AiClassifyCard({ trips, uncategorisedCount }: { trips: Array<{ id: numb
                 disabled={isApplying}
               >
                 {isApplying ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />}
-                確認套用 {suggestions.length} 筆分類
+                {lang === "zh" ? `確認套用 ${suggestions.length} 筆分類` : `Apply ${suggestions.length} classifications`}
               </Button>
               <Button size="sm" variant="ghost" onClick={handleReset} disabled={isApplying} className="text-muted-foreground">
-                取消
+                {lang === "zh" ? "取消" : "Cancel"}
               </Button>
             </div>
           </div>
@@ -359,6 +369,7 @@ function AiClassifyCard({ trips, uncategorisedCount }: { trips: Array<{ id: numb
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SyncPage() {
+  const { t, lang } = useI18n();
   const { data: summary, refetch: refetchSummary, isLoading } = trpc.sync.getSummary.useQuery();
   const { data: tripsData } = trpc.trips.list.useQuery();
 
@@ -378,8 +389,8 @@ export default function SyncPage() {
   const syncCountriesFromFlights = trpc.sync.syncCountriesFromFlights.useMutation({
     onSuccess: (data) => {
       setStatus("flights2countries", "done");
-      setResult("flights2countries", `已從 ${data.total} 個航班同步 ${data.synced} 個國家`);
-      toast.success(`飛行護照 → 旅遊足跡：同步 ${data.synced} 個國家`);
+      setResult("flights2countries", lang === "zh" ? `已從 ${data.total} 個航班同步 ${data.synced} 個國家` : `Synced ${data.synced} countries from ${data.total} flights`);
+      toast.success(lang === "zh" ? `飛行護照 → 旅遊足跡：同步 ${data.synced} 個國家` : `Flight Passport → Travel History: synced ${data.synced} countries`);
       refetchSummary();
     },
     onError: (e) => { setStatus("flights2countries", "error"); setResult("flights2countries", e.message); },
@@ -388,8 +399,8 @@ export default function SyncPage() {
   const syncCountriesFromTrips = trpc.sync.syncCountriesFromTrips.useMutation({
     onSuccess: (data) => {
       setStatus("trips2countries", "done");
-      setResult("trips2countries", `已從 ${data.total} 個行程同步 ${data.synced} 個國家`);
-      toast.success(`行程目的地 → 旅遊足跡：同步 ${data.synced} 個國家`);
+      setResult("trips2countries", lang === "zh" ? `已從 ${data.total} 個行程同步 ${data.synced} 個國家` : `Synced ${data.synced} countries from ${data.total} trips`);
+      toast.success(lang === "zh" ? `行程目的地 → 旅遊足跡：同步 ${data.synced} 個國家` : `Trip destinations → Travel History: synced ${data.synced} countries`);
       refetchSummary();
     },
     onError: (e) => { setStatus("trips2countries", "error"); setResult("trips2countries", e.message); },
@@ -407,19 +418,19 @@ export default function SyncPage() {
   const syncAll = trpc.sync.syncAll.useMutation({
     onSuccess: (data) => {
       setIsSyncingAll(false);
-      const log = data.results.map(r => `✓ ${r.label}：${r.synced} 筆`);
+      const log = data.results.map(r => `✓ ${r.label}: ${r.synced}`);
       setSyncAllLog(log);
       setStatuses({
         flights2countries: "done",
         trips2countries: "done",
         integrity: "done",
       });
-      toast.success(`全部同步完成！共 ${data.results.length} 項操作`);
+      toast.success(lang === "zh" ? `全部同步完成！共 ${data.results.length} 項操作` : `All synced! ${data.results.length} operations completed`);
       refetchSummary();
     },
     onError: (e) => {
       setIsSyncingAll(false);
-      toast.error(`同步失敗：${e.message}`);
+      toast.error(lang === "zh" ? `同步失敗：${e.message}` : `Sync failed: ${e.message}`);
     },
   });
 
@@ -438,10 +449,10 @@ export default function SyncPage() {
     {
       key: "flights2countries",
       icon: <Plane className="w-5 h-5" />,
-      title: "飛行護照 → 旅遊足跡",
-      description: "從所有歷史航班記錄中提取到訪國家，自動更新旅遊足跡地圖",
+      title: lang === "zh" ? "飛行護照 → 旅遊足跡" : "Flight Passport → Travel History",
+      description: lang === "zh" ? "從所有歷史航班記錄中提取到訪國家，自動更新旅遊足跡地圖" : "Extract visited countries from flight records and update travel map",
       count: summary?.pastFlights,
-      countLabel: "個航班",
+      countLabel: lang === "zh" ? "個航班" : "flights",
       onSync: () => {
         setStatus("flights2countries", "syncing");
         syncCountriesFromFlights.mutate();
@@ -450,10 +461,10 @@ export default function SyncPage() {
     {
       key: "trips2countries",
       icon: <Globe className="w-5 h-5" />,
-      title: "行程目的地 → 旅遊足跡",
-      description: "從所有旅程的目的地自動識別國家，標記為已到訪",
+      title: lang === "zh" ? "行程目的地 → 旅遊足跡" : "Trip Destinations → Travel History",
+      description: lang === "zh" ? "從所有旅程的目的地自動識別國家，標記為已到訪" : "Auto-detect countries from trip destinations and mark as visited",
       count: summary?.trips,
-      countLabel: "個行程",
+      countLabel: lang === "zh" ? "個行程" : "trips",
       onSync: () => {
         setStatus("trips2countries", "syncing");
         syncCountriesFromTrips.mutate();
@@ -462,10 +473,10 @@ export default function SyncPage() {
     {
       key: "integrity",
       icon: <Database className="w-5 h-5" />,
-      title: "資料完整性檢查",
-      description: "驗證所有行程、費用、航班、住宿資料的關聯完整性",
+      title: lang === "zh" ? "資料完整性檢查" : "Data Integrity Check",
+      description: lang === "zh" ? "驗證所有行程、費用、航班、住宿資料的關聯完整性" : "Verify relational integrity of all trips, expenses, flights, and hotels",
       count: summary?.trips,
-      countLabel: "個行程",
+      countLabel: lang === "zh" ? "個行程" : "trips",
       onSync: () => {
         setStatus("integrity", "syncing");
         syncDataIntegrity.mutate();
@@ -483,8 +494,8 @@ export default function SyncPage() {
               <RefreshCw className="w-5 h-5 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-foreground">同步中心</h1>
-              <p className="text-sm text-muted-foreground">同步、驗證並智能整理所有旅行資料</p>
+              <h1 className="text-2xl font-bold text-foreground">{t("syncCenterTitle")}</h1>
+              <p className="text-sm text-muted-foreground">{lang === "zh" ? "同步、驗證並智能整理所有旅行資料" : "Sync, verify, and intelligently organise all travel data"}</p>
             </div>
           </div>
         </div>
@@ -494,9 +505,9 @@ export default function SyncPage() {
           <CardHeader className="pb-3">
             <CardTitle className="text-base flex items-center gap-2">
               <Activity className="w-4 h-4 text-primary" />
-              資料總覽
+              {lang === "zh" ? "資料總覽" : "Data Summary"}
             </CardTitle>
-            <CardDescription className="text-xs">目前資料庫中的所有記錄</CardDescription>
+            <CardDescription className="text-xs">{lang === "zh" ? "目前資料庫中的所有記錄" : "All records in the database"}</CardDescription>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -508,14 +519,14 @@ export default function SyncPage() {
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
-                  { icon: <Plane className="w-4 h-4" />, label: "行程", value: summary?.trips ?? 0 },
-                  { icon: <Receipt className="w-4 h-4" />, label: "費用", value: summary?.expenses ?? 0 },
-                  { icon: <Plane className="w-4 h-4 rotate-45" />, label: "行程航班", value: summary?.tripFlights ?? 0 },
-                  { icon: <Hotel className="w-4 h-4" />, label: "住宿", value: summary?.hotels ?? 0 },
-                  { icon: <Map className="w-4 h-4" />, label: "地圖標記", value: summary?.mapPins ?? 0 },
-                  { icon: <Plane className="w-4 h-4" />, label: "歷史航班", value: summary?.pastFlights ?? 0 },
-                  { icon: <Globe className="w-4 h-4" />, label: "到訪國家", value: summary?.visitedCountries ?? 0 },
-                  { icon: <Activity className="w-4 h-4" />, label: "行程活動", value: summary?.activities ?? 0 },
+                  { icon: <Plane className="w-4 h-4" />, label: lang === "zh" ? "行程" : "Trips", value: summary?.trips ?? 0 },
+                  { icon: <Receipt className="w-4 h-4" />, label: lang === "zh" ? "費用" : "Expenses", value: summary?.expenses ?? 0 },
+                  { icon: <Plane className="w-4 h-4 rotate-45" />, label: lang === "zh" ? "行程航班" : "Trip Flights", value: summary?.tripFlights ?? 0 },
+                  { icon: <Hotel className="w-4 h-4" />, label: lang === "zh" ? "住宿" : "Hotels", value: summary?.hotels ?? 0 },
+                  { icon: <Map className="w-4 h-4" />, label: lang === "zh" ? "地圖標記" : "Map Pins", value: summary?.mapPins ?? 0 },
+                  { icon: <Plane className="w-4 h-4" />, label: lang === "zh" ? "歷史航班" : "Past Flights", value: summary?.pastFlights ?? 0 },
+                  { icon: <Globe className="w-4 h-4" />, label: lang === "zh" ? "到訪國家" : "Countries", value: summary?.visitedCountries ?? 0 },
+                  { icon: <Activity className="w-4 h-4" />, label: lang === "zh" ? "行程活動" : "Activities", value: summary?.activities ?? 0 },
                 ].map((item, i) => (
                   <div key={i} className="flex flex-col items-center justify-center p-3 rounded-xl bg-muted/50 gap-1">
                     <div className="text-muted-foreground">{item.icon}</div>
@@ -541,12 +552,12 @@ export default function SyncPage() {
             ) : (
               <Zap className="w-5 h-5" />
             )}
-            {isSyncingAll ? "同步中..." : "一鍵全部同步"}
+            {isSyncingAll ? t("syncing") : (lang === "zh" ? "一鍵全部同步" : "Sync All")}
           </Button>
 
           {syncAllLog.length > 0 && (
             <div className="mt-3 p-3 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800">
-              <p className="text-xs font-semibold text-green-700 dark:text-green-400 mb-1.5">同步完成</p>
+              <p className="text-xs font-semibold text-green-700 dark:text-green-400 mb-1.5">{lang === "zh" ? "同步完成" : "Sync Complete"}</p>
               {syncAllLog.map((line, i) => (
                 <p key={i} className="text-xs text-green-600 dark:text-green-500">{line}</p>
               ))}
@@ -560,7 +571,7 @@ export default function SyncPage() {
         <div className="mb-6">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5" />
-            AI 智能功能
+            {lang === "zh" ? "AI 智能功能" : "AI Features"}
           </h2>
           <AiClassifyCard trips={trips} uncategorisedCount={summary?.uncategorisedExpenses} />
         </div>
@@ -570,7 +581,7 @@ export default function SyncPage() {
         {/* Individual Sync Cards */}
         <div className="mb-4">
           <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-            分項同步操作
+            {lang === "zh" ? "分項同步操作" : "Individual Sync Operations"}
           </h2>
           <div className="space-y-3">
             {syncCards.map(card => (
@@ -595,10 +606,9 @@ export default function SyncPage() {
             <div className="flex gap-3">
               <AlertCircle className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
               <div>
-                <p className="text-xs font-medium text-foreground mb-1">關於同步</p>
+                <p className="text-xs font-medium text-foreground mb-1">{lang === "zh" ? "關於同步" : "About Sync"}</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
-                  同步操作會自動更新各模組之間的關聯資料。AI 自動分類功能會分析費用名稱並建議適合的分類，
-                  你可以在套用前逐一確認或修改每筆建議。所有操作均為安全的 upsert 操作，不會刪除現有資料。
+                  {lang === "zh" ? "同步操作會自動更新各模組之間的關聯資料。AI 自動分類功能會分析費用名稱並建議適合的分類，你可以在套用前逐一確認或修改每筆建議。所有操作均為安全的 upsert 操作，不會刪除現有資料。" : "Sync operations automatically update cross-module data. AI auto-classify analyses expense names and suggests categories — you can review and edit each suggestion before applying. All operations are safe upserts and will not delete existing data."}
                 </p>
               </div>
             </div>

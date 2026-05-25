@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useI18n } from "@/hooks/useI18n";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -9,14 +10,6 @@ import { Plus, Trash2, Loader2, MapPin, Hotel, Utensils, Car, MoreHorizontal, Ed
 import { useState, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
 import L from "leaflet";
-
-const PIN_TYPES = [
-  { value: "attraction", label: "景點", icon: MapPin, color: "#22c55e" },
-  { value: "hotel", label: "酒店", icon: Hotel, color: "#8b5cf6" },
-  { value: "restaurant", label: "餐廳", icon: Utensils, color: "#f97316" },
-  { value: "transport", label: "交通", icon: Car, color: "#3b82f6" },
-  { value: "other", label: "其他", icon: MoreHorizontal, color: "#94a3b8" },
-];
 
 const defaultForm = { title: "", notes: "", lat: "", lng: "", category: "attraction", address: "" };
 
@@ -31,6 +24,7 @@ function createColoredIcon(color: string) {
 }
 
 export default function MapPage({ tripId }: { tripId: number }) {
+  const { t, lang } = useI18n();
   const { data: pins, refetch, isLoading } = trpc.map.getPins.useQuery({ tripId });
   const [showAdd, setShowAdd] = useState(false);
   const [editingPin, setEditingPin] = useState<any | null>(null);
@@ -39,16 +33,24 @@ export default function MapPage({ tripId }: { tripId: number }) {
   const mapRef = useRef<LeafletMap | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
 
+  const PIN_TYPES = [
+    { value: "attraction", label: t("catAttraction"), icon: MapPin, color: "#22c55e" },
+    { value: "hotel", label: t("catHotel"), icon: Hotel, color: "#8b5cf6" },
+    { value: "restaurant", label: t("catRestaurant"), icon: Utensils, color: "#f97316" },
+    { value: "transport", label: t("catTransport"), icon: Car, color: "#3b82f6" },
+    { value: "other", label: t("catOther"), icon: MoreHorizontal, color: "#94a3b8" },
+  ];
+
   const addPin = trpc.map.addPin.useMutation({
-    onSuccess: () => { refetch(); setShowAdd(false); setForm(defaultForm); toast.success("地點已新增"); },
-    onError: () => toast.error("新增失敗"),
+    onSuccess: () => { refetch(); setShowAdd(false); setForm(defaultForm); toast.success(t("pinAdded")); },
+    onError: () => toast.error(t("pinAddFailed")),
   });
   const updatePin = trpc.map.updatePin.useMutation({
-    onSuccess: () => { refetch(); setEditingPin(null); toast.success("地點已更新"); },
-    onError: () => toast.error("更新失敗"),
+    onSuccess: () => { refetch(); setEditingPin(null); toast.success(t("pinUpdated")); },
+    onError: () => toast.error(t("pinUpdateFailed")),
   });
   const deletePin = trpc.map.deletePin.useMutation({
-    onSuccess: () => { refetch(); setSelectedPin(null); toast.success("地點已刪除"); },
+    onSuccess: () => { refetch(); setSelectedPin(null); toast.success(t("pinDeleted")); },
   });
   const geocodePlace = trpc.map.geocodePlace.useMutation({
     onSuccess: (data) => {
@@ -57,12 +59,11 @@ export default function MapPage({ tripId }: { tripId: number }) {
         lat: data.lat,
         lng: data.lng,
         address: data.address,
-        // Only auto-fill title if it's empty
         title: prev.title || data.name,
       }));
-      toast.success("已自動填入座標和地址");
+      toast.success(lang === "zh" ? "已自動填入座標和地址" : "Coordinates and address filled in");
     },
-    onError: (err) => toast.error(err.message || "找不到該地點"),
+    onError: (err) => toast.error(err.message || (lang === "zh" ? "找不到該地點" : "Place not found")),
   });
 
   const handleMapReady = useCallback((map: LeafletMap) => {
@@ -111,12 +112,18 @@ export default function MapPage({ tripId }: { tripId: number }) {
   }, [pins, renderMarkers]);
 
   const handleAdd = () => {
-    if (!form.title || !form.lat || !form.lng) { toast.error("請填寫名稱並提供座標（可點擊地圖或搜尋地點）"); return; }
+    if (!form.title || !form.lat || !form.lng) {
+      toast.error(lang === "zh" ? "請填寫名稱並提供座標（可點擊地圖或搜尋地點）" : "Please enter a name and provide coordinates (click map or search)");
+      return;
+    }
     addPin.mutate({ tripId, title: form.title, notes: form.notes, lat: form.lat, lng: form.lng, category: form.category as any, address: form.address });
   };
 
   const handleUpdate = () => {
-    if (!editingPin || !form.title) { toast.error("請填寫名稱"); return; }
+    if (!editingPin || !form.title) {
+      toast.error(lang === "zh" ? "請填寫名稱" : "Please enter a name");
+      return;
+    }
     updatePin.mutate({ pinId: editingPin.id, tripId, title: form.title, notes: form.notes, category: form.category as any, address: form.address });
   };
 
@@ -126,7 +133,10 @@ export default function MapPage({ tripId }: { tripId: number }) {
   };
 
   const handleGeocode = () => {
-    if (!form.title.trim()) { toast.error("請先輸入地點名稱"); return; }
+    if (!form.title.trim()) {
+      toast.error(lang === "zh" ? "請先輸入地點名稱" : "Please enter a place name first");
+      return;
+    }
     geocodePlace.mutate({ query: form.title });
   };
 
@@ -136,16 +146,14 @@ export default function MapPage({ tripId }: { tripId: number }) {
     </div>
   );
 
-  // Shared form fields component
   const PinFormFields = ({ showCoords = true }: { showCoords?: boolean }) => (
     <div className="space-y-4 mt-2">
-      {/* Place name with geocode button */}
       <div>
-        <Label>地點名稱 *</Label>
+        <Label>{t("pinName")} *</Label>
         <div className="flex gap-2 mt-1.5">
           <Input
             className="flex-1"
-            placeholder="例：吉薩金字塔"
+            placeholder={lang === "zh" ? "例：吉薩金字塔" : "e.g. Giza Pyramids"}
             value={form.title}
             onChange={e => setForm({ ...form, title: e.target.value })}
             onKeyDown={e => { if (e.key === "Enter") { e.preventDefault(); handleGeocode(); } }}
@@ -157,49 +165,53 @@ export default function MapPage({ tripId }: { tripId: number }) {
             onClick={handleGeocode}
             disabled={geocodePlace.isPending}
             className="shrink-0 gap-1.5 px-3"
-            title="自動搜尋座標和地址"
+            title={lang === "zh" ? "自動搜尋座標和地址" : "Auto-search coordinates and address"}
           >
             {geocodePlace.isPending
               ? <Loader2 className="w-4 h-4 animate-spin" />
               : <Search className="w-4 h-4" />
             }
-            搜尋
+            {t("mapSearch")}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground mt-1">輸入名稱後點「搜尋」自動填入座標和地址</p>
+        <p className="text-xs text-muted-foreground mt-1">
+          {lang === "zh" ? "輸入名稱後點「搜尋」自動填入座標和地址" : "Enter a name and click Search to auto-fill coordinates"}
+        </p>
       </div>
 
       <div>
-        <Label>類型</Label>
+        <Label>{t("pinCategory")}</Label>
         <Select value={form.category} onValueChange={v => setForm({ ...form, category: v })}>
           <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
-          <SelectContent>{PIN_TYPES.map(t => <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>)}</SelectContent>
+          <SelectContent>{PIN_TYPES.map(tp => <SelectItem key={tp.value} value={tp.value}>{tp.label}</SelectItem>)}</SelectContent>
         </Select>
       </div>
 
       <div>
-        <Label>描述</Label>
-        <Input className="mt-1.5" placeholder="簡短描述..." value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
+        <Label>{t("pinNotes")}</Label>
+        <Input className="mt-1.5" placeholder={lang === "zh" ? "簡短描述..." : "Short description..."} value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} />
       </div>
 
       <div>
-        <Label>地址</Label>
-        <Input className="mt-1.5" placeholder="詳細地址（搜尋後自動填入）..." value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
+        <Label>{lang === "zh" ? "地址" : "Address"}</Label>
+        <Input className="mt-1.5" placeholder={lang === "zh" ? "詳細地址（搜尋後自動填入）..." : "Address (auto-filled after search)..."} value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
       </div>
 
       {showCoords && (
         <>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label>緯度 *</Label>
+              <Label>{lang === "zh" ? "緯度 *" : "Latitude *"}</Label>
               <Input className="mt-1.5" placeholder="29.9792" value={form.lat} onChange={e => setForm({ ...form, lat: e.target.value })} />
             </div>
             <div>
-              <Label>經度 *</Label>
+              <Label>{lang === "zh" ? "經度 *" : "Longitude *"}</Label>
               <Input className="mt-1.5" placeholder="31.1342" value={form.lng} onChange={e => setForm({ ...form, lng: e.target.value })} />
             </div>
           </div>
-          <p className="text-xs text-muted-foreground">💡 搜尋地點名稱或直接在地圖上點擊即可自動填入座標</p>
+          <p className="text-xs text-muted-foreground">
+            {lang === "zh" ? "💡 搜尋地點名稱或直接在地圖上點擊即可自動填入座標" : "💡 Search a place name or click on the map to auto-fill coordinates"}
+          </p>
         </>
       )}
     </div>
@@ -210,11 +222,15 @@ export default function MapPage({ tripId }: { tripId: number }) {
       {/* Toolbar */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-background shrink-0">
         <div>
-          <h2 className="text-base font-bold text-foreground">地圖模式</h2>
-          <p className="text-xs text-muted-foreground">{pins?.length ?? 0} 個地點 · 點擊地圖新增標記</p>
+          <h2 className="text-base font-bold text-foreground">{t("mapTitle")}</h2>
+          <p className="text-xs text-muted-foreground">
+            {lang === "zh"
+              ? `${pins?.length ?? 0} 個地點 · 點擊地圖新增標記`
+              : `${pins?.length ?? 0} place${(pins?.length ?? 0) !== 1 ? "s" : ""} · Click map to add pin`}
+          </p>
         </div>
         <Button onClick={() => { setShowAdd(true); setForm(defaultForm); }} size="sm" className="gap-1.5">
-          <Plus className="w-4 h-4" />新增地點
+          <Plus className="w-4 h-4" />{t("addPin")}
         </Button>
       </div>
 
@@ -235,17 +251,17 @@ export default function MapPage({ tripId }: { tripId: number }) {
         {/* Pin list sidebar (desktop) */}
         <div className="hidden lg:flex flex-col w-72 border-l border-border bg-background overflow-y-auto">
           <div className="p-4 border-b border-border">
-            <h3 className="font-semibold text-sm text-foreground">地點列表</h3>
+            <h3 className="font-semibold text-sm text-foreground">{lang === "zh" ? "地點列表" : "Places"}</h3>
           </div>
           {!pins || pins.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center px-4">
               <MapPin className="w-8 h-8 text-muted-foreground mb-2" />
-              <p className="text-muted-foreground text-sm">點擊地圖或使用「新增地點」按鈕</p>
+              <p className="text-muted-foreground text-sm">{t("noPinsDesc")}</p>
             </div>
           ) : (
             <div className="divide-y divide-border">
               {pins.map(pin => {
-                const pinType = PIN_TYPES.find(t => t.value === pin.category) ?? PIN_TYPES[0];
+                const pinType = PIN_TYPES.find(tp => tp.value === pin.category) ?? PIN_TYPES[0];
                 const Icon = pinType.icon;
                 return (
                   <div key={pin.id}
@@ -268,12 +284,14 @@ export default function MapPage({ tripId }: { tripId: number }) {
                       <button
                         onClick={(e) => { e.stopPropagation(); openEdit(pin); }}
                         className="p-1 rounded hover:bg-accent transition-colors"
+                        title={t("editPin")}
                       >
                         <Edit2 className="w-3.5 h-3.5 text-muted-foreground" />
                       </button>
                       <button
                         onClick={(e) => { e.stopPropagation(); deletePin.mutate({ pinId: pin.id, tripId }); }}
                         className="p-1 rounded hover:bg-destructive/10 transition-all"
+                        title={t("deletePin")}
                       >
                         <Trash2 className="w-3.5 h-3.5 text-destructive" />
                       </button>
@@ -286,14 +304,14 @@ export default function MapPage({ tripId }: { tripId: number }) {
         </div>
       </div>
 
-      {/* Add Pin Dialog — max-h + overflow-y-auto prevents content from going off-screen */}
+      {/* Add Pin Dialog */}
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>新增地點標記</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t("addPin")}</DialogTitle></DialogHeader>
           <PinFormFields showCoords={true} />
           <Button className="w-full mt-4" onClick={handleAdd} disabled={addPin.isPending}>
             {addPin.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-            新增標記
+            {t("addPin")}
           </Button>
         </DialogContent>
       </Dialog>
@@ -301,11 +319,11 @@ export default function MapPage({ tripId }: { tripId: number }) {
       {/* Edit Pin Dialog */}
       <Dialog open={!!editingPin} onOpenChange={(o) => !o && setEditingPin(null)}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>修改地點標記</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t("editPin")}</DialogTitle></DialogHeader>
           <PinFormFields showCoords={false} />
           <Button className="w-full mt-4" onClick={handleUpdate} disabled={updatePin.isPending}>
             {updatePin.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-            儲存修改
+            {t("saveChanges")}
           </Button>
         </DialogContent>
       </Dialog>

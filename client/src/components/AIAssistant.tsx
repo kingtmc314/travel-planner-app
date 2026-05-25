@@ -2,6 +2,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { trpc } from "@/lib/trpc";
+import { useI18n } from "@/hooks/useI18n";
 import { Sparkles, Send, Bot, User, Loader2 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
@@ -18,6 +19,7 @@ interface AIAssistantProps {
 }
 
 export default function AIAssistant({ open, onClose, tripId, destination }: AIAssistantProps) {
+  const { t, lang } = useI18n();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",

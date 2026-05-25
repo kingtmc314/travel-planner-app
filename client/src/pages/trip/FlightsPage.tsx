@@ -1,4 +1,5 @@
 import { trpc } from "@/lib/trpc";
+import { useI18n } from "@/hooks/useI18n";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -17,6 +18,7 @@ const defaultFlight = {
 const defaultHotel = { name: "", city: "", checkIn: "", checkOut: "", nights: "", notes: "" };
 
 export default function FlightsPage({ tripId }: { tripId: number }) {
+  const { t, lang } = useI18n();
   const { data: flights, refetch: refetchFlights, isLoading: flightsLoading } = trpc.flights.list.useQuery({ tripId });
   const { data: hotels, refetch: refetchHotels, isLoading: hotelsLoading } = trpc.hotels.list.useQuery({ tripId });
   const [showAddFlight, setShowAddFlight] = useState(false);
@@ -27,27 +29,30 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
   const [hotelForm, setHotelForm] = useState(defaultHotel);
 
   const addFlight = trpc.flights.add.useMutation({
-    onSuccess: () => { refetchFlights(); setShowAddFlight(false); setFlightForm(defaultFlight); toast.success("航班已新增"); },
-    onError: () => toast.error("新增失敗"),
+    onSuccess: () => { refetchFlights(); setShowAddFlight(false); setFlightForm(defaultFlight); toast.success(t("flightAdded")); },
+    onError: () => toast.error(t("addFailed")),
   });
   const updateFlight = trpc.flights.update.useMutation({
-    onSuccess: () => { refetchFlights(); setEditingFlight(null); toast.success("航班已更新"); },
-    onError: () => toast.error("更新失敗"),
+    onSuccess: () => { refetchFlights(); setEditingFlight(null); toast.success(t("flightUpdated")); },
+    onError: () => toast.error(t("updateFailed")),
   });
-  const deleteFlight = trpc.flights.delete.useMutation({ onSuccess: () => { refetchFlights(); toast.success("航班已刪除"); } });
+  const deleteFlight = trpc.flights.delete.useMutation({ onSuccess: () => { refetchFlights(); toast.success(t("flightDeleted")); } });
 
   const addHotel = trpc.hotels.add.useMutation({
-    onSuccess: () => { refetchHotels(); setShowAddHotel(false); setHotelForm(defaultHotel); toast.success("住宿已新增"); },
-    onError: () => toast.error("新增失敗"),
+    onSuccess: () => { refetchHotels(); setShowAddHotel(false); setHotelForm(defaultHotel); toast.success(t("hotelAdded")); },
+    onError: () => toast.error(t("addFailed")),
   });
   const updateHotel = trpc.hotels.update.useMutation({
-    onSuccess: () => { refetchHotels(); setEditingHotel(null); toast.success("住宿已更新"); },
-    onError: () => toast.error("更新失敗"),
+    onSuccess: () => { refetchHotels(); setEditingHotel(null); toast.success(t("hotelUpdated")); },
+    onError: () => toast.error(t("updateFailed")),
   });
-  const deleteHotel = trpc.hotels.delete.useMutation({ onSuccess: () => { refetchHotels(); toast.success("住宿已刪除"); } });
+  const deleteHotel = trpc.hotels.delete.useMutation({ onSuccess: () => { refetchHotels(); toast.success(t("hotelDeleted")); } });
 
   const handleAddFlight = () => {
-    if (!flightForm.fromCode || !flightForm.toCode) { toast.error("請填寫出發和抵達機場代碼"); return; }
+    if (!flightForm.fromCode || !flightForm.toCode) {
+      toast.error(lang === "zh" ? "請填寫出發和抵達機場代碼" : "Please enter departure and arrival airport codes");
+      return;
+    }
     addFlight.mutate({ tripId, ...flightForm });
   };
 
@@ -75,12 +80,12 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
   };
 
   const handleAddHotel = () => {
-    if (!hotelForm.name) { toast.error("請填寫酒店名稱"); return; }
+    if (!hotelForm.name) { toast.error(lang === "zh" ? "請填寫酒店名稱" : "Please enter hotel name"); return; }
     addHotel.mutate({ tripId, ...hotelForm, nights: hotelForm.nights ? parseInt(hotelForm.nights) : undefined });
   };
 
   const handleUpdateHotel = () => {
-    if (!editingHotel || !hotelForm.name) { toast.error("請填寫必填欄位"); return; }
+    if (!editingHotel || !hotelForm.name) { toast.error(lang === "zh" ? "請填寫必填欄位" : "Please fill in required fields"); return; }
     updateHotel.mutate({ accId: editingHotel.id, tripId, ...hotelForm, nights: hotelForm.nights ? parseInt(hotelForm.nights) : undefined });
   };
 
@@ -96,69 +101,77 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
     });
   };
 
-  const typeLabel: Record<string, string> = { outbound: "去程", return: "回程", connecting: "轉機" };
-  const typeColor: Record<string, string> = { outbound: "bg-blue-100 text-blue-700", return: "bg-green-100 text-green-700", connecting: "bg-amber-100 text-amber-700" };
+  const typeLabel: Record<string, string> = {
+    outbound: t("flightOutbound"),
+    return: t("flightReturn"),
+    connecting: t("flightConnecting"),
+  };
+  const typeColor: Record<string, string> = {
+    outbound: "bg-blue-100 text-blue-700",
+    return: "bg-green-100 text-green-700",
+    connecting: "bg-amber-100 text-amber-700",
+  };
 
   const FlightFormFields = () => (
     <div className="space-y-4 mt-2">
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label>航班號碼</Label>
+          <Label>{t("flightNumber")}</Label>
           <Input className="mt-1.5" placeholder="CX100" value={flightForm.flightNumber} onChange={e => setFlightForm({...flightForm, flightNumber: e.target.value})} />
         </div>
         <div>
-          <Label>航空公司</Label>
-          <Input className="mt-1.5" placeholder="國泰航空" value={flightForm.airline} onChange={e => setFlightForm({...flightForm, airline: e.target.value})} />
+          <Label>{t("airline")}</Label>
+          <Input className="mt-1.5" placeholder={lang === "zh" ? "國泰航空" : "Cathay Pacific"} value={flightForm.airline} onChange={e => setFlightForm({...flightForm, airline: e.target.value})} />
         </div>
       </div>
       <div>
-        <Label>類型</Label>
+        <Label>{t("flightType")}</Label>
         <Select value={flightForm.type} onValueChange={v => setFlightForm({...flightForm, type: v as any})}>
           <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
           <SelectContent>
-            <SelectItem value="outbound">去程</SelectItem>
-            <SelectItem value="return">回程</SelectItem>
-            <SelectItem value="connecting">轉機</SelectItem>
+            <SelectItem value="outbound">{t("flightOutbound")}</SelectItem>
+            <SelectItem value="return">{t("flightReturn")}</SelectItem>
+            <SelectItem value="connecting">{t("flightConnecting")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label>出發機場代碼 *</Label>
+          <Label>{t("fromAirport")} *</Label>
           <Input className="mt-1.5" placeholder="HKG" value={flightForm.fromCode} onChange={e => setFlightForm({...flightForm, fromCode: e.target.value.toUpperCase()})} />
         </div>
         <div>
-          <Label>出發城市</Label>
+          <Label>{t("fromCity")}</Label>
           <Input className="mt-1.5" placeholder="Hong Kong" value={flightForm.fromCity} onChange={e => setFlightForm({...flightForm, fromCity: e.target.value})} />
         </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label>抵達機場代碼 *</Label>
+          <Label>{t("toAirport")} *</Label>
           <Input className="mt-1.5" placeholder="CAI" value={flightForm.toCode} onChange={e => setFlightForm({...flightForm, toCode: e.target.value.toUpperCase()})} />
         </div>
         <div>
-          <Label>抵達城市</Label>
+          <Label>{t("toCity")}</Label>
           <Input className="mt-1.5" placeholder="Cairo" value={flightForm.toCity} onChange={e => setFlightForm({...flightForm, toCity: e.target.value})} />
         </div>
       </div>
       <div className="grid grid-cols-3 gap-3">
         <div>
-          <Label>日期</Label>
+          <Label>{t("flightDate")}</Label>
           <Input className="mt-1.5" type="date" value={flightForm.date} onChange={e => setFlightForm({...flightForm, date: e.target.value})} />
         </div>
         <div>
-          <Label>出發時間</Label>
+          <Label>{t("departTime")}</Label>
           <Input className="mt-1.5" type="time" value={flightForm.departTime} onChange={e => setFlightForm({...flightForm, departTime: e.target.value})} />
         </div>
         <div>
-          <Label>抵達時間</Label>
+          <Label>{t("arriveTime")}</Label>
           <Input className="mt-1.5" type="time" value={flightForm.arriveTime} onChange={e => setFlightForm({...flightForm, arriveTime: e.target.value})} />
         </div>
       </div>
       <div>
-        <Label>備注</Label>
-        <Input className="mt-1.5" placeholder="備注..." value={flightForm.notes} onChange={e => setFlightForm({...flightForm, notes: e.target.value})} />
+        <Label>{t("activityNotes")}</Label>
+        <Input className="mt-1.5" placeholder={t("activityNotesPlaceholder")} value={flightForm.notes} onChange={e => setFlightForm({...flightForm, notes: e.target.value})} />
       </div>
     </div>
   );
@@ -166,30 +179,30 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
   const HotelFormFields = () => (
     <div className="space-y-4 mt-2">
       <div>
-        <Label>酒店名稱 *</Label>
-        <Input className="mt-1.5" placeholder="例：開羅希爾頓酒店" value={hotelForm.name} onChange={e => setHotelForm({...hotelForm, name: e.target.value})} />
+        <Label>{t("hotelName")} *</Label>
+        <Input className="mt-1.5" placeholder={lang === "zh" ? "例：開羅希爾頓酒店" : "e.g. Cairo Hilton"} value={hotelForm.name} onChange={e => setHotelForm({...hotelForm, name: e.target.value})} />
       </div>
       <div>
-        <Label>城市</Label>
-        <Input className="mt-1.5" placeholder="城市名稱" value={hotelForm.city} onChange={e => setHotelForm({...hotelForm, city: e.target.value})} />
+        <Label>{t("hotelCity")}</Label>
+        <Input className="mt-1.5" placeholder={lang === "zh" ? "城市名稱" : "City name"} value={hotelForm.city} onChange={e => setHotelForm({...hotelForm, city: e.target.value})} />
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <Label>入住日期</Label>
+          <Label>{t("checkIn")}</Label>
           <Input className="mt-1.5" type="date" value={hotelForm.checkIn} onChange={e => setHotelForm({...hotelForm, checkIn: e.target.value})} />
         </div>
         <div>
-          <Label>退房日期</Label>
+          <Label>{t("checkOut")}</Label>
           <Input className="mt-1.5" type="date" value={hotelForm.checkOut} onChange={e => setHotelForm({...hotelForm, checkOut: e.target.value})} />
         </div>
       </div>
       <div>
-        <Label>晚數</Label>
+        <Label>{t("nights")}</Label>
         <Input className="mt-1.5" type="number" min="1" placeholder="3" value={hotelForm.nights} onChange={e => setHotelForm({...hotelForm, nights: e.target.value})} />
       </div>
       <div>
-        <Label>備注</Label>
-        <Input className="mt-1.5" placeholder="備注..." value={hotelForm.notes} onChange={e => setHotelForm({...hotelForm, notes: e.target.value})} />
+        <Label>{t("activityNotes")}</Label>
+        <Input className="mt-1.5" placeholder={t("activityNotesPlaceholder")} value={hotelForm.notes} onChange={e => setHotelForm({...hotelForm, notes: e.target.value})} />
       </div>
     </div>
   );
@@ -197,25 +210,27 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
       <div className="mb-6">
-        <h2 className="text-xl font-bold text-foreground">航班 &amp; 住宿</h2>
-        <p className="text-muted-foreground text-sm mt-0.5">管理你的航班資訊和住宿預訂</p>
+        <h2 className="text-xl font-bold text-foreground">{t("flightsTitle")}</h2>
+        <p className="text-muted-foreground text-sm mt-0.5">{t("flightsDesc")}</p>
       </div>
 
       <Tabs defaultValue="flights">
         <TabsList className="mb-6">
           <TabsTrigger value="flights" className="gap-2">
-            <Plane className="w-4 h-4" />航班
+            <Plane className="w-4 h-4" />{t("flights")}
           </TabsTrigger>
           <TabsTrigger value="hotels" className="gap-2">
-            <Hotel className="w-4 h-4" />住宿
+            <Hotel className="w-4 h-4" />{t("hotels")}
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="flights">
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-muted-foreground">{flights?.length ?? 0} 個航班</p>
+            <p className="text-sm text-muted-foreground">
+              {lang === "zh" ? `${flights?.length ?? 0} 個航班` : `${flights?.length ?? 0} flight${(flights?.length ?? 0) !== 1 ? "s" : ""}`}
+            </p>
             <Button onClick={() => { setShowAddFlight(true); setFlightForm(defaultFlight); }} size="sm" className="gap-1.5">
-              <Plus className="w-4 h-4" />新增航班
+              <Plus className="w-4 h-4" />{t("addFlight")}
             </Button>
           </div>
           {flightsLoading ? (
@@ -225,8 +240,8 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
               <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
                 <Plane className="w-8 h-8 text-muted-foreground" />
               </div>
-              <p className="text-muted-foreground">還沒有航班資訊</p>
-              <button onClick={() => setShowAddFlight(true)} className="text-primary hover:underline mt-2 text-sm">+ 新增航班</button>
+              <p className="text-muted-foreground">{t("noFlights")}</p>
+              <button onClick={() => setShowAddFlight(true)} className="text-primary hover:underline mt-2 text-sm">+ {t("addFlight")}</button>
             </div>
           ) : (
             <div className="space-y-3">
@@ -262,10 +277,10 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
                       {flight.notes && <p className="text-xs text-muted-foreground mt-2">{flight.notes}</p>}
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                      <button onClick={() => openEditFlight(flight)} className="p-1.5 rounded-lg hover:bg-accent transition-colors">
+                      <button onClick={() => openEditFlight(flight)} className="p-1.5 rounded-lg hover:bg-accent transition-colors" title={t("edit")}>
                         <Edit2 className="w-4 h-4 text-muted-foreground" />
                       </button>
-                      <button onClick={() => deleteFlight.mutate({ flightId: flight.id, tripId })} className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors">
+                      <button onClick={() => deleteFlight.mutate({ flightId: flight.id, tripId })} className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors" title={t("delete")}>
                         <Trash2 className="w-4 h-4 text-destructive" />
                       </button>
                     </div>
@@ -278,9 +293,11 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
 
         <TabsContent value="hotels">
           <div className="flex items-center justify-between mb-4">
-            <p className="text-sm text-muted-foreground">{hotels?.length ?? 0} 個住宿</p>
+            <p className="text-sm text-muted-foreground">
+              {lang === "zh" ? `${hotels?.length ?? 0} 個住宿` : `${hotels?.length ?? 0} accommodation${(hotels?.length ?? 0) !== 1 ? "s" : ""}`}
+            </p>
             <Button onClick={() => { setShowAddHotel(true); setHotelForm(defaultHotel); }} size="sm" className="gap-1.5">
-              <Plus className="w-4 h-4" />新增住宿
+              <Plus className="w-4 h-4" />{t("addHotel")}
             </Button>
           </div>
           {hotelsLoading ? (
@@ -290,8 +307,8 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
               <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto mb-4">
                 <Hotel className="w-8 h-8 text-muted-foreground" />
               </div>
-              <p className="text-muted-foreground">還沒有住宿資訊</p>
-              <button onClick={() => setShowAddHotel(true)} className="text-primary hover:underline mt-2 text-sm">+ 新增住宿</button>
+              <p className="text-muted-foreground">{t("noHotels")}</p>
+              <button onClick={() => setShowAddHotel(true)} className="text-primary hover:underline mt-2 text-sm">+ {t("addHotel")}</button>
             </div>
           ) : (
             <div className="space-y-3">
@@ -308,15 +325,19 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
                         {hotel.checkIn && <span className="font-medium text-foreground">{hotel.checkIn}</span>}
                         {hotel.checkIn && hotel.checkOut && <ArrowRight className="w-4 h-4 text-muted-foreground" />}
                         {hotel.checkOut && <span className="font-medium text-foreground">{hotel.checkOut}</span>}
-                        {hotel.nights && <span className="text-muted-foreground text-xs">({hotel.nights} 晚)</span>}
+                        {hotel.nights && (
+                          <span className="text-muted-foreground text-xs">
+                            ({hotel.nights} {lang === "zh" ? "晚" : `night${hotel.nights !== 1 ? "s" : ""}`})
+                          </span>
+                        )}
                       </div>
                       {hotel.notes && <p className="text-xs text-muted-foreground mt-1">{hotel.notes}</p>}
                     </div>
                     <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
-                      <button onClick={() => openEditHotel(hotel)} className="p-1.5 rounded-lg hover:bg-accent transition-colors">
+                      <button onClick={() => openEditHotel(hotel)} className="p-1.5 rounded-lg hover:bg-accent transition-colors" title={t("edit")}>
                         <Edit2 className="w-4 h-4 text-muted-foreground" />
                       </button>
-                      <button onClick={() => deleteHotel.mutate({ accId: hotel.id, tripId })} className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors">
+                      <button onClick={() => deleteHotel.mutate({ accId: hotel.id, tripId })} className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors" title={t("delete")}>
                         <Trash2 className="w-4 h-4 text-destructive" />
                       </button>
                     </div>
@@ -331,11 +352,11 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
       {/* Add Flight Dialog */}
       <Dialog open={showAddFlight} onOpenChange={setShowAddFlight}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>新增航班</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t("addFlight")}</DialogTitle></DialogHeader>
           <FlightFormFields />
           <Button className="w-full mt-4" onClick={handleAddFlight} disabled={addFlight.isPending}>
             {addFlight.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-            新增航班
+            {t("addFlight")}
           </Button>
         </DialogContent>
       </Dialog>
@@ -343,11 +364,11 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
       {/* Edit Flight Dialog */}
       <Dialog open={!!editingFlight} onOpenChange={(o) => !o && setEditingFlight(null)}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>修改航班</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t("editFlight")}</DialogTitle></DialogHeader>
           <FlightFormFields />
           <Button className="w-full mt-4" onClick={handleUpdateFlight} disabled={updateFlight.isPending}>
             {updateFlight.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-            儲存變更
+            {t("saveChanges")}
           </Button>
         </DialogContent>
       </Dialog>
@@ -355,11 +376,11 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
       {/* Add Hotel Dialog */}
       <Dialog open={showAddHotel} onOpenChange={setShowAddHotel}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>新增住宿</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t("addHotel")}</DialogTitle></DialogHeader>
           <HotelFormFields />
           <Button className="w-full mt-4" onClick={handleAddHotel} disabled={addHotel.isPending}>
             {addHotel.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-            新增住宿
+            {t("addHotel")}
           </Button>
         </DialogContent>
       </Dialog>
@@ -367,11 +388,11 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
       {/* Edit Hotel Dialog */}
       <Dialog open={!!editingHotel} onOpenChange={(o) => !o && setEditingHotel(null)}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>修改住宿</DialogTitle></DialogHeader>
+          <DialogHeader><DialogTitle>{t("editHotel")}</DialogTitle></DialogHeader>
           <HotelFormFields />
           <Button className="w-full mt-4" onClick={handleUpdateHotel} disabled={updateHotel.isPending}>
             {updateHotel.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-            儲存變更
+            {t("saveChanges")}
           </Button>
         </DialogContent>
       </Dialog>

@@ -1,5 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import AppLayout from "@/components/AppLayout";
+import { useI18n } from "@/hooks/useI18n";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
@@ -190,13 +191,13 @@ const COUNTRIES = [
   { code: "ZW", name: "Zimbabwe", region: "Africa" },
 ];
 
-const STATUS_CONFIG = {
-  visited: { label: "已到訪", color: "bg-emerald-500", mapColor: "#10b981", icon: CheckCircle },
-  planned: { label: "計劃中", color: "bg-blue-500", mapColor: "#3b82f6", icon: Calendar },
-  wishlist: { label: "心願清單", color: "bg-amber-500", mapColor: "#f59e0b", icon: Heart },
+const STATUS_CONFIG_BASE = {
+  visited: { color: "bg-emerald-500", mapColor: "#10b981", icon: CheckCircle },
+  planned: { color: "bg-blue-500", mapColor: "#3b82f6", icon: Calendar },
+  wishlist: { color: "bg-amber-500", mapColor: "#f59e0b", icon: Heart },
 };
 
-const REGIONS = ["全部", "Asia", "Europe", "Africa", "North America", "South America", "Oceania"];
+const REGIONS_BASE = ["Asia", "Europe", "Africa", "North America", "South America", "Oceania"];
 
 const TOTAL_COUNTRIES = 195;
 
@@ -226,17 +227,24 @@ const COUNTRY_CENTERS: Record<string, { lat: number; lng: number; zoom: number }
 };
 
 export default function TravelHistory() {
+  const { t, lang } = useI18n();
+  const STATUS_CONFIG = {
+    visited: { ...STATUS_CONFIG_BASE.visited, label: t("statusVisited") },
+    planned: { ...STATUS_CONFIG_BASE.planned, label: t("statusPlanned") },
+    wishlist: { ...STATUS_CONFIG_BASE.wishlist, label: t("statusWishlist") },
+  };
+  const REGIONS = [t("regionAll"), ...REGIONS_BASE];
   const { data: countries, refetch, isLoading } = trpc.travelHistory.getCountries.useQuery();
-  const upsertCountry = trpc.travelHistory.upsertCountry.useMutation({ onSuccess: () => { refetch(); setShowAdd(false); toast.success("已新增"); } });
-  const removeCountry = trpc.travelHistory.removeCountry.useMutation({ onSuccess: () => { refetch(); toast.success("已移除"); } });
-  const updateStatus = trpc.travelHistory.upsertCountry.useMutation({ onSuccess: () => { refetch(); toast.success("已更新"); } });
+  const upsertCountry = trpc.travelHistory.upsertCountry.useMutation({ onSuccess: () => { refetch(); setShowAdd(false); toast.success(t("added")); } });
+  const removeCountry = trpc.travelHistory.removeCountry.useMutation({ onSuccess: () => { refetch(); toast.success(t("removed")); } });
+  const updateStatus = trpc.travelHistory.upsertCountry.useMutation({ onSuccess: () => { refetch(); toast.success(t("updated")); } });
 
   const [showAdd, setShowAdd] = useState(false);
   const [editingCountry, setEditingCountry] = useState<any | null>(null);
   const [editForm, setEditForm] = useState({ status: "visited" as "visited" | "planned" | "wishlist", visitedYear: "", notes: "" });
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState<"all" | "visited" | "planned" | "wishlist">("all");
-  const [filterRegion, setFilterRegion] = useState("全部");
+  const [filterRegion, setFilterRegion] = useState("__all__");
   const [addForm, setAddForm] = useState({ countryCode: "", countryName: "", status: "visited" as "visited" | "planned" | "wishlist", visitedYear: "" });
   const [activeTab, setActiveTab] = useState<"map" | "list">("map");
 
@@ -264,7 +272,7 @@ export default function TravelHistory() {
     return (countries ?? []).filter(c => {
       const matchStatus = filterStatus === "all" || c.status === filterStatus;
       const country = COUNTRIES.find(x => x.code === c.countryCode);
-      const matchRegion = filterRegion === "全部" || country?.region === filterRegion;
+      const matchRegion = filterRegion === "__all__" || country?.region === filterRegion;
       const matchSearch = !search || c.countryName.toLowerCase().includes(search.toLowerCase());
       return matchStatus && matchRegion && matchSearch;
     });
@@ -289,11 +297,11 @@ export default function TravelHistory() {
       status: editForm.status,
       visitedAt: editForm.visitedYear ? `${editForm.visitedYear}-01-01` : undefined,
       notes: editForm.notes || undefined,
-    }, { onSuccess: () => { setEditingCountry(null); refetch(); toast.success("已更新"); } });
+    }, { onSuccess: () => { setEditingCountry(null); refetch(); toast.success(t("updated")); } });
   };
 
   const handleAdd = () => {
-    if (!addForm.countryCode) { toast.error("請選擇國家"); return; }
+    if (!addForm.countryCode) { toast.error(t("selectCountryRequired")); return; }
     const country = COUNTRIES.find(c => c.code === addForm.countryCode);
     upsertCountry.mutate({
       countryCode: addForm.countryCode,
@@ -375,13 +383,13 @@ export default function TravelHistory() {
               <Globe className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="font-bold text-foreground text-lg leading-tight">旅遊足跡</h1>
-              <p className="text-muted-foreground text-xs">{visitedCount} / {TOTAL_COUNTRIES} 個國家 · {visitedPct}%</p>
+              <h1 className="font-bold text-foreground text-lg leading-tight">{t("travelHistoryTitle")}</h1>
+              <p className="text-muted-foreground text-xs">{visitedCount} / {TOTAL_COUNTRIES} {t("countriesCount")} · {visitedPct}%</p>
             </div>
           </div>
           <Button onClick={() => setShowAdd(true)} size="sm" className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 shrink-0">
             <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">新增</span>
+            <span className="hidden sm:inline">{t("add")}</span>
           </Button>
         </div>
       </div>
@@ -413,8 +421,8 @@ export default function TravelHistory() {
         {/* Tabs */}
         <Tabs value={activeTab} onValueChange={v => setActiveTab(v as any)} className="mb-4">
           <TabsList>
-            <TabsTrigger value="map" className="gap-2"><Globe className="w-4 h-4" />地圖</TabsTrigger>
-            <TabsTrigger value="list" className="gap-2"><MapPin className="w-4 h-4" />清單</TabsTrigger>
+            <TabsTrigger value="map" className="gap-2"><Globe className="w-4 h-4" />{t("mapTab")}</TabsTrigger>
+            <TabsTrigger value="list" className="gap-2"><MapPin className="w-4 h-4" />{t("listTab")}</TabsTrigger>
           </TabsList>
         </Tabs>
 
@@ -422,7 +430,7 @@ export default function TravelHistory() {
           /* World Map View */
           <div className="bg-card rounded-2xl border border-border overflow-hidden">
             <div className="p-3 sm:p-4 border-b border-border flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-medium text-foreground">世界地圖</p>
+              <p className="text-sm font-medium text-foreground">{t("worldMap")}</p>
               <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-muted-foreground">
                 {(Object.entries(STATUS_CONFIG) as [string, typeof STATUS_CONFIG["visited"]][]).map(([key, cfg]) => (
                   <div key={key} className="flex items-center gap-1">
@@ -432,7 +440,7 @@ export default function TravelHistory() {
                 ))}
                 <div className="flex items-center gap-1">
                   <div className="w-3 h-3 rounded-full bg-muted-foreground/20" />
-                  <span>未到訪</span>
+                  <span>{t("notVisited")}</span>
                 </div>
               </div>
             </div>
@@ -450,7 +458,7 @@ export default function TravelHistory() {
               }}
               className="w-full"
             />
-            <p className="text-xs text-muted-foreground text-center py-2">點擊已到訪國家查看詳細地圖 · 點擊未到訪國家快速新增</p>
+            <p className="text-xs text-muted-foreground text-center py-2">{t("mapClickHint")}</p>
           </div>
         ) : (
           /* List View */
@@ -458,7 +466,7 @@ export default function TravelHistory() {
             {/* Filters */}
             <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
               <Input
-                placeholder="搜尋國家..."
+                placeholder={t("searchCountry")}
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="flex-1"
@@ -478,8 +486,8 @@ export default function TravelHistory() {
             ) : filteredCountries.length === 0 ? (
               <div className="text-center py-20">
                 <Globe className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                <p className="text-muted-foreground">還沒有記錄</p>
-                <button onClick={() => setShowAdd(true)} className="text-indigo-600 hover:underline mt-2 text-sm">+ 新增第一個國家</button>
+                <p className="text-muted-foreground">{t("noCountriesYet")}</p>
+                <button onClick={() => setShowAdd(true)} className="text-indigo-600 hover:underline mt-2 text-sm">+ {t("addFirstCountry")}</button>
               </div>
             ) : (
               <div className="space-y-2">
@@ -504,7 +512,7 @@ export default function TravelHistory() {
                         <button
                           onClick={() => openDetail(c.countryCode, c.countryName)}
                           className="p-1.5 rounded-lg hover:bg-accent transition-colors"
-                          title="查看詳細地圖"
+                          title={t("viewDetailMap")}
                         >
                           <MapPin className="w-3.5 h-3.5 text-indigo-500" />
                         </button>
@@ -545,7 +553,7 @@ export default function TravelHistory() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
               <Input
                 className="pl-9 pr-4"
-                placeholder="搜尋地點（中文或英文）..."
+                placeholder={lang === "zh" ? "搜尋地點（中文或英文）..." : "Search places (Chinese or English)..."}
                 value={placeSearch}
                 onChange={e => setPlaceSearch(e.target.value)}
               />
@@ -591,7 +599,7 @@ export default function TravelHistory() {
           {/* Saved places list */}
           {savedPlaces.length > 0 && (
             <div className="shrink-0 border-t border-border px-4 py-3 max-h-40 overflow-y-auto">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">已標記地點</p>
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">{t("markedPlaces")}</p>
               <div className="space-y-1.5">
                 {savedPlaces.map((p, i) => (
                   <div key={i} className="flex items-center gap-2 text-sm">
@@ -609,11 +617,11 @@ export default function TravelHistory() {
       <Dialog open={!!editingCountry} onOpenChange={(o) => !o && setEditingCountry(null)}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle>修改 {editingCountry?.countryName}</DialogTitle>
+            <DialogTitle>{t("editCountry")} {editingCountry?.countryName}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div>
-              <label className="text-sm font-medium text-foreground">狀態</label>
+              <label className="text-sm font-medium text-foreground">{t("status")}</label>
               <Select value={editForm.status} onValueChange={v => setEditForm({ ...editForm, status: v as any })}>
                 <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -624,16 +632,16 @@ export default function TravelHistory() {
               </Select>
             </div>
             <div>
-              <label className="text-sm font-medium text-foreground">到訪年份（選填）</label>
-              <Input className="mt-1.5" type="number" placeholder="例：2024" value={editForm.visitedYear} onChange={e => setEditForm({ ...editForm, visitedYear: e.target.value })} />
+              <label className="text-sm font-medium text-foreground">{t("visitedYear")}</label>
+              <Input className="mt-1.5" type="number" placeholder={lang === "zh" ? "例：2024" : "e.g. 2024"} value={editForm.visitedYear} onChange={e => setEditForm({ ...editForm, visitedYear: e.target.value })} />
             </div>
             <div>
-              <label className="text-sm font-medium text-foreground">備注（選填）</label>
-              <Input className="mt-1.5" placeholder="備注..." value={editForm.notes} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} />
+              <label className="text-sm font-medium text-foreground">{t("notes")}</label>
+              <Input className="mt-1.5" placeholder={t("notesPlaceholder")} value={editForm.notes} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} />
             </div>
             <Button className="w-full bg-indigo-600 hover:bg-indigo-700" onClick={handleEditCountry} disabled={updateStatus.isPending}>
               {updateStatus.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              儲存變更
+              {t("saveChanges")}
             </Button>
           </div>
         </DialogContent>
@@ -643,14 +651,14 @@ export default function TravelHistory() {
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>新增國家</DialogTitle>
+            <DialogTitle>{t("addCountry")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div>
-              <label className="text-sm font-medium text-foreground">國家 *</label>
+              <label className="text-sm font-medium text-foreground">{t("country")} *</label>
               <Select value={addForm.countryCode} onValueChange={v => setAddForm({ ...addForm, countryCode: v })}>
                 <SelectTrigger className="mt-1.5">
-                  <SelectValue placeholder="選擇國家" />
+                  <SelectValue placeholder={t("selectCountry")} />
                 </SelectTrigger>
                 <SelectContent className="max-h-60">
                   {availableToAdd.map(c => (
@@ -662,7 +670,7 @@ export default function TravelHistory() {
               </Select>
             </div>
             <div>
-              <label className="text-sm font-medium text-foreground">狀態</label>
+              <label className="text-sm font-medium text-foreground">{t("status")}</label>
               <Select value={addForm.status} onValueChange={v => setAddForm({ ...addForm, status: v as any })}>
                 <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
                 <SelectContent>
@@ -674,11 +682,11 @@ export default function TravelHistory() {
             </div>
             {addForm.status === "visited" && (
               <div>
-                <label className="text-sm font-medium text-foreground">到訪年份（選填）</label>
+                <label className="text-sm font-medium text-foreground">{t("visitedYear")}</label>
                 <Input
                   className="mt-1.5"
                   type="number"
-                  placeholder="例：2024"
+                  placeholder={lang === "zh" ? "例：2024" : "e.g. 2024"}
                   value={addForm.visitedYear}
                   onChange={e => setAddForm({ ...addForm, visitedYear: e.target.value })}
                 />
@@ -686,7 +694,7 @@ export default function TravelHistory() {
             )}
             <Button className="w-full bg-indigo-600 hover:bg-indigo-700" onClick={handleAdd} disabled={upsertCountry.isPending}>
               {upsertCountry.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              新增
+              {t("add")}
             </Button>
           </div>
         </DialogContent>
