@@ -443,6 +443,12 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
 
   return (
     <div className="px-4 sm:px-6 py-6 max-w-3xl mx-auto">
+      {!canEdit && (
+        <div className="mb-4 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-sm">
+          <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
+          <span>只讀模式 — 你是此行程的檢視者，無法修改內容</span>
+        </div>
+      )}
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-foreground">每日行程</h2>
@@ -453,10 +459,12 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
             <FileDown className="w-3.5 h-3.5" />
             匯出 PDF
           </Button>
-          <Button variant="outline" size="sm" onClick={handleAddDay} disabled={addDay.isPending} className="gap-1.5 shrink-0">
-            {addDay.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarPlus className="w-3.5 h-3.5" />}
-            新增一天
-          </Button>
+          {canEdit && (
+            <Button variant="outline" size="sm" onClick={handleAddDay} disabled={addDay.isPending} className="gap-1.5 shrink-0">
+              {addDay.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CalendarPlus className="w-3.5 h-3.5" />}
+              新增一天
+            </Button>
+          )}
         </div>
       </div>
 

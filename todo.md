@@ -201,10 +201,10 @@
 - [x] Guest trips are read-only in terms of activities/expenses in guest mode (full editing requires login)
 
 ## Collaborative Trip Editing (Role-Based)
-- [ ] Backend: role guard helper — verify user is member of trip with required role (owner/editor/viewer)
-- [ ] Backend: apply role guards to all mutating procedures (activities, expenses, map pins, flights, hotels)
-- [ ] Backend: members.invite — include role selection (editor/viewer) in invite flow
-- [ ] Frontend: MembersPage — show role badge per member, owner can change roles inline
-- [ ] Frontend: TripLayout — expose current user's role via context
-- [ ] Frontend: hide edit/delete buttons when user is viewer role
-- [ ] Frontend: show "只讀模式" banner when user is viewer
+- [x] Backend: role guard helper — verify user is member of trip with required role (owner/editor/viewer)
+- [x] Backend: apply role guards to all mutating procedures (activities, expenses, map pins, flights, hotels)
+- [x] Backend: members.invite — include role selection (editor/viewer) in invite flow + invite link with role
+- [x] Frontend: MembersPage — role badges, owner changes roles, invite link button with role selector
+- [x] Frontend: TripLayout — userRole exposed via trips.get in each page
+- [x] Frontend: hide edit/delete buttons when user is viewer role (canEdit guard in ItineraryPage)
+- [x] Frontend: show "只讀模式" banner when user is viewer — implemented in ItineraryPage
