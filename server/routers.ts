@@ -7,6 +7,7 @@ import { invokeLLM } from "./_core/llm";
 import * as db from "./db";
 import { currencyRouter } from "./currency_router";
 import { makeRequest, GeocodingResult, PlacesSearchResult } from "./_core/map";
+import { storagePut } from "./storage";
 
 // ─── Country Detection Helper ────────────────────────────────────────────────
 const COUNTRY_KEYWORDS: Array<{ keywords: string[]; code: string; name: string }> = [
@@ -1096,6 +1097,48 @@ Respond ONLY with a JSON object matching the schema. No markdown, no explanation
         settlements,
         totalExpenses: Math.round(allExpenses.reduce((s, e) => s + parseFloat(e.amount) * (rateMap[e.currency] ?? 1), 0) * 100) / 100,
       };
+    }),
+  // Upload a receipt image for an expense (base64 encoded)
+  uploadReceipt: protectedProcedure
+    .input(z.object({
+      expenseId: z.number(),
+      tripId: z.number(),
+      // base64-encoded image data (without data: prefix)
+      imageData: z.string().min(1),
+      mimeType: z.string().default("image/jpeg"),
+      fileName: z.string().default("receipt.jpg"),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      // Verify the expense belongs to this trip
+      const tripExpenses = await db.getTripExpenses(input.tripId);
+      const expense = tripExpenses.find(e => e.id === input.expenseId);
+      if (!expense) throw new Error("Expense not found in this trip");
+      // Decode base64 to buffer
+      const buffer = Buffer.from(input.imageData, "base64");
+      if (buffer.length > 10 * 1024 * 1024) throw new Error("Receipt image too large (max 10MB)");
+      const ext = input.mimeType.split("/")[1]?.replace("jpeg", "jpg") ?? "jpg";
+      const key = `receipts/trip${input.tripId}/expense${input.expenseId}_${ctx.user.id}.${ext}`;
+      const { url, key: storedKey } = await storagePut(key, buffer, input.mimeType);
+      await db.updateExpense(input.expenseId, { receiptUrl: url, receiptKey: storedKey });
+      return { url, key: storedKey };
+    }),
+  // Remove the receipt from an expense
+  removeReceipt: protectedProcedure
+    .input(z.object({
+      expenseId: z.number(),
+      tripId: z.number(),
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const membership = await db.getUserMembership(input.tripId, ctx.user.id);
+      if (!membership || membership.role === "viewer") throw new Error("Permission denied");
+      // Verify the expense belongs to this trip
+      const tripExpenses = await db.getTripExpenses(input.tripId);
+      const expense = tripExpenses.find(e => e.id === input.expenseId);
+      if (!expense) throw new Error("Expense not found in this trip");
+      await db.updateExpense(input.expenseId, { receiptUrl: null, receiptKey: null });
+      return { success: true };
     }),
 });
 // ─── Map Router ───────────────────────────────────────────────────────────────

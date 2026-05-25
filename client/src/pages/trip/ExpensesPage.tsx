@@ -9,9 +9,9 @@ import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveCo
 import {
   Plus, Trash2, Loader2, DollarSign, TrendingUp, Users, Edit2, ArrowLeftRight,
   AlertCircle, CalendarRange, X, Calculator, ArrowRight, CheckCircle2,
-  Check, ClipboardPaste
+  Check, ClipboardPaste, Camera, ImageIcon, ZoomIn, Download
 } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useCallback } from "react";
 import { toast } from "sonner";
 
 const CATEGORIES = [
@@ -178,6 +178,12 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
   const [pendingRows, setPendingRows] = useState<PendingRow[]>([]);
   const [editValues, setEditValues] = useState<EditValues>({});
 
+  // Receipt lightbox
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [uploadingReceiptId, setUploadingReceiptId] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pendingUploadExpenseId = useRef<number | null>(null);
+
   // CSV import
   const [showImport, setShowImport] = useState(false);
   const [csvText, setCsvText] = useState("");
@@ -237,13 +243,40 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
     onSuccess: () => { refetch(); toast.success("費用已新增"); },
     onError: () => toast.error("新增失敗"),
   });
-  const bulkAdd = trpc.expenses.bulkAdd.useMutation({
+    const bulkAdd = trpc.expenses.bulkAdd.useMutation({
     onSuccess: (data) => {
       refetch(); toast.success(`成功匯入 ${data.inserted} 筆費用`);
       setShowImport(false); setCsvText(""); setParsedRows([]); setImportParsed(false);
     },
     onError: () => toast.error("匯入失敗"),
   });
+  const uploadReceipt = trpc.expenses.uploadReceipt.useMutation({
+    onSuccess: () => { refetch(); toast.success("收據已上傳"); setUploadingReceiptId(null); },
+    onError: (e) => { toast.error(`上傳失敗: ${e.message}`); setUploadingReceiptId(null); },
+  });
+  const removeReceipt = trpc.expenses.removeReceipt.useMutation({
+    onSuccess: () => { refetch(); toast.success("收據已刪除"); },
+    onError: () => toast.error("刪除失敗"),
+  });
+
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const expId = pendingUploadExpenseId.current;
+    if (!file || !expId) return;
+    if (file.size > 10 * 1024 * 1024) { toast.error("檔案過大，最大 10MB"); return; }
+    setUploadingReceiptId(expId);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target?.result as string;
+      // dataUrl = "data:image/jpeg;base64,XXXX"
+      const [header, base64] = dataUrl.split(",");
+      const mimeType = header.match(/:(.*?);/)?.[1] ?? "image/jpeg";
+      uploadReceipt.mutate({ expenseId: expId, tripId, imageData: base64, mimeType, fileName: file.name });
+    };
+    reader.readAsDataURL(file);
+    // reset input so same file can be re-selected
+    e.target.value = "";
+  }, [tripId, uploadReceipt]);
 
   const stats = useMemo(() => {
     if (!filteredExpenses) return { total: 0, byCategory: [], byPayer: [] };
@@ -693,6 +726,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
             color: "text-blue-500 bg-blue-50 dark:bg-blue-950/30" },
           { icon: TrendingUp, label: "筆數", value: `${expenses?.length ?? 0} 筆`, color: "text-green-500 bg-green-50 dark:bg-green-950/30" },
           { icon: Users, label: "付款人", value: `${stats.byPayer.length} 人`, color: "text-purple-500 bg-purple-50 dark:bg-purple-950/30" },
+          { icon: ImageIcon, label: "收據", value: `${expenses?.filter(e => e.receiptUrl).length ?? 0} 張`, color: "text-orange-500 bg-orange-50 dark:bg-orange-950/30" },
         ].map(s => (
           <div key={s.label} className="bg-card rounded-2xl border border-border p-3 text-center">
             <div className={`w-8 h-8 rounded-xl ${s.color} flex items-center justify-center mx-auto mb-1.5`}>
@@ -781,6 +815,9 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                   <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">貨幣</th>
                   <th className="px-2 py-2 text-right text-xs font-medium text-muted-foreground whitespace-nowrap">金額</th>
                   <th className="px-2 py-2 text-left text-xs font-medium text-muted-foreground whitespace-nowrap">付款人</th>
+                  <th className="px-2 py-2 text-center text-xs font-medium text-muted-foreground whitespace-nowrap w-10" title="收據">
+                    <ImageIcon className="w-3.5 h-3.5 mx-auto" />
+                  </th>
                   <th className="px-2 py-2 w-16"></th>
                 </tr>
               </thead>
@@ -796,6 +833,31 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                     {renderCell(expense, "currency", rowIdx)}
                     {renderCell(expense, "amount", rowIdx)}
                     {renderCell(expense, "paidByName", rowIdx)}
+                    <td className="px-1 py-1.5 text-center align-middle">
+                      {expense.receiptUrl ? (
+                        <button
+                          onClick={() => setLightboxUrl(expense.receiptUrl!)}
+                          className="relative group/thumb w-8 h-8 rounded overflow-hidden border border-border hover:border-primary transition-colors inline-flex items-center justify-center"
+                          title="查看收據"
+                        >
+                          <img src={expense.receiptUrl} alt="收據" className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/thumb:opacity-100 transition-opacity flex items-center justify-center">
+                            <ZoomIn className="w-3 h-3 text-white" />
+                          </div>
+                        </button>
+                      ) : canEdit ? (
+                        <button
+                          onClick={() => { pendingUploadExpenseId.current = expense.id; fileInputRef.current?.click(); }}
+                          disabled={uploadingReceiptId === expense.id}
+                          className="w-8 h-8 rounded border border-dashed border-border hover:border-primary hover:text-primary text-muted-foreground transition-colors inline-flex items-center justify-center opacity-0 group-hover:opacity-100"
+                          title="上傳收據"
+                        >
+                          {uploadingReceiptId === expense.id
+                            ? <Loader2 className="w-3 h-3 animate-spin" />
+                            : <Camera className="w-3 h-3" />}
+                        </button>
+                      ) : null}
+                    </td>
                     {renderCell(expense, "actions", rowIdx)}
                   </tr>
                 ))}
@@ -810,6 +872,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
                       {renderCell(mockExpense, "currency", rowIdx, true)}
                       {renderCell(mockExpense, "amount", rowIdx, true)}
                       {renderCell(mockExpense, "paidByName", rowIdx, true)}
+                      <td className="px-1 py-1.5" />
                       {renderCell(mockExpense, "actions", rowIdx, true)}
                     </tr>
                   );
@@ -825,6 +888,66 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Hidden file input for receipt upload */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
+      />
+
+      {/* Receipt Lightbox */}
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/85 flex items-center justify-center p-4"
+          onClick={() => setLightboxUrl(null)}
+        >
+          <div
+            className="relative max-w-3xl max-h-[90vh] w-full flex flex-col items-center"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between w-full mb-3 px-1">
+              <span className="text-white/80 text-sm font-medium">收據照片</span>
+              <div className="flex items-center gap-2">
+                <a
+                  href={lightboxUrl}
+                  download
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs transition-colors"
+                  onClick={e => e.stopPropagation()}
+                >
+                  <Download className="w-3.5 h-3.5" />下載
+                </a>
+                {canEdit && (
+                  <button
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-500/80 hover:bg-red-500 text-white text-xs transition-colors"
+                    onClick={() => {
+                      const exp = filteredExpenses?.find(e => e.receiptUrl === lightboxUrl);
+                      if (exp) { removeReceipt.mutate({ expenseId: exp.id, tripId }); setLightboxUrl(null); }
+                    }}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />刪除收據
+                  </button>
+                )}
+                <button
+                  className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors"
+                  onClick={() => setLightboxUrl(null)}
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <img
+              src={lightboxUrl}
+              alt="收據"
+              className="max-w-full max-h-[75vh] object-contain rounded-xl shadow-2xl"
+            />
+          </div>
         </div>
       )}
 

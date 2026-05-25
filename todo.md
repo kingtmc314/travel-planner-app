@@ -222,3 +222,14 @@
 - [x] Add new row button at bottom of table (empty row ready to fill)
 - [x] CSV/paste import: "貼上數據" button opens textarea, parse tab/comma separated, preview table, bulk-insert
 - [x] CSV column mapping: auto-detect date/title/amount/currency/category columns
+
+## Receipt Photo Upload (Per Expense)
+- [x] DB: add receipt_url (text nullable) and receipt_key (text nullable) columns to expenses table
+- [x] Backend: expenses.uploadReceipt tRPC mutation — accept base64/multipart, storagePut, return url+key
+- [x] Backend: expenses.removeReceipt tRPC mutation — clear receipt_url/key on expense row
+- [x] Backend: update expenses.update to accept and persist receipt_url/receipt_key
+- [x] Frontend: receipt camera/upload icon button in each expense table row (owner/editor only)
+- [x] Frontend: clicking icon opens file picker (image/*, max 10MB)
+- [x] Frontend: after upload, show thumbnail in the row; click thumbnail to open full-size lightbox
+- [x] Frontend: lightbox has "刪除收據" button to remove the receipt
+- [x] Frontend: receipt count badge on expenses page header (e.g. "3 張收據")

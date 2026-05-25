@@ -115,6 +115,8 @@ export const expenses = mysqlTable("expenses", {
   splitAmong: json("splitAmong"),
   date: timestamp("date").notNull(),
   notes: text("notes"),
+  receiptUrl: text("receiptUrl"),
+  receiptKey: text("receiptKey"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type Expense = typeof expenses.$inferSelect;
