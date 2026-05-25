@@ -989,16 +989,18 @@ Respond ONLY with a JSON object matching the schema. No markdown, no explanation
         memberMap[member.userId] = name;
       }
 
-      // Calculate net balance per member (positive = owed money, negative = owes money)
+            // Calculate net balance per member (positive = owed money, negative = owes money)
       const balance: Record<number, number> = {};
+      const paidTotal: Record<number, number> = {};
+      const owedTotal: Record<number, number> = {};
       for (const { member } of allMembers) {
         balance[member.userId] = 0;
+        paidTotal[member.userId] = 0;
+        owedTotal[member.userId] = 0;
       }
-
       for (const expense of allExpenses) {
         const amountInBase = parseFloat(expense.amount) * (rateMap[expense.currency] ?? 1);
         const payerId = expense.paidBy;
-
         // Determine who splits this expense
         let splitIds: number[];
         const rawSplit = expense.splitAmong as number[] | null;
@@ -1010,23 +1012,26 @@ Respond ONLY with a JSON object matching the schema. No markdown, no explanation
         }
         if (splitIds.length === 0) continue;
         const share = amountInBase / splitIds.length;
-
         // Payer gets credited
         if (balance[payerId] !== undefined) balance[payerId] += amountInBase;
         else balance[payerId] = amountInBase;
-
+        if (paidTotal[payerId] !== undefined) paidTotal[payerId] += amountInBase;
+        else paidTotal[payerId] = amountInBase;
         // Each splitter gets debited their share
         for (const uid of splitIds) {
           if (balance[uid] !== undefined) balance[uid] -= share;
           else balance[uid] = -share;
+          if (owedTotal[uid] !== undefined) owedTotal[uid] += share;
+          else owedTotal[uid] = share;
         }
       }
-
       // Build member summary list
       const members = Object.entries(balance).map(([uid, net]) => ({
         userId: Number(uid),
         name: memberMap[Number(uid)] ?? `User ${uid}`,
         net: Math.round(net * 100) / 100,
+        paidTotal: Math.round((paidTotal[Number(uid)] ?? 0) * 100) / 100,
+        owedTotal: Math.round((owedTotal[Number(uid)] ?? 0) * 100) / 100,
         status: net > 0.005 ? "owed" as const : net < -0.005 ? "owes" as const : "settled" as const,
       }));
 

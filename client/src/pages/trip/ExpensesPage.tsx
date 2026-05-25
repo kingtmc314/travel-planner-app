@@ -624,7 +624,7 @@ function SplitSummaryPanel({ tripId, baseCurrency }: { tripId: number; baseCurre
                 return (
                   <div
                     key={m.userId}
-                    className={`flex items-center justify-between px-3 py-2 rounded-xl border text-sm ${
+                    className={`px-3 py-2.5 rounded-xl border text-sm ${
                       isZero
                         ? "bg-muted/40 border-border"
                         : isPositive
@@ -632,21 +632,27 @@ function SplitSummaryPanel({ tripId, baseCurrency }: { tripId: number; baseCurre
                           : "bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800"
                     }`}
                   >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
-                        isZero ? "bg-muted text-muted-foreground" : isPositive ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300" : "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300"
+                    {/* Name row */}
+                    <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                          isZero ? "bg-muted text-muted-foreground" : isPositive ? "bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300" : "bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300"
+                        }`}>
+                          {m.name.charAt(0).toUpperCase()}
+                        </div>
+                        <span className="font-semibold text-foreground truncate">{m.name}</span>
+                      </div>
+                      <span className={`font-bold text-sm ${
+                        isZero ? "text-muted-foreground" : isPositive ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"
                       }`}>
-                        {m.name.charAt(0).toUpperCase()}
-                      </div>
-                      <span className="font-medium text-foreground truncate">{m.name}</span>
+                        {isZero ? "已結清" : (isPositive ? "應收 +" : "應付 ")}{!isZero && `${formatAmount(Math.abs(balance), splitCurrency)} ${splitCurrency}`}
+                      </span>
                     </div>
-                    <div className="text-right shrink-0 ml-2">
-                      <div className={`font-semibold ${isZero ? "text-muted-foreground" : isPositive ? "text-green-700 dark:text-green-400" : "text-red-600 dark:text-red-400"}`}>
-                        {isPositive ? "+" : ""}{formatAmount(balance, splitCurrency)} {splitCurrency}
-                      </div>
-                      <div className="text-[10px] text-muted-foreground">
-                        {isZero ? "已結清" : isPositive ? "應收" : "應付"}
-                      </div>
+                    {/* Paid / Owed breakdown */}
+                    <div className="flex gap-3 text-[11px] text-muted-foreground pl-9">
+                      <span>已付 <span className="font-medium text-foreground">{formatAmount(m.paidTotal, splitCurrency)}</span></span>
+                      <span className="text-border">|</span>
+                      <span>應付份額 <span className="font-medium text-foreground">{formatAmount(m.owedTotal, splitCurrency)}</span></span>
                     </div>
                   </div>
                 );

@@ -210,7 +210,7 @@
 - [x] Frontend: show "只讀模式" banner when user is viewer — implemented in ItineraryPage
 
 ## Bill-Split Calculator (ExpensesPage)
-- [ ] Backend: expenses.getSplitSummary — per-member paid/owed totals + minimal-transfer settlement list
-- [ ] Frontend: ExpensesPage — "分帳計算" tab/panel with member balance cards (paid vs owed)
-- [ ] Frontend: settlement list showing who pays whom and how much
-- [ ] Frontend: support base currency display (same as existing currency toggle)
+- [x] Backend: expenses.getSplitSummary — per-member paid/owed totals + minimal-transfer settlement list
+- [x] Frontend: ExpensesPage — "分帳計算" tab/panel with member balance cards (paid vs owed)
+- [x] Frontend: settlement list showing who pays whom and how much
+- [x] Frontend: support base currency display (same as existing currency toggle)
