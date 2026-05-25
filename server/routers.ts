@@ -444,6 +444,41 @@ const tripsRouter = router({
 
     return { alreadyExists: false, tripId };
   }),
+
+  mergeGuestTrips: protectedProcedure
+    .input(z.object({
+      trips: z.array(z.object({
+        name: z.string().min(1),
+        destination: z.string().min(1),
+        startDate: z.string(),
+        endDate: z.string(),
+        baseCurrency: z.string().default("HKD"),
+      }))
+    }))
+    .mutation(async ({ ctx, input }) => {
+      const created: number[] = [];
+      for (const t of input.trips) {
+        const tripId = await db.createTrip({
+          name: t.name,
+          destination: t.destination,
+          startDate: new Date(t.startDate),
+          endDate: new Date(t.endDate),
+          baseCurrency: t.baseCurrency,
+          coverImage: null,
+          description: null,
+          createdBy: ctx.user.id,
+        }, ctx.user.id);
+        // Auto-generate itinerary days
+        const start = new Date(t.startDate);
+        const end = new Date(t.endDate);
+        let dayNum = 1;
+        for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+          await db.addItineraryDay({ tripId, date: new Date(d), dayNumber: dayNum++, title: `Day ${dayNum - 1}` });
+        }
+        created.push(tripId);
+      }
+      return { merged: created.length };
+    }),
 });
 
 // ─── Members Router ───────────────────────────────────────────────────────────

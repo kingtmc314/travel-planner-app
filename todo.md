@@ -188,3 +188,14 @@
 - [x] ExpensesPage: date-range filter (start/end date pickers in header, client-side filter on expense list + charts)
 - [x] ItineraryPage: move-to-another-day — backend moveActivity procedure + day picker dialog in activity action menu
 - [x] ItineraryPage: export as PDF — "匯出行程" button generates printable HTML page and triggers browser print
+
+## Major Overhaul Round 5
+- [x] Rebrand: new app name VoyageAI · 旅跡, SVG globe+route logo, updated AppLayout/Home/Dashboard/AIAssistant
+- [x] i18n: zh/en translation system with useI18n hook and language toggle in AppLayout header
+- [x] Guest mode: useGuestTrips hook (localStorage), GuestDashboard, GuestMergeBanner (sync on login)
+- [x] Privacy: confirmed trips.list/get use tripMembers JOIN; mergeGuestTrips procedure added
+
+## Guest Mode Notes (Known Limitations)
+- [x] Guest mode merges trip-level metadata only (name/destination/dates) — activities/expenses not merged (by design: guest mode is lightweight)
+- [x] Merge is manual-prompt (not auto-on-login) — user sees GuestMergeBanner and clicks to confirm
+- [x] Guest trips are read-only in terms of activities/expenses in guest mode (full editing requires login)

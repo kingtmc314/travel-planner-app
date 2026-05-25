@@ -8,6 +8,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 import { getLoginUrl } from "@/const";
+import AppLogo from "@/components/AppLogo";
+import GuestDashboard from "@/components/GuestDashboard";
+import GuestMergeBanner from "@/components/GuestMergeBanner";
+import { getGuestTrips } from "@/hooks/useGuestTrips";
 import {
   Calendar,
   Globe,
@@ -106,6 +110,8 @@ export default function Dashboard() {
   const [showCreate, setShowCreate] = useState(false);
   const [editingTrip, setEditingTrip] = useState<any | null>(null);
   const [editForm, setEditForm] = useState({ name: "", destination: "", startDate: "", endDate: "", baseCurrency: "HKD", coverImage: "", description: "" });
+  const [mergeDismissed, setMergeDismissed] = useState(false);
+  const hasGuestTrips = getGuestTrips().length > 0;
   const [form, setForm] = useState({
     name: "",
     destination: "",
@@ -148,24 +154,9 @@ export default function Dashboard() {
 
   if (!user) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="flex flex-col items-center gap-6 p-8 max-w-sm w-full text-center">
-          <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-            <Plane className="w-8 h-8 text-primary rotate-45" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold text-foreground mb-2">WanderPlan</h1>
-            <p className="text-muted-foreground">登入以開始規劃你的旅程</p>
-          </div>
-          <Button
-            size="lg"
-            className="w-full"
-            onClick={() => window.location.href = getLoginUrl()}
-          >
-            登入 / 註冊
-          </Button>
-        </div>
-      </div>
+      <AppLayout>
+        <GuestDashboard />
+      </AppLayout>
     );
   }
 
@@ -202,6 +193,12 @@ export default function Dashboard() {
 
   return (
     <AppLayout>
+      {hasGuestTrips && !mergeDismissed && (
+        <GuestMergeBanner
+          onDismiss={() => setMergeDismissed(true)}
+          onMerged={() => { setMergeDismissed(true); refetch(); }}
+        />
+      )}
       <main className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-8 pb-24 lg:pb-8">
         {/* Welcome */}
         <div className="mb-8">

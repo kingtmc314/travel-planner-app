@@ -4,37 +4,47 @@ import { Bell, Globe, LogOut, Plane, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import NotificationsPanel from "@/components/NotificationsPanel";
+import AppLogo from "@/components/AppLogo";
+import { useI18n } from "@/hooks/useI18n";
 
-const navItems = [
-  { path: "/dashboard", label: "我的行程", icon: Plane, iconClass: "rotate-45" },
-  { path: "/travel-history", label: "旅遊足跡", icon: Globe, iconClass: "" },
-  { path: "/flight-passport", label: "飛行護照", icon: Plane, iconClass: "" },
-  { path: "/sync", label: "同步中心", icon: RefreshCw, iconClass: "" },
-];
-
-interface AppLayoutProps {
-  children: React.ReactNode;
-}
-
-export default function AppLayout({ children }: AppLayoutProps) {
+export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const [currentPath, setLocation] = useLocation();
   const [showNotifications, setShowNotifications] = useState(false);
+  const { t, lang, setLang } = useI18n();
 
   const { data: unreadCount } = trpc.notifications.unreadCount.useQuery(undefined, {
     enabled: !!user,
     refetchInterval: 30000,
   });
 
+  const navItems = [
+    { path: "/dashboard", label: t("myTrips"), icon: Plane, iconClass: "rotate-45" },
+    { path: "/travel-history", label: t("travelHistory"), icon: Globe, iconClass: "" },
+    { path: "/flight-passport", label: t("flightPassport"), icon: Plane, iconClass: "" },
+    { path: "/sync", label: t("syncCenter"), icon: RefreshCw, iconClass: "" },
+  ];
+
+  const LangToggle = () => (
+    <button
+      onClick={() => setLang(lang === "zh" ? "en" : "zh")}
+      className="px-2 py-1 rounded-lg text-xs font-semibold border border-border text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
+      title={lang === "zh" ? "Switch to English" : "切換中文"}
+    >
+      {lang === "zh" ? "EN" : "中"}
+    </button>
+  );
+
   return (
     <div className="min-h-screen bg-background flex">
       {/* Desktop Sidebar */}
       <aside className="hidden lg:flex flex-col w-56 shrink-0 border-r border-border bg-card/50 sticky top-0 h-screen">
         <div className="flex items-center gap-3 px-5 h-16 border-b border-border">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <Plane className="w-4 h-4 text-primary-foreground rotate-45" />
+          <AppLogo size={32} />
+          <div className="flex flex-col leading-none">
+            <span className="font-bold text-foreground text-sm tracking-tight">VoyageAI</span>
+            <span className="text-[10px] text-muted-foreground tracking-widest">旅跡</span>
           </div>
-          <span className="font-bold text-foreground text-base">WanderPlan</span>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
           {navItems.map(item => {
@@ -60,19 +70,22 @@ export default function AppLayout({ children }: AppLayoutProps) {
             className="relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
           >
             <Bell className="w-4 h-4" />
-            通知
+            {t("notifications")}
             {unreadCount && unreadCount.count > 0 ? (
               <span className="ml-auto w-5 h-5 rounded-full bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center font-bold">
                 {unreadCount.count > 9 ? "9+" : unreadCount.count}
               </span>
             ) : null}
           </button>
-          <div className="flex items-center gap-3 px-3 py-2.5">
-            <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs">
-              {user?.name?.charAt(0).toUpperCase() ?? "U"}
+          <div className="flex items-center gap-2 px-3 py-2">
+            <LangToggle />
+            <div className="flex items-center gap-2 flex-1 min-w-0">
+              <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs shrink-0">
+                {user?.name?.charAt(0).toUpperCase() ?? "U"}
+              </div>
+              <span className="text-sm text-foreground flex-1 truncate">{user?.name ?? "旅人"}</span>
             </div>
-            <span className="text-sm text-foreground flex-1 truncate">{user?.name ?? "旅人"}</span>
-            <button onClick={logout} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-accent transition-colors">
+            <button onClick={logout} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-accent transition-colors shrink-0">
               <LogOut className="w-3.5 h-3.5 text-muted-foreground" />
             </button>
           </div>
@@ -84,13 +97,15 @@ export default function AppLayout({ children }: AppLayoutProps) {
         {/* Mobile Header */}
         <header className="lg:hidden sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
           <div className="px-4 sm:px-6 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-                <Plane className="w-4 h-4 text-primary-foreground rotate-45" />
+            <div className="flex items-center gap-2.5">
+              <AppLogo size={30} />
+              <div className="flex flex-col leading-none">
+                <span className="font-bold text-foreground text-sm tracking-tight">VoyageAI</span>
+                <span className="text-[9px] text-muted-foreground tracking-widest">旅跡</span>
               </div>
-              <span className="font-bold text-foreground text-lg">WanderPlan</span>
             </div>
             <div className="flex items-center gap-2">
+              <LangToggle />
               <button
                 onClick={() => setShowNotifications(true)}
                 className="relative w-9 h-9 rounded-lg flex items-center justify-center hover:bg-accent transition-colors"
@@ -145,7 +160,7 @@ export default function AppLayout({ children }: AppLayoutProps) {
               {unreadCount && unreadCount.count > 0 ? (
                 <span className="absolute top-1 right-3 w-2 h-2 rounded-full bg-destructive" />
               ) : null}
-              <span className="text-[10px] font-medium">通知</span>
+              <span className="text-[10px] font-medium">{t("notifications")}</span>
             </button>
           </div>
         </nav>

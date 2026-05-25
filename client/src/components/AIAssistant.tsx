@@ -21,7 +21,7 @@ export default function AIAssistant({ open, onClose, tripId, destination }: AIAs
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: `你好！我是 WanderPlan AI 旅遊助手 ✈️\n\n我可以幫你：\n• 推薦景點和餐廳\n• 規劃每日行程\n• 提供旅遊小貼士\n• 回答旅遊相關問題\n\n${destination ? `目前行程目的地：**${destination}**\n\n` : ""}有什麼我可以幫你的嗎？`,
+      content: `你好！我是 VoyageAI 旅遊助手 ✈️\n\n我可以幫你：\n• 推薦景點和餐廳\n• 規劃每日行程\n• 提供旅遊小貼士\n• 回答旅遊相關問題\n\n${destination ? `目前行程目的地：**${destination}**\n\n` : ""}有什麼我可以幫你的嗎？`,
     },
   ]);
   const [input, setInput] = useState("");
