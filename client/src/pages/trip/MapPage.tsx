@@ -146,7 +146,7 @@ export default function MapPage({ tripId }: { tripId: number }) {
     </div>
   );
 
-  const PinFormFields = ({ showCoords = true }: { showCoords?: boolean }) => (
+  const renderPinFormFields = (showCoords: boolean) => (
     <div className="space-y-4 mt-2">
       <div>
         <Label>{t("pinName")} *</Label>
@@ -308,7 +308,7 @@ export default function MapPage({ tripId }: { tripId: number }) {
       <Dialog open={showAdd} onOpenChange={setShowAdd}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{t("addPin")}</DialogTitle></DialogHeader>
-          <PinFormFields showCoords={true} />
+          {renderPinFormFields(true)}
           <Button className="w-full mt-4" onClick={handleAdd} disabled={addPin.isPending}>
             {addPin.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
             {t("addPin")}
@@ -320,7 +320,7 @@ export default function MapPage({ tripId }: { tripId: number }) {
       <Dialog open={!!editingPin} onOpenChange={(o) => !o && setEditingPin(null)}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{t("editPin")}</DialogTitle></DialogHeader>
-          <PinFormFields showCoords={false} />
+          {renderPinFormFields(false)}
           <Button className="w-full mt-4" onClick={handleUpdate} disabled={updatePin.isPending}>
             {updatePin.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
             {t("saveChanges")}

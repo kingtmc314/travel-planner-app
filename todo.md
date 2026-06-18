@@ -308,3 +308,8 @@
 - [x] Add missing flights columns: departure_date, arrival_date, type — skipped (these columns exist in DB but are not used by the trip flights router; trip flights use `date` varchar field directly)
 - [x] Fix all routers.ts code that passes Date objects to these varchar fields (createTrip, updateTrip, importDemo, mergeGuestTrips, addExpense, updateExpense, importExpenses — 10+ call sites fixed)
 - [x] Verify all TypeScript errors resolved (0 errors) and tests pass (17/17)
+
+## Bug Fix: Input Focus Loss (2026-06-18)
+- [x] Fix FlightsPage.tsx: FlightFormFields inline component → changed to flightFormJSX variable
+- [x] Fix FlightsPage.tsx: HotelFormFields inline component → changed to hotelFormJSX variable
+- [x] Fix MapPage.tsx: PinFormFields inline component → changed to renderPinFormFields function

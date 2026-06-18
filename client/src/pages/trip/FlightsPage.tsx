@@ -112,7 +112,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
     connecting: "bg-amber-100 text-amber-700",
   };
 
-  const FlightFormFields = () => (
+  const flightFormJSX = (
     <div className="space-y-4 mt-2">
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -176,7 +176,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
     </div>
   );
 
-  const HotelFormFields = () => (
+  const hotelFormJSX = (
     <div className="space-y-4 mt-2">
       <div>
         <Label>{t("hotelName")} *</Label>
@@ -353,7 +353,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
       <Dialog open={showAddFlight} onOpenChange={setShowAddFlight}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{t("addFlight")}</DialogTitle></DialogHeader>
-          <FlightFormFields />
+          {flightFormJSX}
           <Button className="w-full mt-4" onClick={handleAddFlight} disabled={addFlight.isPending}>
             {addFlight.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
             {t("addFlight")}
@@ -365,7 +365,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
       <Dialog open={!!editingFlight} onOpenChange={(o) => !o && setEditingFlight(null)}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{t("editFlight")}</DialogTitle></DialogHeader>
-          <FlightFormFields />
+          {flightFormJSX}
           <Button className="w-full mt-4" onClick={handleUpdateFlight} disabled={updateFlight.isPending}>
             {updateFlight.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
             {t("saveChanges")}
@@ -377,7 +377,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
       <Dialog open={showAddHotel} onOpenChange={setShowAddHotel}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{t("addHotel")}</DialogTitle></DialogHeader>
-          <HotelFormFields />
+          {hotelFormJSX}
           <Button className="w-full mt-4" onClick={handleAddHotel} disabled={addHotel.isPending}>
             {addHotel.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
             {t("addHotel")}
@@ -389,7 +389,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
       <Dialog open={!!editingHotel} onOpenChange={(o) => !o && setEditingHotel(null)}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{t("editHotel")}</DialogTitle></DialogHeader>
-          <HotelFormFields />
+          {hotelFormJSX}
           <Button className="w-full mt-4" onClick={handleUpdateHotel} disabled={updateHotel.isPending}>
             {updateHotel.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
             {t("saveChanges")}
