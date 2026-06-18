@@ -300,3 +300,11 @@
 - [x] notes column already exists in DB (no migration needed)
 - [x] trips.getShareLink 404 was a stale server issue - resolved after server restart; procedure exists in tripsRouter
 - [x] Added 2 new tests for addDay (unauthorized + date format validation), 17/17 tests passing
+
+## Bug Fixes Round 7 - Full Schema Audit (2026-06-18)
+- [x] Fix trips.startDate: DB=varchar(20) but schema.ts=timestamp → changed to varchar(20)
+- [x] Fix trips.endDate: DB=varchar(20) but schema.ts=timestamp → changed to varchar(20)
+- [x] Fix expenses.date: DB=varchar(20) but schema.ts=timestamp → changed to varchar(20)
+- [x] Add missing flights columns: departure_date, arrival_date, type — skipped (these columns exist in DB but are not used by the trip flights router; trip flights use `date` varchar field directly)
+- [x] Fix all routers.ts code that passes Date objects to these varchar fields (createTrip, updateTrip, importDemo, mergeGuestTrips, addExpense, updateExpense, importExpenses — 10+ call sites fixed)
+- [x] Verify all TypeScript errors resolved (0 errors) and tests pass (17/17)

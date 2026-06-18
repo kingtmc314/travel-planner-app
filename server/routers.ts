@@ -251,8 +251,8 @@ const tripsRouter = router({
       const tripId = await db.createTrip({
         name: input.name,
         destination: input.destination,
-        startDate: new Date(input.startDate),
-        endDate: new Date(input.endDate),
+        startDate: input.startDate,
+        endDate: input.endDate,
         baseCurrency: input.baseCurrency,
         coverImage: input.coverImage ?? null,
         description: input.description ?? null,
@@ -305,8 +305,8 @@ const tripsRouter = router({
       if (!membership || membership.role === "viewer") throw new Error("Permission denied");
       await db.updateTrip(tripId, {
         ...rest,
-        ...(startDate ? { startDate: new Date(startDate) } : {}),
-        ...(endDate ? { endDate: new Date(endDate) } : {}),
+        ...(startDate ? { startDate } : {}),
+        ...(endDate ? { endDate } : {}),
       });
       // Notify all members
       const members = await db.getTripMembers(tripId);
@@ -342,8 +342,8 @@ const tripsRouter = router({
       name: "埃及探索之旅 🇪🇬",
       destination: "開羅 • 盧克索 • 亞斯文",
       description: "探索古埃及文明，遊覽金字塔、神廟與尼羅河",
-      startDate: new Date("2026-03-10"),
-      endDate: new Date("2026-03-17"),
+      startDate: "2026-03-10",
+      endDate: "2026-03-17",
       baseCurrency: "EGP",
       coverImage: "https://images.unsplash.com/photo-1568322445389-f64ac2515020?w=800&q=70",
       isDemoTrip: true,
@@ -415,14 +415,14 @@ const tripsRouter = router({
     await db.addActivity({ dayId: dayIds[7], tripId, title: "抵達香港", startTime: "22:00", category: "transport", location: "香港國際機場", sortOrder: 1 });
 
     // Expenses
-    await db.addExpense({ tripId, title: "來回機票 (HKG-CAI)", amount: "8500", currency: "HKD", category: "transport", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-10"), notes: "Cathay Pacific" });
-    await db.addExpense({ tripId, title: "Kempinski Hotel (4晚)", amount: "12000", currency: "HKD", category: "accommodation", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-10") });
-    await db.addExpense({ tripId, title: "金字塔門票", amount: "540", currency: "EGP", category: "attraction", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-11") });
-    await db.addExpense({ tripId, title: "埃及博物館門票", amount: "300", currency: "EGP", category: "attraction", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-12") });
-    await db.addExpense({ tripId, title: "開羅-盧克索火車票", amount: "450", currency: "EGP", category: "transport", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-13") });
-    await db.addExpense({ tripId, title: "帝王谷門票", amount: "480", currency: "EGP", category: "attraction", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-14") });
-    await db.addExpense({ tripId, title: "阿布辛貝門票", amount: "600", currency: "EGP", category: "attraction", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-16") });
-    await db.addExpense({ tripId, title: "餐飲費用 (8天)", amount: "3200", currency: "HKD", category: "food", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: new Date("2026-03-10") });
+    await db.addExpense({ tripId, title: "來回機票 (HKG-CAI)", amount: "8500", currency: "HKD", category: "transport", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: "2026-03-10", notes: "Cathay Pacific" });
+    await db.addExpense({ tripId, title: "Kempinski Hotel (4晚)", amount: "12000", currency: "HKD", category: "accommodation", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: "2026-03-10" });
+    await db.addExpense({ tripId, title: "金字塔門票", amount: "540", currency: "EGP", category: "attraction", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: "2026-03-11" });
+    await db.addExpense({ tripId, title: "埃及博物館門票", amount: "300", currency: "EGP", category: "attraction", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: "2026-03-12" });
+    await db.addExpense({ tripId, title: "開羅-盧克索火車票", amount: "450", currency: "EGP", category: "transport", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: "2026-03-13" });
+    await db.addExpense({ tripId, title: "帝王谷門票", amount: "480", currency: "EGP", category: "attraction", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: "2026-03-14" });
+    await db.addExpense({ tripId, title: "阿布辛貝門票", amount: "600", currency: "EGP", category: "attraction", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: "2026-03-16" });
+    await db.addExpense({ tripId, title: "餐飲費用 (8天)", amount: "3200", currency: "HKD", category: "food", paidBy: ctx.user.id, paidByName: ctx.user.name ?? "我", date: "2026-03-10" });
 
     // Map pins
     await db.addMapPin({ tripId, title: "吉薩大金字塔", lat: "29.9792", lng: "31.1342", category: "attraction", notes: "世界七大奇觀" });
@@ -462,8 +462,8 @@ const tripsRouter = router({
         const tripId = await db.createTrip({
           name: t.name,
           destination: t.destination,
-          startDate: new Date(t.startDate),
-          endDate: new Date(t.endDate),
+          startDate: t.startDate,
+          endDate: t.endDate,
           baseCurrency: t.baseCurrency,
           coverImage: null,
           description: null,
@@ -854,7 +854,7 @@ const expensesRouter = router({
         category: input.category,
         paidBy: ctx.user.id,
         paidByName: input.paidByName ?? ctx.user.name ?? null,
-        date: new Date(input.date),
+        date: input.date,
         notes: input.notes ?? null,
       });
       // Notify members
@@ -891,7 +891,7 @@ const expensesRouter = router({
       if (!membership || membership.role === "viewer") throw new Error("Permission denied");
       await db.updateExpense(expenseId, {
         ...rest,
-        ...(date ? { date: new Date(date) } : {}),
+        ...(date ? { date } : {}),
       });
       return { success: true };
     }),
@@ -930,7 +930,7 @@ const expensesRouter = router({
           category: e.category,
           paidBy: ctx.user.id,
           paidByName: e.paidByName ?? ctx.user.name ?? null,
-          date: new Date(e.date),
+          date: e.date,
           notes: e.notes ?? null,
         });
         ids.push(id);
@@ -2015,7 +2015,7 @@ const syncRouter = router({
           countryCode: detected.code,
           countryName: detected.name,
           status: "visited",
-          visitedAt: trip.startDate ? new Date(trip.startDate as Date) : new Date(),
+          visitedAt: trip.startDate ? new Date(trip.startDate) : new Date(),
         });
         synced++;
       }
@@ -2109,7 +2109,7 @@ const syncRouter = router({
           countryCode: detected.code,
           countryName: detected.name,
           status: "visited",
-          visitedAt: trip.startDate ? new Date(trip.startDate as Date) : new Date(),
+          visitedAt: trip.startDate ? new Date(trip.startDate) : new Date(),
         });
         tripCountriesSynced++;
       }
