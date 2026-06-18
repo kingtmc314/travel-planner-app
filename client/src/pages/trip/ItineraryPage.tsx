@@ -491,6 +491,7 @@ export default function ItineraryPage({ tripId }: { tripId: number }) {
       destination: trip?.destination ?? "",
       date: day.date,
       dayNumber: day.dayNumber,
+      tripId: tripId,
       existingActivities: day.activities?.map((a: any) => a.title) ?? [],
     });
   };

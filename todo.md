@@ -313,3 +313,9 @@
 - [x] Fix FlightsPage.tsx: FlightFormFields inline component → changed to flightFormJSX variable
 - [x] Fix FlightsPage.tsx: HotelFormFields inline component → changed to hotelFormJSX variable
 - [x] Fix MapPage.tsx: PinFormFields inline component → changed to renderPinFormFields function
+
+## Feature: AI Suggestion Context Enhancement (2026-06-18)
+- [x] Pass flight info (departure/arrival airport, time, flight number) for the day to AI suggestion prompt
+- [x] Pass hotel info (name, location, check-in/check-out date) to AI suggestion prompt
+- [x] AI accounts for travel time from/to airport and hotel location when suggesting activities
+- [x] AI avoids suggesting activities during flight times or check-in/check-out windows

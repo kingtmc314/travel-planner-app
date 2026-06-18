@@ -1859,18 +1859,60 @@ const aiRouter = router({
       destination: z.string(),
       date: z.string(),
       dayNumber: z.number(),
+      tripId: z.number().optional(),
       existingActivities: z.array(z.string()).optional(),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
+      // Fetch flights and accommodations for context if tripId provided
+      let flightContext = "";
+      let hotelContext = "";
+      if (input.tripId) {
+        const [tripFlights, tripHotels] = await Promise.all([
+          db.getTripFlights(input.tripId),
+          db.getTripAccommodations(input.tripId),
+        ]);
+        // Filter flights on this specific date
+        const dayFlights = tripFlights.filter(f => f.date === input.date);
+        if (dayFlights.length > 0) {
+          flightContext = "\n\n【當天航班資訊】\n" + dayFlights.map(f =>
+            `- ${f.type === "outbound" ? "去程" : f.type === "return" ? "回程" : "轉機"} 航班 ${f.flightNumber ?? ""} (${f.airline ?? ""})：${f.fromCity ?? f.fromCode ?? ""} → ${f.toCity ?? f.toCode ?? ""}，出發 ${f.departTime ?? ""} 抵達 ${f.arriveTime ?? ""}${f.isLayover ? "（中轉）" : ""}`
+          ).join("\n");
+          flightContext += "\n請根據航班時間安排活動，避免與航班衝突，並考慮前往機場所需的交通時間（通常需提前2-3小時）。";
+        }
+        // Find hotels active on this date (checkIn <= date <= checkOut)
+        const activeHotels = tripHotels.filter(h => {
+          if (!h.checkIn && !h.checkOut) return false;
+          const dateStr = input.date;
+          const inRange = (!h.checkIn || h.checkIn <= dateStr) && (!h.checkOut || h.checkOut >= dateStr);
+          return inRange;
+        });
+        // Also flag check-in/check-out day
+        const checkInHotels = tripHotels.filter(h => h.checkIn === input.date);
+        const checkOutHotels = tripHotels.filter(h => h.checkOut === input.date);
+        if (activeHotels.length > 0 || checkInHotels.length > 0 || checkOutHotels.length > 0) {
+          hotelContext = "\n\n【住宿資訊】\n";
+          if (checkInHotels.length > 0) {
+            hotelContext += checkInHotels.map(h => `- 今日入住：${h.name}${h.city ? `（${h.city}）` : ""}`).join("\n") + "\n";
+          }
+          if (checkOutHotels.length > 0) {
+            hotelContext += checkOutHotels.map(h => `- 今日退房：${h.name}${h.city ? `（${h.city}）` : ""}`).join("\n") + "\n";
+          }
+          const stayingHotels = activeHotels.filter(h => h.checkIn !== input.date && h.checkOut !== input.date);
+          if (stayingHotels.length > 0) {
+            hotelContext += stayingHotels.map(h => `- 住宿：${h.name}${h.city ? `（${h.city}）` : ""}`).join("\n") + "\n";
+          }
+          hotelContext += "請根據住宿位置安排附近的活動，減少不必要的交通時間。入住/退房日請考慮辦理手續所需時間（通常下午3點後入住，上午11點前退房）。";
+        }
+      }
       const response = await invokeLLM({
         messages: [
           {
             role: "system",
-            content: "你是一個旅行規劃專家。請根據目的地和日期，建議5個適合的旅行活動。以JSON格式回覆，格式為：{\"activities\": [{\"title\": \"活動名稱\", \"location\": \"地點\", \"startTime\": \"09:00\", \"category\": \"attraction\", \"notes\": \"簡短說明\"}]}。category只能是: transport, food, attraction, hotel, shopping, other。"
+            content: "你是一個旅行規劃專家。請根據目的地、日期、航班和住宿資訊，建議5個適合的旅行活動。以JSON格式回覆，格式為：{\"activities\": [{\"title\": \"活動名稱\", \"location\": \"地點\", \"startTime\": \"09:00\", \"category\": \"attraction\", \"notes\": \"簡短說明\"}]}。category只能是: transport, food, attraction, hotel, shopping, other。請確保建議的活動時間不與航班或入住/退房時間衝突。"
           },
           {
             role: "user",
-            content: `目的地: ${input.destination}\n日期: ${input.date} (第${input.dayNumber}天)\n${input.existingActivities?.length ? `已有活動: ${input.existingActivities.join(", ")}` : ""}\n請建議5個適合的活動。`
+            content: `目的地: ${input.destination}\n日期: ${input.date} (第${input.dayNumber}天)${flightContext}${hotelContext}\n${input.existingActivities?.length ? `已有活動: ${input.existingActivities.join(", ")}` : ""}\n請建議5個適合的活動，並根據航班和住宿位置合理安排時間。`
           }
         ],
         response_format: {
