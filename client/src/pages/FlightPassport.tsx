@@ -156,10 +156,23 @@ const defaultForm = {
 export default function FlightPassport() {
   const { t, lang } = useI18n();
   const { data: flights, refetch, isLoading } = trpc.passport.getFlights.useQuery();
-  // We derive visited countries directly from flight records so the map stays in sync
-  // without requiring a separate sync step
+  // syncCountries must be defined first so addFlight/updateFlight can call it
+  const syncCountries = trpc.passport.syncCountriesFromFlights.useMutation({
+    onSuccess: (data) => {
+      toast.success(lang === "zh" ? `已同步 ${data.synced} 個國家到旅遊足跡地圖！` : `Synced ${data.synced} countries to travel map!`);
+    },
+    onError: () => toast.error(t("syncFailed")),
+  });
+
   const addFlight = trpc.passport.addFlight.useMutation({
-    onSuccess: () => { refetch(); setShowAdd(false); setForm(defaultForm); toast.success(t("flightRecordAdded")); },
+    onSuccess: () => {
+      refetch();
+      setShowAdd(false);
+      setForm(defaultForm);
+      toast.success(t("flightRecordAdded"));
+      // Auto-sync visited countries to travel map
+      syncCountries.mutate();
+    },
     onError: () => toast.error(t("addFlightFailed")),
   });
   const deleteFlight = trpc.passport.deleteFlight.useMutation({
@@ -175,15 +188,14 @@ export default function FlightPassport() {
     onError: () => toast.error(t("importFailed")),
   });
 
-  const syncCountries = trpc.passport.syncCountriesFromFlights.useMutation({
-    onSuccess: (data) => {
-      toast.success(lang === "zh" ? `已同步 ${data.synced} 個國家到旅遊足跡地圖！` : `Synced ${data.synced} countries to travel map!`);
-    },
-    onError: () => toast.error(t("syncFailed")),
-  });
-
   const updateFlight = trpc.passport.updateFlight.useMutation({
-    onSuccess: () => { refetch(); setEditingFlight(null); toast.success(t("flightUpdated")); },
+    onSuccess: () => {
+      refetch();
+      setEditingFlight(null);
+      toast.success(t("flightUpdated"));
+      // Auto-sync visited countries to travel map
+      syncCountries.mutate();
+    },
     onError: () => toast.error(t("updateFailed")),
   });
 

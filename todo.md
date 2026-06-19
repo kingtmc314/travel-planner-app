@@ -341,3 +341,12 @@
 - [x] Total stat card: when multi-currency and no conversion active, show per-currency breakdown (e.g. HKD 3,468 / TWD 12,584) instead of a meaningless mixed sum
 - [x] When currency conversion is active (displayCurrency set), still shows single converted total as before
 - [x] 0 TypeScript errors, 17/17 tests passing
+
+## Bug Fix: Flight Passport → Travel History Auto-Sync (2026-06-19)
+- [x] Root cause: addFlight/updateFlight mutations never passed departureCountry/arrivalCountry from frontend
+- [x] Fix: backend addFlight now auto-derives country from IATA airport code via AIRPORT_TO_COUNTRY map
+- [x] Fix: backend updateFlight now auto-derives country from IATA airport code via AIRPORT_TO_COUNTRY map
+- [x] Fix: syncCountriesFromFlights now backfills country fields for existing flights with null country using airport code lookup
+- [x] Fix: FlightPassport frontend now auto-calls syncCountriesFromFlights after addFlight/updateFlight success
+- [x] Fix: syncCountries mutation moved before addFlight/updateFlight in component to ensure proper reference order
+- [x] 0 TypeScript errors, 17/17 tests passing

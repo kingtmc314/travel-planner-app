@@ -1608,6 +1608,11 @@ const passportRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const flightDate = new Date(input.flightDate);
+      // Auto-derive country from airport code if not provided
+      const depCountry = input.departureCountry ||
+        AIRPORT_TO_COUNTRY[input.departureAirport.toUpperCase()]?.name || null;
+      const arrCountry = input.arrivalCountry ||
+        AIRPORT_TO_COUNTRY[input.arrivalAirport.toUpperCase()]?.name || null;
       const flightId = await db.addPastFlight({
         userId: ctx.user.id,
         flightNumber: input.flightNumber ?? null,
@@ -1615,12 +1620,12 @@ const passportRouter = router({
         airlineCode: input.airlineCode ?? null,
         departureAirport: input.departureAirport,
         departureCity: input.departureCity ?? null,
-        departureCountry: input.departureCountry ?? null,
+        departureCountry: depCountry,
         departureLat: input.departureLat ?? null,
         departureLng: input.departureLng ?? null,
         arrivalAirport: input.arrivalAirport,
         arrivalCity: input.arrivalCity ?? null,
-        arrivalCountry: input.arrivalCountry ?? null,
+        arrivalCountry: arrCountry,
         arrivalLat: input.arrivalLat ?? null,
         arrivalLng: input.arrivalLng ?? null,
         flightDate,
@@ -1628,12 +1633,13 @@ const passportRouter = router({
         durationMinutes: input.durationMinutes ?? null,
         distanceKm: input.distanceKm ?? null,
         seatClass: input.seatClass,
-                notes: input.notes ?? null,
+        notes: input.notes ?? null,
       });
-      // Auto-sync: if arrivalCountry is known, upsert it as visited
-      for (const countryName of [input.arrivalCountry, input.departureCountry]) {
+      // Auto-sync: upsert visited countries derived from airport codes
+      for (const countryName of [arrCountry, depCountry]) {
         if (!countryName || countryName === "Hong Kong") continue;
-        const iso = FLIGHT_COUNTRY_TO_ISO[countryName];
+        const iso = FLIGHT_COUNTRY_TO_ISO[countryName] ||
+          Object.values(AIRPORT_TO_COUNTRY).find(c => c.name === countryName);
         if (iso) {
           await db.upsertVisitedCountry({
             userId: ctx.user.id,
@@ -1667,15 +1673,23 @@ const passportRouter = router({
     }))
     .mutation(async ({ ctx, input }) => {
       const { flightId, flightDate, ...rest } = input;
-            await db.updatePastFlight(flightId, {
+      // Auto-derive country from airport code if not provided
+      const depCountry = input.departureCountry ||
+        (input.departureAirport ? AIRPORT_TO_COUNTRY[input.departureAirport.toUpperCase()]?.name : undefined) || undefined;
+      const arrCountry = input.arrivalCountry ||
+        (input.arrivalAirport ? AIRPORT_TO_COUNTRY[input.arrivalAirport.toUpperCase()]?.name : undefined) || undefined;
+      await db.updatePastFlight(flightId, {
         ...rest,
+        ...(depCountry ? { departureCountry: depCountry } : {}),
+        ...(arrCountry ? { arrivalCountry: arrCountry } : {}),
         ...(flightDate ? { flightDate: new Date(flightDate), flightYear: new Date(flightDate).getFullYear() } : {}),
       });
-      // Auto-sync: if country fields are being updated, upsert visited countries
+      // Auto-sync: upsert visited countries derived from airport codes
       const date = flightDate ? new Date(flightDate) : new Date();
-      for (const countryName of [input.arrivalCountry, input.departureCountry]) {
+      for (const countryName of [arrCountry, depCountry]) {
         if (!countryName || countryName === "Hong Kong") continue;
-        const iso = FLIGHT_COUNTRY_TO_ISO[countryName];
+        const iso = FLIGHT_COUNTRY_TO_ISO[countryName] ||
+          Object.values(AIRPORT_TO_COUNTRY).find(c => c.name === countryName);
         if (iso) {
           await db.upsertVisitedCountry({
             userId: ctx.user.id,
@@ -1805,9 +1819,25 @@ const passportRouter = router({
   syncCountriesFromFlights: protectedProcedure.mutation(async ({ ctx }) => {
     // Re-derive visited countries from all existing past flights in the database
     const existingFlights = await db.getPastFlights(ctx.user.id);
+    // First, backfill country fields in DB for flights that have airport codes but missing country
+    for (const f of existingFlights) {
+      const depCountry = f.departureCountry ||
+        (f.departureAirport ? AIRPORT_TO_COUNTRY[f.departureAirport.toUpperCase()]?.name : null) || null;
+      const arrCountry = f.arrivalCountry ||
+        (f.arrivalAirport ? AIRPORT_TO_COUNTRY[f.arrivalAirport.toUpperCase()]?.name : null) || null;
+      if ((!f.departureCountry && depCountry) || (!f.arrivalCountry && arrCountry)) {
+        await db.updatePastFlight(f.id, {
+          ...(depCountry && !f.departureCountry ? { departureCountry: depCountry } : {}),
+          ...(arrCountry && !f.arrivalCountry ? { arrivalCountry: arrCountry } : {}),
+        });
+      }
+    }
+    // Now derive countries using both stored country fields AND airport code fallback
     const flightDataForSync = existingFlights.map(f => ({
-      depCountry: f.departureCountry ?? "",
-      arrCountry: f.arrivalCountry ?? "",
+      depCountry: f.departureCountry ||
+        (f.departureAirport ? AIRPORT_TO_COUNTRY[f.departureAirport.toUpperCase()]?.name : "") || "",
+      arrCountry: f.arrivalCountry ||
+        (f.arrivalAirport ? AIRPORT_TO_COUNTRY[f.arrivalAirport.toUpperCase()]?.name : "") || "",
       date: f.flightDate ? new Date(f.flightDate as Date).toISOString().split("T")[0] : "2000-01-01",
     }));
     const countries = extractCountriesFromFlights(flightDataForSync);
