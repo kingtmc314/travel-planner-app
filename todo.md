@@ -319,3 +319,9 @@
 - [x] Pass hotel info (name, location, check-in/check-out date) to AI suggestion prompt
 - [x] AI accounts for travel time from/to airport and hotel location when suggesting activities
 - [x] AI avoids suggesting activities during flight times or check-in/check-out windows
+
+## Bug Fix: Auto Distance & Duration Calculation (2026-06-19)
+- [x] Expand AIRPORT_COORDS from 45 to 130+ airports (added KHH, TSA, RMQ, TNN, HND, CTS, PUS, CJU, SZX, CTU, KMG, DPS, HAN, SGN, BER, LGW, MXP, LIS, OSL, BRU, GVA, PRG, WAW, BUD, ATH, CPT, ADD, EWR, DFW, DEN, BOS, YVR, YUL, BOG, LIM, SCL, MEL, BNE, PER, AKL, etc.)
+- [x] Fix openEditFlight to auto-calculate distance and duration when opening edit dialog if values are missing
+- [x] Fix handleAirportChange to also auto-fill durationMinutes (not just distanceKm) when both airports are valid 3-letter IATA codes
+- [x] Only auto-fill duration if user hasn't manually entered a value (respects manual overrides)
