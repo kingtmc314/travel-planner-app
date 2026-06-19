@@ -145,7 +145,7 @@ function SortableActivityCard({
                 aria-label={t("dragToReorder")} tabIndex={-1}>
                 <GripVertical className="w-3.5 h-3.5 text-muted-foreground" />
               </button>
-              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                 <button onClick={() => onEdit(activity)} className="p-1.5 rounded-lg hover:bg-accent transition-colors" title={t("edit")}>
                   <Edit2 className="w-3 h-3 text-muted-foreground" />
                 </button>

@@ -276,7 +276,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
                       </div>
                       {flight.notes && <p className="text-xs text-muted-foreground mt-2">{flight.notes}</p>}
                     </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                    <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0">
                       <button onClick={() => openEditFlight(flight)} className="p-1.5 rounded-lg hover:bg-accent transition-colors" title={t("edit")}>
                         <Edit2 className="w-4 h-4 text-muted-foreground" />
                       </button>
@@ -333,7 +333,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
                       </div>
                       {hotel.notes && <p className="text-xs text-muted-foreground mt-1">{hotel.notes}</p>}
                     </div>
-                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                    <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0">
                       <button onClick={() => openEditHotel(hotel)} className="p-1.5 rounded-lg hover:bg-accent transition-colors" title={t("edit")}>
                         <Edit2 className="w-4 h-4 text-muted-foreground" />
                       </button>

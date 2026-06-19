@@ -280,7 +280,7 @@ export default function MapPage({ tripId }: { tripId: number }) {
                       <p className="text-xs text-muted-foreground">{pinType.label}</p>
                       {pin.address && <p className="text-xs text-muted-foreground truncate">{pin.address}</p>}
                     </div>
-                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                    <div className="flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0">
                       <button
                         onClick={(e) => { e.stopPropagation(); openEdit(pin); }}
                         className="p-1 rounded hover:bg-accent transition-colors"

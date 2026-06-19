@@ -606,7 +606,7 @@ export default function FlightPassport() {
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all shrink-0">
+                        <div className="flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-all shrink-0">
                           <button
                             onClick={() => openEditFlight(flight)}
                             className="p-1.5 rounded-lg hover:bg-accent transition-colors"

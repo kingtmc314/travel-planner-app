@@ -532,14 +532,14 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
         );
       }
       return (
-        <td key="actions" className={`${base} whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity`}>
+        <td key="actions" className={`${base} whitespace-nowrap opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity`}>
           <div className="flex items-center gap-1">
             <button onClick={() => startEdit(rowIdx, "title", expense)}
-              className="p-1 rounded hover:bg-accent text-muted-foreground" title={lang === "zh" ? "編輯" : "Edit"}>
+              className="p-1 rounded hover:bg-accent active:bg-accent text-muted-foreground" title={lang === "zh" ? "編輯" : "Edit"}>
               <Edit2 className="w-3.5 h-3.5" />
             </button>
             <button onClick={() => deleteExpense.mutate({ expenseId: expense.id, tripId })}
-              className="p-1 rounded hover:bg-destructive/10 text-destructive" title={lang === "zh" ? "刪除" : "Delete"}>
+              className="p-1 rounded hover:bg-destructive/10 active:bg-destructive/10 text-destructive" title={lang === "zh" ? "刪除" : "Delete"}>
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </div>

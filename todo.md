@@ -325,3 +325,12 @@
 - [x] Fix openEditFlight to auto-calculate distance and duration when opening edit dialog if values are missing
 - [x] Fix handleAirportChange to also auto-fill durationMinutes (not just distanceKm) when both airports are valid 3-letter IATA codes
 - [x] Only auto-fill duration if user hasn't manually entered a value (respects manual overrides)
+
+## Bug Fix: Mobile Edit/Delete Button Visibility (2026-06-19)
+- [x] Fix expense row actions (edit/delete) invisible on mobile - ExpensesPage.tsx
+- [x] Fix activity action buttons invisible on mobile - ItineraryPage.tsx
+- [x] Fix map pin action buttons invisible on mobile - MapPage.tsx
+- [x] Fix flight action buttons invisible on mobile - FlightsPage.tsx (flights tab)
+- [x] Fix hotel action buttons invisible on mobile - FlightsPage.tsx (hotels tab)
+- [x] Fix past flight action buttons invisible on mobile - FlightPassport.tsx
+- [x] Pattern: changed opacity-0 group-hover:opacity-100 → opacity-100 sm:opacity-0 sm:group-hover:opacity-100 across all 6 locations
