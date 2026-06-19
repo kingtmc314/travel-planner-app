@@ -339,21 +339,28 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
   }, [tripId, uploadReceipt, analyzeReceipt]);
 
   const stats = useMemo(() => {
-    if (!filteredExpenses) return { total: 0, byCategory: [], byPayer: [] };
+    if (!filteredExpenses) return { total: 0, byCurrency: {} as Record<string, number>, isMultiCurrency: false, byCategory: [], byPayer: [] };
     let total = 0;
     const byCat: Record<string, number> = {};
     const byPayer: Record<string, number> = {};
+    // Track per-currency totals for when no conversion is active
+    const byCurrency: Record<string, number> = {};
     filteredExpenses.forEach(e => {
-      const { value } = getDisplayAmount(e);
+      const { value, currency } = getDisplayAmount(e);
       total += value;
+      // Track per-currency totals using the display currency (post-conversion if active)
+      byCurrency[currency] = (byCurrency[currency] ?? 0) + value;
       const cat = CATS.find(c => c.value === e.category);
       const catLabel = cat?.label ?? (lang === "zh" ? "其他" : "Other");
       byCat[catLabel] = (byCat[catLabel] ?? 0) + value;
       const payer = e.paidByName ?? (lang === "zh" ? "未知" : "Unknown");
       byPayer[payer] = (byPayer[payer] ?? 0) + value;
     });
+    const isMultiCurrency = !displayCurrency && Object.keys(byCurrency).length > 1;
     return {
       total,
+      byCurrency,
+      isMultiCurrency,
       byCategory: Object.entries(byCat).map(([name, value]) => ({
         name, value: Math.round(value * 100) / 100,
         color: CATS.find(c => c.label === name)?.color ?? "#94a3b8"
@@ -863,10 +870,29 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
 
       {/* Summary cards */}
       <div className="grid grid-cols-3 gap-3 mb-6">
+        {/* Total card — multi-currency aware */}
+        <div className="bg-card rounded-2xl border border-border p-3 text-center">
+          <div className="w-8 h-8 rounded-xl text-blue-500 bg-blue-50 dark:bg-blue-950/30 flex items-center justify-center mx-auto mb-1.5">
+            <DollarSign className="w-4 h-4" />
+          </div>
+          {conversionLoading && displayCurrency ? (
+            <div className="text-sm font-bold text-foreground">{lang === "zh" ? "計算中…" : "Loading…"}</div>
+          ) : stats.isMultiCurrency ? (
+            <div className="space-y-0.5">
+              {Object.entries(stats.byCurrency).map(([cur, amt]) => (
+                <div key={cur} className="text-xs font-bold text-foreground leading-tight">
+                  {cur} {formatAmount(amt, cur)}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm font-bold text-foreground">{effectiveCurrency} {formatAmount(stats.total, effectiveCurrency)}</div>
+          )}
+          <div className="text-[10px] text-muted-foreground mt-0.5">
+            {stats.isMultiCurrency ? (lang === "zh" ? "各貨幣合計" : "Per currency") : (lang === "zh" ? "總費用" : "Total")}
+          </div>
+        </div>
         {[
-          { icon: DollarSign, label: lang === "zh" ? "總費用" : "Total",
-            value: conversionLoading && displayCurrency ? "計算中…" : `${effectiveCurrency} ${formatAmount(stats.total, effectiveCurrency)}`,
-            color: "text-blue-500 bg-blue-50 dark:bg-blue-950/30" },
           { icon: TrendingUp, label: lang === "zh" ? "筆數" : "Count", value: lang === "zh" ? `${expenses?.length ?? 0} 筆` : `${expenses?.length ?? 0}`, color: "text-green-500 bg-green-50 dark:bg-green-950/30" },
           { icon: Users, label: lang === "zh" ? "付款人" : "Payers", value: lang === "zh" ? `${stats.byPayer.length} 人` : `${stats.byPayer.length}`, color: "text-purple-500 bg-purple-50 dark:bg-purple-950/30" },
           { icon: ImageIcon, label: lang === "zh" ? "收據" : "Receipts", value: lang === "zh" ? `${expenses?.filter(e => e.receiptUrl).length ?? 0} 張` : `${expenses?.filter(e => e.receiptUrl).length ?? 0}`, color: "text-orange-500 bg-orange-50 dark:bg-orange-950/30" },

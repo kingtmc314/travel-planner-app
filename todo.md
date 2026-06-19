@@ -334,3 +334,10 @@
 - [x] Fix hotel action buttons invisible on mobile - FlightsPage.tsx (hotels tab)
 - [x] Fix past flight action buttons invisible on mobile - FlightPassport.tsx
 - [x] Pattern: changed opacity-0 group-hover:opacity-100 → opacity-100 sm:opacity-0 sm:group-hover:opacity-100 across all 6 locations
+
+## Bug Fix: Total Expenses Mixed Currency Calculation (2026-06-19)
+- [x] Fix stats.total incorrectly summing different currencies (TWD + HKD mixed) as if they were the same
+- [x] stats useMemo now tracks byCurrency map (per-currency subtotals) and isMultiCurrency flag
+- [x] Total stat card: when multi-currency and no conversion active, show per-currency breakdown (e.g. HKD 3,468 / TWD 12,584) instead of a meaningless mixed sum
+- [x] When currency conversion is active (displayCurrency set), still shows single converted total as before
+- [x] 0 TypeScript errors, 17/17 tests passing
