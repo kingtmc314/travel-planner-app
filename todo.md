@@ -358,3 +358,11 @@
 - [x] Verify all monetary/currency assumptions across Flight Passport, travel history sync, and related summaries — Flight Passport contains no money fields or conversion logic
 - [x] Fix confirmed logic defects and add regression coverage
 - [x] Save checkpoint and push the verified release to GitHub
+
+
+## Cross-Interface Upgrade & Reduced Re-entry (2026-10-14)
+- [x] Establish reusable, Hong Kong UTC+8-safe date-only utilities and shared trip metadata form
+- [x] Upgrade mobile dashboard and trip shell with accessible controls and less cramped navigation
+- [x] Reuse trip context in the AI assistant and shared trip metadata flows
+- [ ] Extend derived defaults and cross-feature data reuse to expenses, itinerary, map, members, travel history, passport, and sync flows
+- [ ] Complete a full cross-page visual review, checkpoint, and GitHub deployment

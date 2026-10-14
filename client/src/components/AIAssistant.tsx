@@ -15,15 +15,18 @@ interface AIAssistantProps {
   open: boolean;
   onClose: () => void;
   tripId: number;
-  destination?: string;
+  destination?: string | null;
+  startDate?: string | null;
+  endDate?: string | null;
+  baseCurrency?: string | null;
 }
 
-export default function AIAssistant({ open, onClose, tripId, destination }: AIAssistantProps) {
+export default function AIAssistant({ open, onClose, tripId, destination, startDate, endDate, baseCurrency }: AIAssistantProps) {
   const { t, lang } = useI18n();
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      content: `你好！我是 VoyageAI 旅遊助手 ✈️\n\n我可以幫你：\n• 推薦景點和餐廳\n• 規劃每日行程\n• 提供旅遊小貼士\n• 回答旅遊相關問題\n\n${destination ? `目前行程目的地：**${destination}**\n\n` : ""}有什麼我可以幫你的嗎？`,
+      content: t("aiGreeting", destination),
     },
   ]);
   const [input, setInput] = useState("");
@@ -34,7 +37,7 @@ export default function AIAssistant({ open, onClose, tripId, destination }: AIAs
       setMessages((prev) => [...prev, { role: "assistant", content: data.reply }]);
     },
     onError: () => {
-      setMessages((prev) => [...prev, { role: "assistant", content: "抱歉，我暫時無法回應。請稍後再試。" }]);
+      setMessages((prev) => [...prev, { role: "assistant", content: lang === "zh" ? "抱歉，我暫時無法回應。請稍後再試。" : "Sorry, I cannot respond right now. Please try again shortly." }]);
     },
   });
 
@@ -49,7 +52,7 @@ export default function AIAssistant({ open, onClose, tripId, destination }: AIAs
     setMessages((prev) => [...prev, { role: "user", content: userMsg }]);
     chat.mutate({
       messages: [...messages, { role: "user" as const, content: userMsg }],
-      tripContext: destination ? { destination, startDate: "", endDate: "" } : undefined,
+      tripContext: destination ? { destination, startDate: startDate ?? "", endDate: endDate ?? "" } : undefined,
     });
   };
 
@@ -61,12 +64,9 @@ export default function AIAssistant({ open, onClose, tripId, destination }: AIAs
   };
 
   const quickPrompts = destination
-    ? [
-        `推薦 ${destination} 必去景點`,
-        `${destination} 當地美食推薦`,
-        `${destination} 旅遊注意事項`,
-        `${destination} 交通攻略`,
-      ]
+    ? lang === "zh"
+      ? [`推薦 ${destination} 必去景點`, `${destination} 當地美食推薦`, `${destination} 旅遊注意事項`, `${destination} 交通攻略`]
+      : [`What should I see in ${destination}?`, `What local food should I try in ${destination}?`, `What should I know before visiting ${destination}?`, `How should I get around ${destination}?`]
     : [];
 
   return (
@@ -89,12 +89,19 @@ export default function AIAssistant({ open, onClose, tripId, destination }: AIAs
             <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center shrink-0">
               <Sparkles className="w-4 h-4 text-purple-600" />
             </div>
-            AI 旅遊助手
+            {t("aiAssistantName")}
           </SheetTitle>
         </SheetHeader>
 
         {/* Scrollable messages area — takes all remaining height */}
         <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4 min-h-0">
+          {destination && (
+            <div className="rounded-xl border border-primary/15 bg-primary/5 px-3 py-2 text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">{destination}</span>
+              {startDate && endDate ? <span> · {startDate} – {endDate}</span> : null}
+              {baseCurrency ? <span> · {baseCurrency}</span> : null}
+            </div>
+          )}
           {messages.map((msg, i) => (
             <div key={i} className={`flex gap-3 ${msg.role === "user" ? "flex-row-reverse" : ""}`}>
               <div
@@ -134,7 +141,7 @@ export default function AIAssistant({ open, onClose, tripId, destination }: AIAs
           {/* Quick prompts — inside scroll area so they never push input off-screen */}
           {quickPrompts.length > 0 && messages.length <= 1 && (
             <div className="pt-1">
-              <p className="text-xs text-muted-foreground mb-2">快速提問：</p>
+              <p className="text-xs text-muted-foreground mb-2">{lang === "zh" ? "快速提問：" : "Quick prompts:"}</p>
               <div className="flex flex-col gap-2">
                 {quickPrompts.map((p) => (
                   <button
@@ -159,7 +166,7 @@ export default function AIAssistant({ open, onClose, tripId, destination }: AIAs
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="問我任何旅遊問題..."
+              placeholder={lang === "zh" ? "問我任何旅遊問題..." : "Ask any travel question..."}
               className="flex-1"
               disabled={chat.isPending}
             />

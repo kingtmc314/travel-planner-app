@@ -131,6 +131,7 @@ export const translations = {
     tripDeleted: "行程已刪除",
     tripDeleteFailed: "刪除失敗",
     fillRequired: "請填寫必填欄位",
+    dateRangeInvalid: "請確認回程日期不早於出發日期",
     startPlanning: "開始規劃你的第一次旅行",
     clickNewTrip: "點擊右上角「新增行程」開始記錄旅行計劃",
 
@@ -645,6 +646,7 @@ export const translations = {
     tripDeleted: "Trip deleted",
     tripDeleteFailed: "Delete failed",
     fillRequired: "Please fill in all required fields",
+    dateRangeInvalid: "Please make sure the end date is not before the start date",
     startPlanning: "Start planning your first trip",
     clickNewTrip: "Click \"New Trip\" in the top right to start",
 

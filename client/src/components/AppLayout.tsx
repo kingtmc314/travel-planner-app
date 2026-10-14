@@ -7,7 +7,7 @@ import NotificationsPanel from "@/components/NotificationsPanel";
 import AppLogo from "@/components/AppLogo";
 import { useI18n } from "@/hooks/useI18n";
 
-const APP_VERSION = "v8.3";
+const APP_VERSION = "v8.4";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
@@ -143,27 +143,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               const active = currentPath === item.path;
               return (
                 <button
-                  key={item.path}
-                  onClick={() => setLocation(item.path)}
-                  className={`flex flex-col items-center gap-1 px-4 py-2 transition-colors ${
+                key={item.path}
+                onClick={() => setLocation(item.path)}
+                aria-label={item.label}
+                aria-current={active ? "page" : undefined}
+                className={`flex-1 min-w-0 flex flex-col items-center gap-1 px-1 py-2 transition-colors ${
                     active ? "text-primary" : "text-muted-foreground hover:text-foreground"
                   }`}
                 >
                   <Icon className={`w-5 h-5 ${item.iconClass}`} />
-                  <span className="text-[10px] font-medium">{item.label}</span>
+                <span className="w-full truncate text-[9px] sm:text-[10px] font-medium">{item.label}</span>
                 </button>
               );
             })}
-            <button
-              onClick={() => setShowNotifications(true)}
-              className="relative flex flex-col items-center gap-1 px-4 py-2 text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <Bell className="w-5 h-5" />
-              {unreadCount && unreadCount.count > 0 ? (
-                <span className="absolute top-1 right-3 w-2 h-2 rounded-full bg-destructive" />
-              ) : null}
-              <span className="text-[10px] font-medium">{t("notifications")}</span>
-            </button>
           </div>
         </nav>
       </div>

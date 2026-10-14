@@ -2,13 +2,8 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
-import { getLoginUrl } from "@/const";
-import AppLogo from "@/components/AppLogo";
 import GuestDashboard from "@/components/GuestDashboard";
 import GuestMergeBanner from "@/components/GuestMergeBanner";
 import { getGuestTrips } from "@/hooks/useGuestTrips";
@@ -32,29 +27,23 @@ import { useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { useI18n } from "@/hooks/useI18n";
-
-const CURRENCIES = ["HKD", "USD", "EUR", "GBP", "JPY", "CNY", "AUD", "CAD", "SGD", "TWD", "KRW", "THB", "EGP"];
-
-const COVER_IMAGES = [
-  "https://images.unsplash.com/photo-1568322445389-f64ac2515020?w=800&q=70",
-  "https://images.unsplash.com/photo-1488085061387-422e29b40080?w=800&q=70",
-  "https://images.unsplash.com/photo-1530521954074-e64f6810b32d?w=800&q=70",
-  "https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=800&q=70",
-  "https://images.unsplash.com/photo-1500835556837-99ac94a94552?w=800&q=70",
-  "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?w=800&q=70",
-];
+import TripForm, { EMPTY_TRIP_FORM, TRIP_COVER_IMAGES } from "@/components/TripForm";
+import { formatDateOnlyInHongKong, isValidDateRange } from "@/lib/hongKongDate";
 
 function TripCard({ trip, onClick, onEdit, onDelete }: { trip: any; onClick: () => void; onEdit?: () => void; onDelete?: () => void }) {
   const { t, lang } = useI18n();
-  const coverImage = trip.coverImage || COVER_IMAGES[trip.id % COVER_IMAGES.length];
-  const locale = lang === "zh" ? "zh-HK" : "en-US";
-  const startDate = new Date(trip.startDate).toLocaleDateString(locale, { month: "short", day: "numeric" });
-  const endDate = new Date(trip.endDate).toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" });
+  const coverImage = trip.coverImage || TRIP_COVER_IMAGES[trip.id % TRIP_COVER_IMAGES.length];
+  const startDate = formatDateOnlyInHongKong(trip.startDate, lang, { month: "short", day: "numeric" });
+  const endDate = formatDateOnlyInHongKong(trip.endDate, lang, { month: "short", day: "numeric", year: "numeric" });
 
   return (
     <div
       className="trip-card group cursor-pointer rounded-2xl overflow-hidden border border-border bg-card shadow-sm"
       onClick={onClick}
+      role="button"
+      tabIndex={0}
+      aria-label={`${t("itinerary")}: ${trip.name}`}
+      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onClick(); } }}
     >
       <div className="relative h-44 overflow-hidden">
         <img
@@ -72,7 +61,7 @@ function TripCard({ trip, onClick, onEdit, onDelete }: { trip: any; onClick: () 
           <div className="absolute top-3 right-3" onClick={e => e.stopPropagation()}>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className="w-8 h-8 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/60 transition-colors">
+                <button aria-label={t("editTrip")} className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/60 transition-colors">
                   <MoreVertical className="w-4 h-4" />
                 </button>
               </DropdownMenuTrigger>
@@ -113,18 +102,10 @@ export default function Dashboard() {
   const [, setLocation] = useLocation();
   const [showCreate, setShowCreate] = useState(false);
   const [editingTrip, setEditingTrip] = useState<any | null>(null);
-  const [editForm, setEditForm] = useState({ name: "", destination: "", startDate: "", endDate: "", baseCurrency: "HKD", coverImage: "", description: "" });
+  const [editForm, setEditForm] = useState({ ...EMPTY_TRIP_FORM });
   const [mergeDismissed, setMergeDismissed] = useState(false);
   const hasGuestTrips = getGuestTrips().length > 0;
-  const [form, setForm] = useState({
-    name: "",
-    destination: "",
-    startDate: "",
-    endDate: "",
-    baseCurrency: "HKD",
-    coverImage: "",
-    description: "",
-  });
+  const [form, setForm] = useState({ ...EMPTY_TRIP_FORM });
 
   const { data: trips, isLoading: tripsLoading, refetch } = trpc.trips.list.useQuery(undefined, {
     enabled: !!user,
@@ -141,7 +122,7 @@ export default function Dashboard() {
     onSuccess: (data) => {
       toast.success(t("tripCreated"));
       setShowCreate(false);
-      setForm({ name: "", destination: "", startDate: "", endDate: "", baseCurrency: "HKD", coverImage: "", description: "" });
+      setForm({ ...EMPTY_TRIP_FORM });
       refetch();
       setLocation(`/trips/${data.tripId}/itinerary`);
     },
@@ -169,8 +150,8 @@ export default function Dashboard() {
     setEditForm({
       name: trip.name,
       destination: trip.destination,
-      startDate: trip.startDate ? new Date(trip.startDate).toISOString().split("T")[0] : "",
-      endDate: trip.endDate ? new Date(trip.endDate).toISOString().split("T")[0] : "",
+      startDate: trip.startDate ?? "",
+      endDate: trip.endDate ?? "",
       baseCurrency: trip.baseCurrency ?? "HKD",
       coverImage: trip.coverImage ?? "",
       description: trip.description ?? "",
@@ -179,6 +160,7 @@ export default function Dashboard() {
 
   const handleUpdate = () => {
     if (!editingTrip || !editForm.name || !editForm.destination) { toast.error(t("fillRequired")); return; }
+    if (!isValidDateRange(editForm.startDate, editForm.endDate)) { toast.error(t("dateRangeInvalid")); return; }
     updateTrip.mutate({ tripId: editingTrip.id, ...editForm });
   };
 
@@ -192,6 +174,7 @@ export default function Dashboard() {
       toast.error(t("fillRequired"));
       return;
     }
+    if (!isValidDateRange(form.startDate, form.endDate)) { toast.error(t("dateRangeInvalid")); return; }
     createTrip.mutate(form);
   };
 
@@ -213,18 +196,18 @@ export default function Dashboard() {
         </div>
 
         {/* Stats row */}
-        <div className="grid grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-8">
           {[
             { icon: Globe, label: t("tripCount", trips?.length ?? 0), value: trips?.length ?? 0, color: "text-blue-500 bg-blue-50" },
             { icon: Users, label: t("tripPartners"), value: "∞", color: "text-green-500 bg-green-50" },
             { icon: Wallet, label: t("expenseTracking"), value: t("statsRealtime"), color: "text-amber-500 bg-amber-50" },
           ].map((stat) => (
-            <div key={stat.label} className="bg-card rounded-2xl border border-border p-4 text-center">
+            <div key={stat.label} className="bg-card rounded-2xl border border-border p-2.5 sm:p-4 text-center min-w-0">
               <div className={`w-10 h-10 rounded-xl ${stat.color} flex items-center justify-center mx-auto mb-2`}>
                 <stat.icon className="w-5 h-5" />
               </div>
               <div className="text-2xl font-bold text-foreground">{stat.value}</div>
-              <div className="text-xs text-muted-foreground mt-0.5">{stat.label}</div>
+              <div className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 break-words">{stat.label}</div>
             </div>
           ))}
         </div>
@@ -290,162 +273,20 @@ export default function Dashboard() {
 
         {/* Create Trip Dialog */}
         <Dialog open={showCreate} onOpenChange={setShowCreate}>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-xl">{t("createTripTitle")}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 mt-2">
-              <div>
-                <Label htmlFor="name">{t("tripNameLabel")} *</Label>
-                <Input
-                  id="name"
-                  placeholder={t("tripNamePlaceholder")}
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="mt-1.5"
-                />
-              </div>
-              <div>
-                <Label htmlFor="destination">{t("destination")} *</Label>
-                <Input
-                  id="destination"
-                  placeholder={t("destinationPlaceholder")}
-                  value={form.destination}
-                  onChange={(e) => setForm({ ...form, destination: e.target.value })}
-                  className="mt-1.5"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label htmlFor="startDate">{t("startDate")} *</Label>
-                  <Input
-                    id="startDate"
-                    type="date"
-                    value={form.startDate}
-                    onChange={(e) => setForm({ ...form, startDate: e.target.value })}
-                    className="mt-1.5"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="endDate">{t("endDate")} *</Label>
-                  <Input
-                    id="endDate"
-                    type="date"
-                    value={form.endDate}
-                    onChange={(e) => setForm({ ...form, endDate: e.target.value })}
-                    className="mt-1.5"
-                  />
-                </div>
-              </div>
-              <div>
-                <Label htmlFor="currency">{t("baseCurrency")}</Label>
-                <Select value={form.baseCurrency} onValueChange={(v) => setForm({ ...form, baseCurrency: v })}>
-                  <SelectTrigger className="mt-1.5">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {CURRENCIES.map((c) => (
-                      <SelectItem key={c} value={c}>{c}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="description">{t("description")}</Label>
-                <Input
-                  id="description"
-                  placeholder={t("descriptionPlaceholder")}
-                  value={form.description}
-                  onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  className="mt-1.5"
-                />
-              </div>
-              <div>
-                <Label>{t("coverImage")}</Label>
-                <div className="grid grid-cols-3 gap-2 mt-1.5">
-                  {COVER_IMAGES.map((img) => (
-                    <button
-                      key={img}
-                      onClick={() => setForm({ ...form, coverImage: img })}
-                      className={`relative h-20 rounded-lg overflow-hidden border-2 transition-all ${
-                        form.coverImage === img ? "border-primary" : "border-transparent"
-                      }`}
-                    >
-                      <img src={img} alt="" className="w-full h-full object-cover" />
-                      {form.coverImage === img && (
-                        <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
-                          <div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center">
-                            <span className="text-white text-xs">✓</span>
-                          </div>
-                        </div>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <Button
-                onClick={handleCreate}
-                className="w-full"
-                disabled={createTrip.isPending}
-              >
-                {createTrip.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                {t("createTrip")}
-              </Button>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto pb-24 sm:pb-6">
+            <DialogHeader><DialogTitle className="text-xl">{t("createTripTitle")}</DialogTitle></DialogHeader>
+            <TripForm value={form} onChange={setForm} idPrefix="create-trip" disabled={createTrip.isPending} />
+            <div className="sticky bottom-0 -mx-6 px-6 pt-3 pb-2 bg-background border-t border-border">
+              <Button onClick={handleCreate} className="w-full" disabled={createTrip.isPending}>{createTrip.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}{t("createTrip")}</Button>
             </div>
           </DialogContent>
         </Dialog>
-
-        {/* Edit Trip Dialog */}
         <Dialog open={!!editingTrip} onOpenChange={(open) => !open && setEditingTrip(null)}>
-          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-xl">{t("editTripTitle")}</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4 mt-2">
-              <div>
-                <Label>{t("tripNameLabel")} *</Label>
-                <Input placeholder={t("tripNamePlaceholder")} value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} className="mt-1.5" />
-              </div>
-              <div>
-                <Label>{t("destination")} *</Label>
-                <Input placeholder={t("destinationPlaceholder")} value={editForm.destination} onChange={(e) => setEditForm({ ...editForm, destination: e.target.value })} className="mt-1.5" />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <Label>{t("startDate")} *</Label>
-                  <Input type="date" value={editForm.startDate} onChange={(e) => setEditForm({ ...editForm, startDate: e.target.value })} className="mt-1.5" />
-                </div>
-                <div>
-                  <Label>{t("endDate")} *</Label>
-                  <Input type="date" value={editForm.endDate} onChange={(e) => setEditForm({ ...editForm, endDate: e.target.value })} className="mt-1.5" />
-                </div>
-              </div>
-              <div>
-                <Label>{t("baseCurrency")}</Label>
-                <Select value={editForm.baseCurrency} onValueChange={(v) => setEditForm({ ...editForm, baseCurrency: v })}>
-                  <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
-                  <SelectContent>{CURRENCIES.map((c) => <SelectItem key={c} value={c}>{c}</SelectItem>)}</SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label>{t("description")}</Label>
-                <Input placeholder={t("descriptionPlaceholder")} value={editForm.description} onChange={(e) => setEditForm({ ...editForm, description: e.target.value })} className="mt-1.5" />
-              </div>
-              <div>
-                <Label>{t("coverImage")}</Label>
-                <div className="grid grid-cols-3 gap-2 mt-1.5">
-                  {COVER_IMAGES.map((img) => (
-                    <button key={img} onClick={() => setEditForm({ ...editForm, coverImage: img })} className={`relative h-20 rounded-lg overflow-hidden border-2 transition-all ${editForm.coverImage === img ? "border-primary" : "border-transparent"}`}>
-                      <img src={img} alt="" className="w-full h-full object-cover" />
-                      {editForm.coverImage === img && <div className="absolute inset-0 bg-primary/20 flex items-center justify-center"><div className="w-5 h-5 rounded-full bg-primary flex items-center justify-center"><span className="text-white text-xs">✓</span></div></div>}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <Button onClick={handleUpdate} className="w-full" disabled={updateTrip.isPending}>
-                {updateTrip.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-                {t("saveChanges")}
-              </Button>
+          <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto pb-24 sm:pb-6">
+            <DialogHeader><DialogTitle className="text-xl">{t("editTripTitle")}</DialogTitle></DialogHeader>
+            <TripForm value={editForm} onChange={setEditForm} idPrefix="edit-trip" disabled={updateTrip.isPending} />
+            <div className="sticky bottom-0 -mx-6 px-6 pt-3 pb-2 bg-background border-t border-border">
+              <Button onClick={handleUpdate} className="w-full" disabled={updateTrip.isPending}>{updateTrip.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}{t("saveChanges")}</Button>
             </div>
           </DialogContent>
         </Dialog>

@@ -8,13 +8,12 @@ import {
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import AIAssistant from "@/components/AIAssistant";
 import NotificationsPanel from "@/components/NotificationsPanel";
 import { toast } from "sonner";
 import { useI18n } from "@/hooks/useI18n";
+import TripForm, { EMPTY_TRIP_FORM } from "@/components/TripForm";
+import { formatDateOnlyInHongKong, isValidDateRange } from "@/lib/hongKongDate";
 
 interface TripLayoutProps {
   tripId: number;
@@ -22,7 +21,7 @@ interface TripLayoutProps {
 }
 
 export default function TripLayout({ tripId, children }: TripLayoutProps) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const NAV_ITEMS = [
     { key: "itinerary", label: t("itinerary"), icon: Calendar, path: "itinerary" },
     { key: "expenses", label: t("expenses"), icon: DollarSign, path: "expenses" },
@@ -36,7 +35,7 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
   const [showAI, setShowAI] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [showEditTrip, setShowEditTrip] = useState(false);
-  const [editForm, setEditForm] = useState({ name: "", destination: "", startDate: "", endDate: "", description: "", coverImage: "", baseCurrency: "" });
+  const [editForm, setEditForm] = useState({ ...EMPTY_TRIP_FORM });
 
   const { data: trip, refetch: refetchTrip } = trpc.trips.get.useQuery({ tripId }, { enabled: !!user && !!tripId });
   const { data: unreadCount } = trpc.notifications.unreadCount.useQuery(undefined, {
@@ -58,8 +57,8 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
     setEditForm({
       name: trip.name ?? "",
       destination: trip.destination ?? "",
-      startDate: trip.startDate ? new Date(trip.startDate).toISOString().split("T")[0] : "",
-      endDate: trip.endDate ? new Date(trip.endDate).toISOString().split("T")[0] : "",
+      startDate: trip.startDate ?? "",
+      endDate: trip.endDate ?? "",
       description: trip.description ?? "",
       coverImage: trip.coverImage ?? "",
       baseCurrency: trip.baseCurrency ?? "HKD",
@@ -69,6 +68,7 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
 
   const handleUpdateTrip = () => {
     if (!editForm.name || !editForm.destination) { toast.error(t("tripNameRequired")); return; }
+    if (!isValidDateRange(editForm.startDate, editForm.endDate)) { toast.error(t("dateRangeInvalid")); return; }
     updateTrip.mutate({ tripId, ...editForm });
   };
 
@@ -118,7 +118,7 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
             <p className="text-sidebar-foreground/60 text-xs mt-1 line-clamp-1">{trip?.destination}</p>
             {trip?.startDate && (
               <p className="text-sidebar-foreground/50 text-xs mt-0.5">
-                {new Date(trip.startDate).toLocaleDateString()} – {new Date(trip.endDate).toLocaleDateString()}
+                {formatDateOnlyInHongKong(trip.startDate, lang)} – {formatDateOnlyInHongKong(trip.endDate, lang)}
               </p>
             )}
           </div>
@@ -202,7 +202,7 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
         {/* Mobile header */}
         <header className="lg:hidden sticky top-0 z-30 glass border-b border-border">
           <div className="flex items-center justify-between px-4 h-14">
-            <button onClick={() => setSidebarOpen(true)} className="p-2 rounded-lg hover:bg-accent transition-colors">
+            <button onClick={() => setSidebarOpen(true)} aria-label={t("backToDashboard")} className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-accent transition-colors">
               <Menu className="w-5 h-5 text-foreground" />
             </button>
             <div className="flex-1 text-center">
@@ -210,17 +210,17 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
             </div>
             <div className="flex items-center gap-1">
               {isOwnerOrEditor && (
-                <button onClick={openEditTrip} className="p-2 rounded-lg hover:bg-accent transition-colors">
+                <button onClick={openEditTrip} aria-label={t("editTrip")} className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-accent transition-colors">
                   <Edit2 className="w-4.5 h-4.5 text-muted-foreground" />
                 </button>
               )}
-              <button onClick={() => setShowNotifications(true)} className="relative p-2 rounded-lg hover:bg-accent transition-colors">
+              <button onClick={() => setShowNotifications(true)} aria-label={t("notifications")} className="relative w-10 h-10 flex items-center justify-center rounded-lg hover:bg-accent transition-colors">
                 <Bell className="w-5 h-5 text-muted-foreground" />
                 {unreadCount && unreadCount.count > 0 && (
                   <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-destructive" />
                 )}
               </button>
-              <button onClick={() => setShowAI(true)} className="p-2 rounded-lg hover:bg-accent transition-colors">
+              <button onClick={() => setShowAI(true)} aria-label={t("aiAssistant")} className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-accent transition-colors">
                 <Sparkles className="w-5 h-5 text-purple-500" />
               </button>
             </div>
@@ -274,12 +274,14 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
                 <button
                   key={item.key}
                   onClick={() => setLocation(`/trips/${tripId}/${item.path}`)}
-                  className={`flex flex-col items-center gap-1 px-3 py-1.5 rounded-xl transition-all ${
+                  aria-label={item.label}
+                  aria-current={isActive ? "page" : undefined}
+                  className={`flex-1 min-w-0 flex flex-col items-center gap-1 px-1 py-1.5 rounded-xl transition-all ${
                     isActive ? "text-primary" : "text-muted-foreground"
                   }`}
                 >
                   <item.icon className={`w-5 h-5 ${isActive ? "text-primary" : ""}`} />
-                  <span className="text-[10px] font-medium">{item.label}</span>
+                  <span className="w-full truncate text-[9px] sm:text-[10px] font-medium">{item.label}</span>
                 </button>
               );
             })}
@@ -293,6 +295,9 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
         onClose={() => setShowAI(false)}
         tripId={tripId}
         destination={trip?.destination}
+        startDate={trip?.startDate}
+        endDate={trip?.endDate}
+        baseCurrency={trip?.baseCurrency}
       />
 
       {/* Notifications */}
@@ -300,45 +305,13 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
 
       {/* Edit Trip Dialog */}
       <Dialog open={showEditTrip} onOpenChange={setShowEditTrip}>
-        <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto pb-24 sm:pb-6">
           <DialogHeader>
             <DialogTitle>{t("editTripTitle")}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div>
-              <Label>{t("tripNameLabel")} *</Label>
-              <Input className="mt-1.5" placeholder={t("tripNamePlaceholder")} value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
-            </div>
-            <div>
-              <Label>{t("destination")} *</Label>
-              <Input className="mt-1.5" placeholder={t("destinationPlaceholder")} value={editForm.destination} onChange={e => setEditForm({...editForm, destination: e.target.value})} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label>{t("startDate")}</Label>
-                <Input className="mt-1.5" type="date" value={editForm.startDate} onChange={e => setEditForm({...editForm, startDate: e.target.value})} />
-              </div>
-              <div>
-                <Label>{t("endDate")}</Label>
-                <Input className="mt-1.5" type="date" value={editForm.endDate} onChange={e => setEditForm({...editForm, endDate: e.target.value})} />
-              </div>
-            </div>
-            <div>
-              <Label>{t("baseCurrency")}</Label>
-              <Input className="mt-1.5" placeholder="HKD" value={editForm.baseCurrency} onChange={e => setEditForm({...editForm, baseCurrency: e.target.value})} />
-            </div>
-            <div>
-              <Label>{t("coverImageUrl")}</Label>
-              <Input className="mt-1.5" placeholder={t("tripCoverPlaceholder")} value={editForm.coverImage} onChange={e => setEditForm({...editForm, coverImage: e.target.value})} />
-            </div>
-            <div>
-              <Label>{t("description")}</Label>
-              <Textarea className="mt-1.5" placeholder={t("tripDescPlaceholder")} value={editForm.description} onChange={e => setEditForm({...editForm, description: e.target.value})} rows={3} />
-            </div>
-            <Button className="w-full" onClick={handleUpdateTrip} disabled={updateTrip.isPending}>
-              {updateTrip.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              {t("saveChanges")}
-            </Button>
+          <TripForm value={editForm} onChange={setEditForm} idPrefix="trip-settings" disabled={updateTrip.isPending} />
+          <div className="sticky bottom-0 -mx-6 px-6 pt-3 pb-2 bg-background border-t border-border">
+            <Button className="w-full" onClick={handleUpdateTrip} disabled={updateTrip.isPending}>{updateTrip.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}{t("saveChanges")}</Button>
           </div>
         </DialogContent>
       </Dialog>
