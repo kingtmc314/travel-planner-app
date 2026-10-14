@@ -350,3 +350,11 @@
 - [x] Fix: FlightPassport frontend now auto-calls syncCountriesFromFlights after addFlight/updateFlight success
 - [x] Fix: syncCountries mutation moved before addFlight/updateFlight in component to ensure proper reference order
 - [x] 0 TypeScript errors, 17/17 tests passing
+
+
+## Flight Passport Logic & Currency Audit (2026-10-14)
+- [x] Audit all Flight Passport calculations: flight count, distance, duration, airport and airline totals, plus yearly filters
+- [x] Validate distance/duration defaults, manual overrides, duplicate route behaviour, and invalid IATA handling
+- [x] Verify all monetary/currency assumptions across Flight Passport, travel history sync, and related summaries — Flight Passport contains no money fields or conversion logic
+- [x] Fix confirmed logic defects and add regression coverage
+- [ ] Save checkpoint and push the verified release to GitHub

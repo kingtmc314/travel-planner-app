@@ -7,6 +7,8 @@ import NotificationsPanel from "@/components/NotificationsPanel";
 import AppLogo from "@/components/AppLogo";
 import { useI18n } from "@/hooks/useI18n";
 
+const APP_VERSION = "v8.3";
+
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const [currentPath, setLocation] = useLocation();
@@ -43,7 +45,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <AppLogo size={32} />
           <div className="flex flex-col leading-none">
             <span className="font-bold text-foreground text-sm tracking-tight">VoyageAI</span>
-            <span className="text-[10px] text-muted-foreground tracking-widest">{lang === "zh" ? "旅跡" : "Travel"}</span>
+            <span className="text-[10px] text-muted-foreground tracking-widest">{lang === "zh" ? "旅跡" : "Travel"} · {APP_VERSION}</span>
           </div>
         </div>
         <nav className="flex-1 px-3 py-4 space-y-1">
@@ -101,7 +103,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
               <AppLogo size={30} />
               <div className="flex flex-col leading-none">
                 <span className="font-bold text-foreground text-sm tracking-tight">VoyageAI</span>
-                <span className="text-[9px] text-muted-foreground tracking-widest">{lang === "zh" ? "旅跡" : "Travel"}</span>
+                <span className="text-[9px] text-muted-foreground tracking-widest">{lang === "zh" ? "旅跡" : "Travel"} · {APP_VERSION}</span>
               </div>
             </div>
             <div className="flex items-center gap-2">

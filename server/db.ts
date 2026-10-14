@@ -375,6 +375,15 @@ export async function getPastFlights(userId: number) {
   return db.select().from(pastFlights).where(eq(pastFlights.userId, userId)).orderBy(desc(pastFlights.flightDate));
 }
 
+export async function getPastFlightById(flightId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.select().from(pastFlights)
+    .where(and(eq(pastFlights.id, flightId), eq(pastFlights.userId, userId)))
+    .limit(1);
+  return result[0];
+}
+
 export async function addPastFlight(data: InsertPastFlight) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -382,14 +391,14 @@ export async function addPastFlight(data: InsertPastFlight) {
   return (result as any).insertId as number;
 }
 
-export async function updatePastFlight(flightId: number, data: Partial<InsertPastFlight>) {
+export async function updatePastFlight(flightId: number, userId: number, data: Partial<InsertPastFlight>) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.update(pastFlights).set(data).where(eq(pastFlights.id, flightId));
+  await db.update(pastFlights).set(data).where(and(eq(pastFlights.id, flightId), eq(pastFlights.userId, userId)));
 }
 
-export async function deletePastFlight(flightId: number) {
+export async function deletePastFlight(flightId: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.delete(pastFlights).where(eq(pastFlights.id, flightId));
+  await db.delete(pastFlights).where(and(eq(pastFlights.id, flightId), eq(pastFlights.userId, userId)));
 }

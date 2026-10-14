@@ -7,12 +7,23 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Plane, Plus, Trash2, Loader2, Clock, Globe, Building2, Share2, Edit2, RefreshCw } from "lucide-react";
-import { useState, useMemo } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { toast } from "sonner";
 import { useI18n } from "@/hooks/useI18n";
+import {
+  formatFlightDateInHongKong,
+  formatFlightHours,
+  getHongKongDateInput,
+  getHongKongYear,
+  isIataCode,
+  normalizeIataCode,
+  parsePositiveWholeNumber,
+  resolveFlightDistanceKm,
+  resolveFlightHours,
+  toPositiveFiniteNumber,
+} from "@shared/flightPassport";
 
-const CURRENT_YEAR = new Date().getFullYear();
-const YEAR_TABS = ["All-Time", ...Array.from({ length: 6 }, (_, i) => String(CURRENT_YEAR - i))];
+const CURRENT_YEAR = getHongKongYear(new Date()) ?? new Date().getFullYear();
 
 const FLIGHT_TYPE_LABELS: Record<string, string> = {
   outbound: "去程",
@@ -35,7 +46,8 @@ const AIRPORT_COORDS: Record<string, [number, number]> = {
   NRT: [35.765, 140.386], HND: [35.549, 139.780], KIX: [34.427, 135.244],
   FUK: [33.585, 130.451], OKA: [26.195, 127.646], CTS: [42.775, 141.692],
   NGO: [34.858, 136.805], ITM: [34.785, 135.438], OIT: [33.479, 131.737],
-  KMJ: [32.837, 130.855], MYJ: [33.828, 132.700], HIJ: [34.436, 132.920],
+  KMJ: [32.837, 130.855], KMI: [31.877, 131.449], MYJ: [33.828, 132.700], HIJ: [34.436, 132.920],
+  TAK: [34.215, 134.016],
   SDJ: [38.140, 140.917], AOJ: [40.735, 140.691], AXT: [39.615, 140.219],
   // South Korea
   ICN: [37.469, 126.451], GMP: [37.558, 126.791], PUS: [35.179, 128.938],
@@ -76,7 +88,7 @@ const AIRPORT_COORDS: Record<string, [number, number]> = {
   WAW: [52.166, 20.967], BUD: [47.437, 19.261], ATH: [37.936, 23.944],
   IST: [40.976, 28.814], SAW: [40.898, 29.309], ADB: [38.292, 27.157],
   // Africa
-  CAI: [30.122, 31.406], LOS: [6.577, 3.321], JNB: [-26.134, 28.242],
+  CAI: [30.122, 31.406], ASW: [23.965, 32.820], LOS: [6.577, 3.321], JNB: [-26.134, 28.242],
   CPT: [-33.965, 18.602], NBO: [-1.319, 36.928], ADD: [8.978, 38.799],
   CMN: [33.368, -7.590], TUN: [36.851, 10.227], ALG: [36.691, 3.215],
   // Americas
@@ -113,11 +125,7 @@ function estimateFlightHours(distKm: number): number {
 }
 
 function formatHours(hours: number): string {
-  const d = Math.floor(hours / 24);
-  const h = Math.floor(hours % 24);
-  const m = Math.round((hours - Math.floor(hours)) * 60);
-  if (d > 0) return `${d}d ${h}h`;
-  return `${h}h ${m}m`;
+  return formatFlightHours(hours);
 }
 
 function formatDistance(km: number): string {
@@ -168,7 +176,7 @@ export default function FlightPassport() {
     onSuccess: () => {
       refetch();
       setShowAdd(false);
-      setForm(defaultForm);
+      resetFlightForm();
       toast.success(t("flightRecordAdded"));
       // Auto-sync visited countries to travel map
       syncCountries.mutate();
@@ -177,6 +185,7 @@ export default function FlightPassport() {
   });
   const deleteFlight = trpc.passport.deleteFlight.useMutation({
     onSuccess: () => { refetch(); toast.success(t("flightRecordDeleted")); },
+    onError: () => toast.error(t("deleteFlightFailed")),
   });
   const [importResult, setImportResult] = useState<{ flights: number; countries: number } | null>(null);
 
@@ -192,6 +201,7 @@ export default function FlightPassport() {
     onSuccess: () => {
       refetch();
       setEditingFlight(null);
+      resetFlightForm();
       toast.success(t("flightUpdated"));
       // Auto-sync visited countries to travel map
       syncCountries.mutate();
@@ -204,10 +214,31 @@ export default function FlightPassport() {
   const [form, setForm] = useState(defaultForm);
   const [activeYear, setActiveYear] = useState("All-Time");
 
+  const resetFlightForm = () => setForm(defaultForm);
+
+  const yearTabs = useMemo(() => {
+    const years = new Set<number>();
+    flights?.forEach(flight => {
+      const year = toPositiveFiniteNumber(flight.flightYear);
+      if (year !== null && Number.isInteger(year)) years.add(year);
+    });
+    if (years.size === 0) years.add(CURRENT_YEAR);
+    return ["All-Time", ...Array.from(years).sort((a, b) => b - a).map(String)];
+  }, [flights]);
+
+  useEffect(() => {
+    if (activeYear !== "All-Time" && !yearTabs.includes(activeYear)) {
+      setActiveYear("All-Time");
+    }
+  }, [activeYear, yearTabs]);
+
   // Compute stats
   const stats = useMemo(() => {
     if (!flights) return null;
-    const filtered = activeYear === "All-Time" ? flights : flights.filter(f => f.flightYear === parseInt(activeYear));
+    const selectedYear = Number(activeYear);
+    const filtered = activeYear === "All-Time"
+      ? flights
+      : flights.filter(f => toPositiveFiniteNumber(f.flightYear) === selectedYear);
 
     const totalFlights = filtered.length;
     let totalDistKm = 0;
@@ -216,25 +247,28 @@ export default function FlightPassport() {
     const airlines = new Set<string>();
 
     filtered.forEach(f => {
-      const dep = f.departureAirport ?? "";
-      const arr = f.arrivalAirport ?? "";
+      const dep = normalizeIataCode(f.departureAirport);
+      const arr = normalizeIataCode(f.arrivalAirport);
       if (dep) airports.add(dep);
       if (arr) airports.add(arr);
-      if (f.airline) airlines.add(f.airline);
+      if (f.airline?.trim()) airlines.add(f.airline.trim().toLocaleUpperCase());
 
-      const dist = f.distanceKm ?? estimateDistance(dep, arr);
+      const dist = resolveFlightDistanceKm(f, estimateDistance);
       totalDistKm += dist;
 
-      const hrs = f.durationMinutes ? f.durationMinutes / 60 : estimateFlightHours(dist);
+      const hrs = resolveFlightHours(f, estimateDistance, estimateFlightHours);
       totalHours += hrs;
     });
 
     const longHaul = filtered.filter(f => {
-      const dep = f.departureAirport ?? "";
-      const arr = f.arrivalAirport ?? "";
-      const dist = f.distanceKm ?? estimateDistance(dep, arr);
+      const dist = resolveFlightDistanceKm(f, estimateDistance);
       return dist > 6000;
     }).length;
+
+    const incompleteMetrics = filtered.filter(f => (
+      resolveFlightDistanceKm(f, estimateDistance) === 0 ||
+      resolveFlightHours(f, estimateDistance, estimateFlightHours) === 0
+    )).length;
 
     const earthCircumference = 40075;
     const earthWraps = totalDistKm / earthCircumference;
@@ -247,18 +281,19 @@ export default function FlightPassport() {
       airlines: airlines.size,
       longHaul,
       earthWraps,
+      incompleteMetrics,
       filtered,
     };
   }, [flights, activeYear]);
 
   const openEditFlight = (flight: PastFlight) => {
     setEditingFlight(flight);
-    const dep = (flight.departureAirport ?? "").toUpperCase();
-    const arr = (flight.arrivalAirport ?? "").toUpperCase();
+    const dep = normalizeIataCode(flight.departureAirport);
+    const arr = normalizeIataCode(flight.arrivalAirport);
     // Auto-calculate distance and duration if not stored
-    let distanceKm = flight.distanceKm ? String(flight.distanceKm) : "";
-    let durationMinutes = flight.durationMinutes ? String(flight.durationMinutes) : "";
-    if (dep.length === 3 && arr.length === 3) {
+    let distanceKm = toPositiveFiniteNumber(flight.distanceKm) ? String(flight.distanceKm) : "";
+    let durationMinutes = toPositiveFiniteNumber(flight.durationMinutes) ? String(flight.durationMinutes) : "";
+    if (isIataCode(dep) && isIataCode(arr)) {
       const dist = estimateDistance(dep, arr);
       if (dist > 0) {
         if (!distanceKm) distanceKm = String(dist);
@@ -270,7 +305,7 @@ export default function FlightPassport() {
       airline: flight.airline ?? "",
       departureAirport: dep,
       arrivalAirport: arr,
-      departureDate: flight.flightDate ? new Date(flight.flightDate).toISOString().split('T')[0] : "",
+      departureDate: flight.flightDate ? getHongKongDateInput(flight.flightDate) : "",
       durationMinutes,
       distanceKm,
       seatClass: flight.seatClass ?? "economy",
@@ -279,17 +314,21 @@ export default function FlightPassport() {
   };
 
   const handleUpdate = () => {
-    if (!editingFlight || !form.departureAirport || !form.arrivalAirport) { toast.error(t("airportRequired")); return; }
-    const dist = form.distanceKm ? parseInt(form.distanceKm) : estimateDistance(form.departureAirport, form.arrivalAirport);
+    const departureAirport = normalizeIataCode(form.departureAirport);
+    const arrivalAirport = normalizeIataCode(form.arrivalAirport);
+    if (!editingFlight || !isIataCode(departureAirport) || !isIataCode(arrivalAirport)) { toast.error(t("airportRequired")); return; }
+    const distanceKm = form.distanceKm ? parsePositiveWholeNumber(form.distanceKm) : estimateDistance(departureAirport, arrivalAirport);
+    const durationMinutes = form.durationMinutes ? parsePositiveWholeNumber(form.durationMinutes) : null;
+    if ((form.distanceKm && distanceKm === null) || (form.durationMinutes && durationMinutes === null)) { toast.error(t("positiveFlightMetricsRequired")); return; }
     updateFlight.mutate({
       flightId: editingFlight.id,
       flightNumber: form.flightNumber || undefined,
       airline: form.airline || undefined,
-      departureAirport: form.departureAirport,
-      arrivalAirport: form.arrivalAirport,
-      flightDate: form.departureDate || new Date().toISOString().split('T')[0],
-      durationMinutes: form.durationMinutes ? parseInt(form.durationMinutes) : undefined,
-      distanceKm: dist || undefined,
+      departureAirport,
+      arrivalAirport,
+      flightDate: form.departureDate || getHongKongDateInput(),
+      durationMinutes: durationMinutes ?? undefined,
+      distanceKm: distanceKm || undefined,
       seatClass: (form.seatClass as 'economy' | 'premium_economy' | 'business' | 'first') || 'economy',
       notes: form.notes || undefined,
     });
@@ -297,11 +336,12 @@ export default function FlightPassport() {
 
   // Auto-estimate distance and duration when airports change
   const handleAirportChange = (field: "departureAirport" | "arrivalAirport", value: string) => {
-    const updated = { ...form, [field]: value };
-    const dep = field === "departureAirport" ? value : form.departureAirport;
-    const arr = field === "arrivalAirport" ? value : form.arrivalAirport;
+    const airport = normalizeIataCode(value);
+    const updated = { ...form, [field]: airport };
+    const dep = field === "departureAirport" ? airport : normalizeIataCode(form.departureAirport);
+    const arr = field === "arrivalAirport" ? airport : normalizeIataCode(form.arrivalAirport);
     // Only auto-calculate when both airports are 3-letter IATA codes
-    if (dep.length === 3 && arr.length === 3) {
+    if (isIataCode(dep) && isIataCode(arr)) {
       const dist = estimateDistance(dep, arr);
       if (dist > 0) {
         updated.distanceKm = String(dist);
@@ -316,16 +356,20 @@ export default function FlightPassport() {
   };
 
   const handleAdd = () => {
-    if (!form.departureAirport || !form.arrivalAirport) { toast.error(t("airportRequired")); return; }
-    const dist = form.distanceKm ? parseInt(form.distanceKm) : estimateDistance(form.departureAirport, form.arrivalAirport);
+    const departureAirport = normalizeIataCode(form.departureAirport);
+    const arrivalAirport = normalizeIataCode(form.arrivalAirport);
+    if (!isIataCode(departureAirport) || !isIataCode(arrivalAirport)) { toast.error(t("airportRequired")); return; }
+    const distanceKm = form.distanceKm ? parsePositiveWholeNumber(form.distanceKm) : estimateDistance(departureAirport, arrivalAirport);
+    const durationMinutes = form.durationMinutes ? parsePositiveWholeNumber(form.durationMinutes) : null;
+    if ((form.distanceKm && distanceKm === null) || (form.durationMinutes && durationMinutes === null)) { toast.error(t("positiveFlightMetricsRequired")); return; }
     addFlight.mutate({
       flightNumber: form.flightNumber || undefined,
       airline: form.airline || undefined,
-      departureAirport: form.departureAirport,
-      arrivalAirport: form.arrivalAirport,
-      flightDate: form.departureDate || new Date().toISOString().split('T')[0],
-      durationMinutes: form.durationMinutes ? parseInt(form.durationMinutes) : undefined,
-      distanceKm: dist || undefined,
+      departureAirport,
+      arrivalAirport,
+      flightDate: form.departureDate || getHongKongDateInput(),
+      durationMinutes: durationMinutes ?? undefined,
+      distanceKm: distanceKm || undefined,
       seatClass: (form.seatClass as 'economy' | 'premium_economy' | 'business' | 'first') || 'economy',
       notes: form.notes || undefined,
     });
@@ -335,7 +379,7 @@ export default function FlightPassport() {
     if (!flights) return {};
     const byYear: Record<string, number> = {};
     flights.forEach(f => {
-      const y = String(f.flightYear ?? "Unknown");
+      const y = String(toPositiveFiniteNumber(f.flightYear) ?? "Unknown");
       byYear[y] = (byYear[y] ?? 0) + 1;
     });
     return byYear;
@@ -470,7 +514,7 @@ export default function FlightPassport() {
               <Share2 className="w-4 h-4" />
               {t("share")}
             </Button>
-            <Button onClick={() => setShowAdd(true)} size="sm" className="gap-1.5 bg-sky-600 hover:bg-sky-700 px-2 sm:px-3">
+            <Button onClick={() => { resetFlightForm(); setShowAdd(true); }} size="sm" className="gap-1.5 bg-sky-600 hover:bg-sky-700 px-2 sm:px-3">
               <Plus className="w-4 h-4" />
               <span className="hidden sm:inline">{t("record")}</span>
             </Button>
@@ -482,7 +526,7 @@ export default function FlightPassport() {
         {/* Year Tabs */}
         <div className="overflow-x-auto mb-6 -mx-4 px-4">
           <div className="flex gap-2 min-w-max">
-            {YEAR_TABS.map(year => (
+            {yearTabs.map(year => (
               <button
                 key={year}
                 onClick={() => setActiveYear(year)}
@@ -512,7 +556,7 @@ export default function FlightPassport() {
               {activeYear === "All-Time" ? t("noFlightRecords") : lang === "zh" ? `${activeYear} 年沒有飛行記錄` : `No flights in ${activeYear}`}
             </h3>
             <p className="text-muted-foreground text-sm">{t("noFlightRecordsDesc")}</p>
-            <button onClick={() => setShowAdd(true)} className="text-sky-600 hover:underline mt-3 text-sm">+ {t("addFlightRecord")}</button>
+            <button onClick={() => { resetFlightForm(); setShowAdd(true); }} className="text-sky-600 hover:underline mt-3 text-sm">+ {t("addFlightRecord")}</button>
           </div>
         ) : (
           <>
@@ -558,6 +602,11 @@ export default function FlightPassport() {
                     <p className="text-sm sm:text-lg font-bold">{stats.airlines}</p>
                   </div>
                 </div>
+                {stats.incompleteMetrics > 0 && (
+                  <p className="mt-3 text-[10px] text-amber-100/90">
+                    {t("incompleteFlightMetrics", stats.incompleteMetrics)}
+                  </p>
+                )}
               </div>
 
               {/* World Map with flight routes and visited countries */}
@@ -581,10 +630,10 @@ export default function FlightPassport() {
               </div>
               <div className="space-y-2">
                 {stats.filtered.map(flight => {
-                  const dep = flight.departureAirport ?? "";
-                  const arr = flight.arrivalAirport ?? "";
-                  const dist = flight.distanceKm ?? estimateDistance(dep, arr);
-                  const hrs = flight.durationMinutes ? flight.durationMinutes / 60 : estimateFlightHours(dist);
+                  const dep = normalizeIataCode(flight.departureAirport);
+                  const arr = normalizeIataCode(flight.arrivalAirport);
+                  const dist = resolveFlightDistanceKm(flight, estimateDistance);
+                  const hrs = resolveFlightHours(flight, estimateDistance, estimateFlightHours);
                   return (
                     <div key={flight.id} className="bg-card rounded-xl border border-border p-4 group">
                       <div className="flex items-center gap-3">
@@ -604,9 +653,10 @@ export default function FlightPassport() {
                           <div className="flex items-center gap-2 text-xs text-muted-foreground flex-wrap">
                             {flight.flightNumber && <span className="font-medium">{flight.flightNumber}</span>}
                             {flight.airline && <span>{flight.airline}</span>}
-                            {flight.flightDate && <span>{new Date(flight.flightDate).toLocaleDateString()}</span>}
+                            {flight.flightDate && <span>{formatFlightDateInHongKong(flight.flightDate, lang)}</span>}
                             {dist > 0 && <span>{dist.toLocaleString()} km</span>}
                             {hrs > 0 && <span>{formatHours(hrs)}</span>}
+                            {(dist === 0 || hrs === 0) && <span className="text-amber-600">{t("autoEstimate")}: —</span>}
                             {flight.seatClass && (
                               <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
                                 flight.seatClass === "business" ? "bg-amber-100 text-amber-700" :
@@ -690,11 +740,11 @@ export default function FlightPassport() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-sm font-medium text-foreground">{t("distanceKm")}</label>
-                <Input className="mt-1.5" type="number" placeholder={t("autoEstimate")} value={form.distanceKm} onChange={e => setForm({ ...form, distanceKm: e.target.value })} />
+                <Input className="mt-1.5" type="number" min="1" step="1" placeholder={t("autoEstimate")} value={form.distanceKm} onChange={e => setForm({ ...form, distanceKm: e.target.value })} />
               </div>
               <div>
                 <label className="text-sm font-medium text-foreground">{t("durationMinutes")}</label>
-                <Input className="mt-1.5" type="number" placeholder="e.g. 165" value={form.durationMinutes} onChange={e => setForm({ ...form, durationMinutes: e.target.value })} />
+                <Input className="mt-1.5" type="number" min="1" step="1" placeholder="e.g. 165" value={form.durationMinutes} onChange={e => setForm({ ...form, durationMinutes: e.target.value })} />
               </div>
             </div>
             <div>
@@ -710,7 +760,7 @@ export default function FlightPassport() {
       </Dialog>
 
       {/* Add Flight Dialog */}
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
+      <Dialog open={showAdd} onOpenChange={(open) => { setShowAdd(open); if (!open) resetFlightForm(); }}>
         <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{t("addFlightRecord")}</DialogTitle>
@@ -772,6 +822,8 @@ export default function FlightPassport() {
                 <Input
                   className="mt-1.5"
                   type="number"
+                  min="1"
+                  step="1"
                   placeholder={t("autoEstimate")}
                   value={form.distanceKm}
                   onChange={e => setForm({ ...form, distanceKm: e.target.value })}
@@ -782,6 +834,8 @@ export default function FlightPassport() {
                 <Input
                   className="mt-1.5"
                   type="number"
+                  min="1"
+                  step="1"
                   placeholder="e.g. 165"
                   value={form.durationMinutes}
                   onChange={e => setForm({ ...form, durationMinutes: e.target.value })}

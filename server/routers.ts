@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
+import { getHongKongDateInput, getHongKongYear, normalizeIataCode } from "@shared/flightPassport";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
@@ -62,6 +64,7 @@ const AIRPORT_TO_COUNTRY: Record<string, { code: string; name: string }> = {
   "FUK": { code: "JP", name: "Japan" }, "OKA": { code: "JP", name: "Japan" },
   "NGO": { code: "JP", name: "Japan" }, "SDJ": { code: "JP", name: "Japan" },
   "GAJ": { code: "JP", name: "Japan" }, "SYO": { code: "JP", name: "Japan" },
+  "KMI": { code: "JP", name: "Japan" }, "TAK": { code: "JP", name: "Japan" },
   // Taiwan
   "TPE": { code: "TW", name: "Taiwan" }, "TSA": { code: "TW", name: "Taiwan" },
   "KHH": { code: "TW", name: "Taiwan" }, "RMQ": { code: "TW", name: "Taiwan" },
@@ -202,7 +205,7 @@ function extractCountriesFromFlights(
       if (!countryName || countryName === excludeCountry) continue;
       const iso = FLIGHT_COUNTRY_TO_ISO[countryName];
       if (!iso) continue;
-      const year = new Date(f.date).getFullYear();
+      const year = Number(f.date.slice(0, 4)) || 2000;
       const existing = seen.get(iso.code);
       // Keep the earliest year visited
       if (!existing || year < existing.year) {
@@ -211,6 +214,57 @@ function extractCountriesFromFlights(
     }
   }
   return Array.from(seen.values());
+}
+
+function parseHongKongFlightDate(value: string): Date {
+  const date = value.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Flight date must use YYYY-MM-DD" });
+  }
+  const parsed = new Date(`${date}T12:00:00+08:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new TRPCError({ code: "BAD_REQUEST", message: "Flight date is invalid" });
+  }
+  return parsed;
+}
+
+function resolveAirportCountry(airportCode: string | null | undefined, suppliedCountry?: string | null): string | null {
+  if (suppliedCountry?.trim()) return suppliedCountry.trim();
+  return AIRPORT_TO_COUNTRY[normalizeIataCode(airportCode)]?.name ?? null;
+}
+
+async function syncPassportCountriesFromFlights(userId: number) {
+  const existingFlights = await db.getPastFlights(userId);
+  const flightDataForSync: Array<{ depCountry: string; arrCountry: string; date: string }> = [];
+
+  for (const flight of existingFlights) {
+    const depCountry = resolveAirportCountry(flight.departureAirport, flight.departureCountry);
+    const arrCountry = resolveAirportCountry(flight.arrivalAirport, flight.arrivalCountry);
+    if (depCountry !== flight.departureCountry || arrCountry !== flight.arrivalCountry) {
+      await db.updatePastFlight(flight.id, userId, {
+        departureCountry: depCountry,
+        arrivalCountry: arrCountry,
+      });
+    }
+    flightDataForSync.push({
+      depCountry: depCountry ?? "",
+      arrCountry: arrCountry ?? "",
+      date: flight.flightDate ? getHongKongDateInput(flight.flightDate) : "2000-01-01",
+    });
+  }
+
+  const countries = extractCountriesFromFlights(flightDataForSync);
+  for (const country of countries) {
+    await db.upsertVisitedCountry({
+      userId,
+      countryCode: country.code,
+      countryName: country.name,
+      status: "visited",
+      visitedAt: parseHongKongFlightDate(`${country.year}-01-01`),
+    });
+  }
+
+  return { synced: countries.length, total: existingFlights.length };
 }
 
 function detectCountryFromDestination(destination: string): { code: string; name: string } | null {
@@ -1590,29 +1644,27 @@ const passportRouter = router({
       flightNumber: z.string().optional(),
       airline: z.string().optional(),
       airlineCode: z.string().optional(),
-      departureAirport: z.string().min(2),
+      departureAirport: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/),
       departureCity: z.string().optional(),
       departureCountry: z.string().optional(),
       departureLat: z.string().optional(),
       departureLng: z.string().optional(),
-      arrivalAirport: z.string().min(2),
+      arrivalAirport: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/),
       arrivalCity: z.string().optional(),
       arrivalCountry: z.string().optional(),
       arrivalLat: z.string().optional(),
       arrivalLng: z.string().optional(),
-      flightDate: z.string(),
-      durationMinutes: z.number().optional(),
-      distanceKm: z.number().optional(),
+      flightDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+      durationMinutes: z.number().int().positive().optional(),
+      distanceKm: z.number().int().positive().optional(),
       seatClass: z.enum(["economy", "premium_economy", "business", "first"]).default("economy"),
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const flightDate = new Date(input.flightDate);
+      const flightDate = parseHongKongFlightDate(input.flightDate);
       // Auto-derive country from airport code if not provided
-      const depCountry = input.departureCountry ||
-        AIRPORT_TO_COUNTRY[input.departureAirport.toUpperCase()]?.name || null;
-      const arrCountry = input.arrivalCountry ||
-        AIRPORT_TO_COUNTRY[input.arrivalAirport.toUpperCase()]?.name || null;
+      const depCountry = resolveAirportCountry(input.departureAirport, input.departureCountry);
+      const arrCountry = resolveAirportCountry(input.arrivalAirport, input.arrivalCountry);
       const flightId = await db.addPastFlight({
         userId: ctx.user.id,
         flightNumber: input.flightNumber ?? null,
@@ -1629,28 +1681,13 @@ const passportRouter = router({
         arrivalLat: input.arrivalLat ?? null,
         arrivalLng: input.arrivalLng ?? null,
         flightDate,
-        flightYear: flightDate.getFullYear(),
+        flightYear: getHongKongYear(flightDate) ?? Number(input.flightDate.slice(0, 4)),
         durationMinutes: input.durationMinutes ?? null,
         distanceKm: input.distanceKm ?? null,
         seatClass: input.seatClass,
         notes: input.notes ?? null,
       });
-      // Auto-sync: upsert visited countries derived from airport codes
-      for (const countryName of [arrCountry, depCountry]) {
-        if (!countryName || countryName === "Hong Kong") continue;
-        const iso = FLIGHT_COUNTRY_TO_ISO[countryName] ||
-          Object.values(AIRPORT_TO_COUNTRY).find(c => c.name === countryName);
-        if (iso) {
-          await db.upsertVisitedCountry({
-            userId: ctx.user.id,
-            countryCode: iso.code,
-            countryName: iso.name,
-            status: "visited",
-            visitedAt: flightDate,
-            notes: null,
-          });
-        }
-      }
+      await syncPassportCountriesFromFlights(ctx.user.id);
       return { flightId };
     }),
   updateFlight: protectedProcedure
@@ -1659,54 +1696,49 @@ const passportRouter = router({
       flightNumber: z.string().optional(),
       airline: z.string().optional(),
       airlineCode: z.string().optional(),
-      departureAirport: z.string().optional(),
+      departureAirport: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/).optional(),
       departureCity: z.string().optional(),
       departureCountry: z.string().optional(),
-      arrivalAirport: z.string().optional(),
+      arrivalAirport: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/).optional(),
       arrivalCity: z.string().optional(),
       arrivalCountry: z.string().optional(),
-      flightDate: z.string().optional(),
-      durationMinutes: z.number().optional(),
-      distanceKm: z.number().optional(),
+      flightDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+      durationMinutes: z.number().int().positive().optional(),
+      distanceKm: z.number().int().positive().optional(),
       seatClass: z.enum(["economy", "premium_economy", "business", "first"]).optional(),
       notes: z.string().optional(),
     }))
     .mutation(async ({ ctx, input }) => {
-      const { flightId, flightDate, ...rest } = input;
-      // Auto-derive country from airport code if not provided
-      const depCountry = input.departureCountry ||
-        (input.departureAirport ? AIRPORT_TO_COUNTRY[input.departureAirport.toUpperCase()]?.name : undefined) || undefined;
-      const arrCountry = input.arrivalCountry ||
-        (input.arrivalAirport ? AIRPORT_TO_COUNTRY[input.arrivalAirport.toUpperCase()]?.name : undefined) || undefined;
-      await db.updatePastFlight(flightId, {
+      const { flightId, flightDate, departureAirport, arrivalAirport, departureCountry, arrivalCountry, ...rest } = input;
+      const existing = await db.getPastFlightById(flightId, ctx.user.id);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Flight record not found" });
+
+      const nextDepartureAirport = departureAirport ?? existing.departureAirport;
+      const nextArrivalAirport = arrivalAirport ?? existing.arrivalAirport;
+      const depCountry = resolveAirportCountry(nextDepartureAirport, departureCountry);
+      const arrCountry = resolveAirportCountry(nextArrivalAirport, arrivalCountry);
+      const parsedFlightDate = flightDate ? parseHongKongFlightDate(flightDate) : null;
+
+      await db.updatePastFlight(flightId, ctx.user.id, {
         ...rest,
-        ...(depCountry ? { departureCountry: depCountry } : {}),
-        ...(arrCountry ? { arrivalCountry: arrCountry } : {}),
-        ...(flightDate ? { flightDate: new Date(flightDate), flightYear: new Date(flightDate).getFullYear() } : {}),
+        ...(departureAirport ? { departureAirport: nextDepartureAirport } : {}),
+        ...(arrivalAirport ? { arrivalAirport: nextArrivalAirport } : {}),
+        departureCountry: depCountry,
+        arrivalCountry: arrCountry,
+        ...(parsedFlightDate ? {
+          flightDate: parsedFlightDate,
+          flightYear: getHongKongYear(parsedFlightDate) ?? Number(flightDate!.slice(0, 4)),
+        } : {}),
       });
-      // Auto-sync: upsert visited countries derived from airport codes
-      const date = flightDate ? new Date(flightDate) : new Date();
-      for (const countryName of [arrCountry, depCountry]) {
-        if (!countryName || countryName === "Hong Kong") continue;
-        const iso = FLIGHT_COUNTRY_TO_ISO[countryName] ||
-          Object.values(AIRPORT_TO_COUNTRY).find(c => c.name === countryName);
-        if (iso) {
-          await db.upsertVisitedCountry({
-            userId: ctx.user.id,
-            countryCode: iso.code,
-            countryName: iso.name,
-            status: "visited",
-            visitedAt: date,
-            notes: null,
-          });
-        }
-      }
+      await syncPassportCountriesFromFlights(ctx.user.id);
       return { success: true };
     }),
   deleteFlight: protectedProcedure
     .input(z.object({ flightId: z.number() }))
     .mutation(async ({ ctx, input }) => {
-      await db.deletePastFlight(input.flightId);
+      const existing = await db.getPastFlightById(input.flightId, ctx.user.id);
+      if (!existing) throw new TRPCError({ code: "NOT_FOUND", message: "Flight record not found" });
+      await db.deletePastFlight(input.flightId, ctx.user.id);
       return { success: true };
     }),
 
@@ -1772,7 +1804,7 @@ const passportRouter = router({
 
     let count = 0;
     for (const f of flights) {
-      const flightDate = new Date(f.date);
+      const flightDate = parseHongKongFlightDate(f.date);
       await db.addPastFlight({
         userId: ctx.user.id,
         flightNumber: f.flightNumber,
@@ -1789,70 +1821,23 @@ const passportRouter = router({
         arrivalLat: null,
         arrivalLng: null,
         flightDate,
-        flightYear: flightDate.getFullYear(),
+        flightYear: getHongKongYear(flightDate) ?? Number(f.date.slice(0, 4)),
         durationMinutes: null,
         distanceKm: null,
         seatClass: f.seatClass,
         notes: null,
       });
-            count++;
+      count++;
     }
 
-    // Auto-sync visited countries from all imported flights
-    const flightDataForSync = flights.map(f => ({ depCountry: f.depCountry, arrCountry: f.arrCountry, date: f.date }));
-    const countries = extractCountriesFromFlights(flightDataForSync);
-    let countriesSynced = 0;
-    for (const c of countries) {
-      await db.upsertVisitedCountry({
-        userId: ctx.user.id,
-        countryCode: c.code,
-        countryName: c.name,
-        status: "visited",
-        visitedAt: new Date(`${c.year}-01-01`),
-      });
-      countriesSynced++;
-    }
+    const { synced: countriesSynced } = await syncPassportCountriesFromFlights(ctx.user.id);
 
     return { success: true, count, countriesSynced };
   }),
 
   syncCountriesFromFlights: protectedProcedure.mutation(async ({ ctx }) => {
-    // Re-derive visited countries from all existing past flights in the database
-    const existingFlights = await db.getPastFlights(ctx.user.id);
-    // First, backfill country fields in DB for flights that have airport codes but missing country
-    for (const f of existingFlights) {
-      const depCountry = f.departureCountry ||
-        (f.departureAirport ? AIRPORT_TO_COUNTRY[f.departureAirport.toUpperCase()]?.name : null) || null;
-      const arrCountry = f.arrivalCountry ||
-        (f.arrivalAirport ? AIRPORT_TO_COUNTRY[f.arrivalAirport.toUpperCase()]?.name : null) || null;
-      if ((!f.departureCountry && depCountry) || (!f.arrivalCountry && arrCountry)) {
-        await db.updatePastFlight(f.id, {
-          ...(depCountry && !f.departureCountry ? { departureCountry: depCountry } : {}),
-          ...(arrCountry && !f.arrivalCountry ? { arrivalCountry: arrCountry } : {}),
-        });
-      }
-    }
-    // Now derive countries using both stored country fields AND airport code fallback
-    const flightDataForSync = existingFlights.map(f => ({
-      depCountry: f.departureCountry ||
-        (f.departureAirport ? AIRPORT_TO_COUNTRY[f.departureAirport.toUpperCase()]?.name : "") || "",
-      arrCountry: f.arrivalCountry ||
-        (f.arrivalAirport ? AIRPORT_TO_COUNTRY[f.arrivalAirport.toUpperCase()]?.name : "") || "",
-      date: f.flightDate ? new Date(f.flightDate as Date).toISOString().split("T")[0] : "2000-01-01",
-    }));
-    const countries = extractCountriesFromFlights(flightDataForSync);
-    let synced = 0;
-    for (const c of countries) {
-      await db.upsertVisitedCountry({
-        userId: ctx.user.id,
-        countryCode: c.code,
-        countryName: c.name,
-        status: "visited",
-        visitedAt: new Date(`${c.year}-01-01`),
-      });
-      synced++;
-    }
-    return { success: true, synced, total: existingFlights.length };
+    const result = await syncPassportCountriesFromFlights(ctx.user.id);
+    return { success: true, ...result };
   }),
 });
 // ─── AI Router ────────────────────────────────────────────────────────────────
@@ -2039,40 +2024,8 @@ const syncRouter = router({
 
   // Sync 1: Sync visited countries from past flights (uses both country names AND airport IATA codes)
   syncCountriesFromFlights: protectedProcedure.mutation(async ({ ctx }) => {
-    const existingFlights = await db.getPastFlights(ctx.user.id);
-    const flightDataForSync = existingFlights.map(f => ({
-      depCountry: f.departureCountry ?? "",
-      arrCountry: f.arrivalCountry ?? "",
-      date: f.flightDate ? new Date(f.flightDate as Date).toISOString().split("T")[0] : "2000-01-01",
-    }));
-    const countries = extractCountriesFromFlights(flightDataForSync);
-    // Also derive from airport IATA codes as fallback
-    const seenCodes = new Set(countries.map(c => c.code));
-    for (const f of existingFlights) {
-      const flightDate = f.flightDate ? new Date(f.flightDate as Date).toISOString().split("T")[0] : "2000-01-01";
-      const year = new Date(flightDate).getFullYear();
-      for (const airport of [f.departureAirport, f.arrivalAirport]) {
-        if (!airport) continue;
-        const iata = airport.trim().toUpperCase().slice(0, 3);
-        const iso = AIRPORT_TO_COUNTRY[iata];
-        if (iso && iso.code !== "HK" && !seenCodes.has(iso.code)) {
-          countries.push({ code: iso.code, name: iso.name, year });
-          seenCodes.add(iso.code);
-        }
-      }
-    }
-    let synced = 0;
-    for (const c of countries) {
-      await db.upsertVisitedCountry({
-        userId: ctx.user.id,
-        countryCode: c.code,
-        countryName: c.name,
-        status: "visited",
-        visitedAt: new Date(`${c.year}-01-01`),
-      });
-      synced++;
-    }
-    return { success: true, synced, total: existingFlights.length, label: "飛行護照 → 旅遊足跡" };
+    const result = await syncPassportCountriesFromFlights(ctx.user.id);
+    return { success: true, ...result, label: "飛行護照 → 旅遊足跡" };
   }),
 
   // Sync 2: Sync visited countries from trip destinations
@@ -2150,25 +2103,8 @@ const syncRouter = router({
     const results: Array<{ label: string; synced: number; total: number }> = [];
 
     // Step 1: Sync countries from past flights
-    const existingFlights = await db.getPastFlights(userId);
-    const flightDataForSync = existingFlights.map(f => ({
-      depCountry: f.departureCountry ?? "",
-      arrCountry: f.arrivalCountry ?? "",
-      date: f.flightDate ? new Date(f.flightDate as Date).toISOString().split("T")[0] : "2000-01-01",
-    }));
-    const countriesFromFlights = extractCountriesFromFlights(flightDataForSync);
-    let flightCountriesSynced = 0;
-    for (const c of countriesFromFlights) {
-      await db.upsertVisitedCountry({
-        userId,
-        countryCode: c.code,
-        countryName: c.name,
-        status: "visited",
-        visitedAt: new Date(`${c.year}-01-01`),
-      });
-      flightCountriesSynced++;
-    }
-    results.push({ label: "飛行護照 → 旅遊足跡", synced: flightCountriesSynced, total: existingFlights.length });
+    const passportSync = await syncPassportCountriesFromFlights(userId);
+    results.push({ label: "飛行護照 → 旅遊足跡", synced: passportSync.synced, total: passportSync.total });
 
     // Step 2: Sync countries from trip destinations
     const userTrips = await db.getUserTrips(userId);
@@ -2201,7 +2137,7 @@ const syncRouter = router({
       totalHotels += hotels.length;
     }
     results.push({ label: "費用記錄驗證", synced: totalExpenses, total: totalExpenses });
-    results.push({ label: "航班記錄驗證", synced: totalTripFlights + existingFlights.length, total: totalTripFlights + existingFlights.length });
+    results.push({ label: "航班記錄驗證", synced: totalTripFlights + passportSync.total, total: totalTripFlights + passportSync.total });
     results.push({ label: "住宿記錄驗證", synced: totalHotels, total: totalHotels });
 
     const visitedCountriesList = await db.getVisitedCountries(userId);
