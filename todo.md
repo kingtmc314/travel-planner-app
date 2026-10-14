@@ -357,4 +357,4 @@
 - [x] Validate distance/duration defaults, manual overrides, duplicate route behaviour, and invalid IATA handling
 - [x] Verify all monetary/currency assumptions across Flight Passport, travel history sync, and related summaries — Flight Passport contains no money fields or conversion logic
 - [x] Fix confirmed logic defects and add regression coverage
-- [ ] Save checkpoint and push the verified release to GitHub
+- [x] Save checkpoint and push the verified release to GitHub
