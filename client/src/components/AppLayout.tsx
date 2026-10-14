@@ -7,7 +7,7 @@ import NotificationsPanel from "@/components/NotificationsPanel";
 import AppLogo from "@/components/AppLogo";
 import { useI18n } from "@/hooks/useI18n";
 
-const APP_VERSION = "v8.4";
+const APP_VERSION = "v8.4.1";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
