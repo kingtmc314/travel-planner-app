@@ -2,12 +2,16 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { COOKIE_NAME } from "@shared/const";
 import { getHongKongDateInput, getHongKongYear, normalizeIataCode } from "@shared/flightPassport";
+import { mergeCountryEvidence, tripCountryStatus, validCalendarDate } from "@shared/countrySync";
+import { normalizeStoredCalendarDate } from "@shared/legacyDateOnly";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
 import * as db from "./db";
 import { currencyRouter } from "./currency_router";
+import { createConnectedRouter } from "./connectedRouter";
+import { analyticsRouter } from "./analyticsRouter";
 import { makeRequest, GeocodingResult, PlacesSearchResult } from "./_core/map";
 import { storagePut } from "./storage";
 
@@ -201,6 +205,7 @@ function extractCountriesFromFlights(
 ): Array<{ code: string; name: string; year: number }> {
   const seen = new Map<string, { code: string; name: string; year: number }>();
   for (const f of flights) {
+    if (!validCalendarDate(f.date) || f.date > getHongKongDateInput()) continue;
     for (const countryName of [f.depCountry, f.arrCountry]) {
       if (!countryName || countryName === excludeCountry) continue;
       const iso = FLIGHT_COUNTRY_TO_ISO[countryName];
@@ -222,7 +227,7 @@ function parseHongKongFlightDate(value: string): Date {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Flight date must use YYYY-MM-DD" });
   }
   const parsed = new Date(`${date}T12:00:00+08:00`);
-  if (Number.isNaN(parsed.getTime())) {
+  if (!validCalendarDate(date)) {
     throw new TRPCError({ code: "BAD_REQUEST", message: "Flight date is invalid" });
   }
   return parsed;
@@ -235,6 +240,8 @@ function resolveAirportCountry(airportCode: string | null | undefined, suppliedC
 
 async function syncPassportCountriesFromFlights(userId: number) {
   const existingFlights = await db.getPastFlights(userId);
+  const existingCountries = await db.getVisitedCountries(userId);
+  const today = getHongKongDateInput();
   const flightDataForSync: Array<{ depCountry: string; arrCountry: string; date: string }> = [];
 
   for (const flight of existingFlights) {
@@ -246,21 +253,26 @@ async function syncPassportCountriesFromFlights(userId: number) {
         arrivalCountry: arrCountry,
       });
     }
+    const date = flight.flightDate ? getHongKongDateInput(flight.flightDate) : "";
+    if (!validCalendarDate(date) || date > today) continue;
     flightDataForSync.push({
       depCountry: depCountry ?? "",
       arrCountry: arrCountry ?? "",
-      date: flight.flightDate ? getHongKongDateInput(flight.flightDate) : "2000-01-01",
+      date,
     });
   }
 
   const countries = extractCountriesFromFlights(flightDataForSync);
   for (const country of countries) {
+    const previous = existingCountries.find(c => c.countryCode === country.code);
+    if (previous?.status === "visited") continue;
+    const earliestDate = flightDataForSync.filter(f => [f.depCountry, f.arrCountry].some(name => FLIGHT_COUNTRY_TO_ISO[name]?.code === country.code)).map(f => f.date).sort()[0];
+    const preserved = mergeCountryEvidence(previous, {
+      countryCode: country.code, countryName: country.name, status: "visited", visitedAt: parseHongKongFlightDate(earliestDate),
+    });
     await db.upsertVisitedCountry({
       userId,
-      countryCode: country.code,
-      countryName: country.name,
-      status: "visited",
-      visitedAt: parseHongKongFlightDate(`${country.year}-01-01`),
+      ...preserved,
     });
   }
 
@@ -270,11 +282,34 @@ async function syncPassportCountriesFromFlights(userId: number) {
 function detectCountryFromDestination(destination: string): { code: string; name: string } | null {
   const lower = destination.toLowerCase();
   for (const entry of COUNTRY_KEYWORDS) {
-    if (entry.keywords.some(kw => lower.includes(kw.toLowerCase()))) {
+    if (entry.keywords.some(kw => /^[a-z ]+$/i.test(kw) ? new RegExp(`(^|[^a-z])${kw.toLowerCase()}([^a-z]|$)`).test(lower) : lower.includes(kw.toLowerCase()))) {
       return { code: entry.code, name: entry.name };
     }
   }
   return null;
+}
+
+async function syncTripDestinationCountries(userId: number, userTrips: Array<{ destination: string; startDate: string; name: string }>) {
+  const countries = await db.getVisitedCountries(userId);
+  const today = getHongKongDateInput();
+  let synced = 0;
+  for (const trip of userTrips) {
+    const detected = detectCountryFromDestination(trip.destination);
+    if (!detected) continue;
+    if (countries.some(country => country.countryCode === detected.code && country.status === "visited")) { synced++; continue; }
+    const status = tripCountryStatus(trip.startDate, today);
+    const record = mergeCountryEvidence(countries.find(c => c.countryCode === detected.code), {
+      countryCode: detected.code, countryName: detected.name, status,
+      visitedAt: status === "visited" ? parseHongKongFlightDate(normalizeStoredCalendarDate(trip.startDate)!) : null,
+      notes: `Connected from trip: ${trip.name}`,
+    });
+    await db.upsertVisitedCountry({ userId, ...record });
+    const index = countries.findIndex(c => c.countryCode === record.countryCode);
+    if (index >= 0) countries[index] = { ...countries[index], ...record };
+    else countries.push({ ...record, userId, id: 0, createdAt: new Date(), visitedAt: record.visitedAt ?? null, notes: record.notes ?? null });
+    synced++;
+  }
+  return synced;
 }
 
 // ─── Trips Router ─────────────────────────────────────────────────────────────
@@ -327,17 +362,7 @@ const tripsRouter = router({
       }
       // Auto-import destination country to travel history
       try {
-        const detectedCountry = detectCountryFromDestination(input.destination);
-        if (detectedCountry) {
-          await db.upsertVisitedCountry({
-            userId: ctx.user.id,
-            countryCode: detectedCountry.code,
-            countryName: detectedCountry.name,
-            status: "visited",
-            visitedAt: new Date(input.startDate),
-            notes: `Auto-imported from trip: ${input.name}`,
-          });
-        }
+        await syncTripDestinationCountries(ctx.user.id, [input]);
       } catch (_) { /* ignore auto-import errors */ }
       return { tripId };
     }),
@@ -1100,7 +1125,7 @@ Respond ONLY with a JSON object matching the schema. No markdown, no explanation
 
   // ─── Split Summary ────────────────────────────────────────────────────────
   getSplitSummary: protectedProcedure
-    .input(z.object({ tripId: z.number(), baseCurrency: z.string().default("HKD") }))
+    .input(z.object({ tripId: z.number(), baseCurrency: z.string().trim().toUpperCase().regex(/^[A-Z]{3}$/).default("HKD") }))
     .query(async ({ ctx, input }) => {
       const membership = await db.getUserMembership(input.tripId, ctx.user.id);
       if (!membership) throw new Error("Access denied");
@@ -1110,23 +1135,18 @@ Respond ONLY with a JSON object matching the schema. No markdown, no explanation
         db.getTripMembers(input.tripId),
       ]);
 
-      // Fetch exchange rates for all unique currencies to baseCurrency
-      const currencies = Array.from(new Set(allExpenses.map(e => e.currency)));
-      const rateMap: Record<string, number> = { [input.baseCurrency]: 1 };
-      await Promise.all(
-        currencies
-          .filter(c => c !== input.baseCurrency)
-          .map(async (c) => {
-            try {
-              const res = await fetch(`https://api.frankfurter.dev/v2/latest?base=${input.baseCurrency}&symbols=${c}`);
-              if (res.ok) {
-                const data = await res.json() as { rates: Record<string, number> };
-                // rates[c] = how many c per 1 baseCurrency, so 1 c = 1/rates[c] baseCurrency
-                if (data.rates[c]) rateMap[c] = 1 / data.rates[c];
-              }
-            } catch { /* ignore, use 1:1 fallback */ }
-          })
+      // Date-only payment days are kept verbatim (no UTC date truncation).
+      // The signed expense schema may contain refunds; preserve their balances.
+      // No failed conversion is ever relabelled as the requested currency.
+      const { convertExpenseAmounts } = await import("./currency_router");
+      const conversions = await convertExpenseAmounts(
+        allExpenses.map(e => ({ id: e.id, amount: e.amount, currency: e.currency, date: e.date })),
+        input.baseCurrency,
+        { allowRefunds: true },
       );
+      const convertedById = new Map(conversions.map(result => [result.id, result]));
+      const fallbackExpenseCount = conversions.filter(result => result.isFallback).length;
+      const estimatedExpenseCount = conversions.filter(result => result.isEstimated).length;
 
       // Build member map: userId -> displayName
       const memberMap: Record<number, string> = {};
@@ -1145,7 +1165,9 @@ Respond ONLY with a JSON object matching the schema. No markdown, no explanation
         owedTotal[member.userId] = 0;
       }
       for (const expense of allExpenses) {
-        const amountInBase = parseFloat(expense.amount) * (rateMap[expense.currency] ?? 1);
+        const conversion = convertedById.get(expense.id);
+        if (!conversion) throw new Error(`Missing conversion for expense ${expense.id}`);
+        const amountInBase = conversion.convertedAmount;
         const payerId = expense.paidBy;
         // Determine who splits this expense
         let splitIds: number[];
@@ -1208,7 +1230,18 @@ Respond ONLY with a JSON object matching the schema. No markdown, no explanation
         baseCurrency: input.baseCurrency,
         members,
         settlements,
-        totalExpenses: Math.round(allExpenses.reduce((s, e) => s + parseFloat(e.amount) * (rateMap[e.currency] ?? 1), 0) * 100) / 100,
+        totalExpenses: Math.round(conversions.reduce((sum, result) => sum + result.convertedAmount, 0) * 100) / 100,
+        isFallback: fallbackExpenseCount > 0,
+        isEstimated: estimatedExpenseCount > 0,
+        fallbackExpenseCount,
+        estimatedExpenseCount,
+        rateMetadata: conversions.map(result => ({
+          expenseId: result.id,
+          rateDate: result.rateDate,
+          fromRateDate: result.fromRateDate,
+          toRateDate: result.toRateDate,
+          isFallback: result.isFallback,
+        })),
       };
     }),
   // Upload a receipt image for an expense (base64 encoded)
@@ -1975,8 +2008,9 @@ const aiRouter = router({
 const syncRouter = router({
   // Get a summary of all data counts for the current user
   getSummary: protectedProcedure.query(async ({ ctx }) => {
+    if (!await db.getDb()) throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Data overview is temporarily unavailable" });
     const userId = ctx.user.id;
-    const userTrips = await db.getUserTrips(userId);
+    const userTrips = Array.from(new Map((await db.getUserTrips(userId)).map(trip => [trip.id, trip])).values());
     const tripIds = userTrips.map(t => t.id);
 
     let totalExpenses = 0;
@@ -2031,32 +2065,20 @@ const syncRouter = router({
   // Sync 2: Sync visited countries from trip destinations
   syncCountriesFromTrips: protectedProcedure.mutation(async ({ ctx }) => {
     const userTrips = await db.getUserTrips(ctx.user.id);
-    let synced = 0;
-    for (const trip of userTrips) {
-      const detected = detectCountryFromDestination(trip.destination);
-      if (detected) {
-        await db.upsertVisitedCountry({
-          userId: ctx.user.id,
-          countryCode: detected.code,
-          countryName: detected.name,
-          status: "visited",
-          visitedAt: trip.startDate ? new Date(trip.startDate) : new Date(),
-        });
-        synced++;
-      }
-    }
+    const synced = await syncTripDestinationCountries(ctx.user.id, userTrips);
     return { success: true, synced, total: userTrips.length, label: "行程目的地 → 旅遊足跡" };
   }),
 
   // Sync 3: Verify data integrity - check for orphaned records and count totals
   syncDataIntegrity: protectedProcedure.mutation(async ({ ctx }) => {
+    if (!await db.getDb()) throw new TRPCError({ code: "SERVICE_UNAVAILABLE", message: "Data verification is temporarily unavailable" });
     const userId = ctx.user.id;
-    const userTrips = await db.getUserTrips(userId);
+    const userTrips = Array.from(new Map((await db.getUserTrips(userId)).map(trip => [trip.id, trip])).values());
     const validTripIds = new Set(userTrips.map(t => t.id));
 
     // Count all records across all trips
     let totalExpenses = 0, totalFlights = 0, totalHotels = 0, totalActivities = 0;
-    let expenseTotal = 0;
+    const currencyMinorTotals: Record<string, number> = {};
     for (const trip of userTrips) {
       const [exps, fls, hotels, days] = await Promise.all([
         db.getTripExpenses(trip.id),
@@ -2067,8 +2089,11 @@ const syncRouter = router({
       totalExpenses += exps.length;
       totalFlights += fls.length;
       totalHotels += hotels.length;
+      totalActivities += days.reduce((count, day) => count + day.activities.length, 0);
       for (const exp of exps) {
-        expenseTotal += Number(exp.amount) || 0;
+        const amount = Number(exp.amount);
+        const currency = exp.currency.trim().toUpperCase();
+        if (Number.isFinite(amount) && /^[A-Z]{3}$/.test(currency)) currencyMinorTotals[currency] = (currencyMinorTotals[currency] ?? 0) + Math.round(amount * 100);
       }
     }
 
@@ -2089,7 +2114,10 @@ const syncRouter = router({
       totalExpenses,
       totalFlights: totalFlights + pastFlights.length,
       totalHotels,
-      expenseTotal: Math.round(expenseTotal),
+      totalActivities,
+      expenseTotals: Object.fromEntries(Object.entries(currencyMinorTotals).map(([currency, minor]) => [currency, minor / 100])),
+      expenseCurrency: Object.keys(currencyMinorTotals).length === 1 ? Object.keys(currencyMinorTotals)[0] : null,
+      expenseTotal: Object.keys(currencyMinorTotals).length === 1 ? Object.values(currencyMinorTotals)[0] / 100 : null,
       visitedCountries: visitedCountries.length,
       issues,
       label: "資料完整性檢查",
@@ -2108,20 +2136,7 @@ const syncRouter = router({
 
     // Step 2: Sync countries from trip destinations
     const userTrips = await db.getUserTrips(userId);
-    let tripCountriesSynced = 0;
-    for (const trip of userTrips) {
-      const detected = detectCountryFromDestination(trip.destination);
-      if (detected) {
-        await db.upsertVisitedCountry({
-          userId,
-          countryCode: detected.code,
-          countryName: detected.name,
-          status: "visited",
-          visitedAt: trip.startDate ? new Date(trip.startDate) : new Date(),
-        });
-        tripCountriesSynced++;
-      }
-    }
+    const tripCountriesSynced = await syncTripDestinationCountries(userId, userTrips);
     results.push({ label: "行程目的地 → 旅遊足跡", synced: tripCountriesSynced, total: userTrips.length });
 
     // Step 3: Count all data
@@ -2171,6 +2186,8 @@ export const appRouter = router({
   ai: aiRouter,
   sync: syncRouter,
   currency: currencyRouter,
+  connected: createConnectedRouter({ resolveAirportCountry, syncPassportCountriesFromFlights }),
+  analytics: analyticsRouter,
 });
 
 export type AppRouter = typeof appRouter;

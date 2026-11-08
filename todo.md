@@ -366,3 +366,17 @@
 - [x] Reuse trip context in the AI assistant and shared trip metadata flows
 - [ ] Extend derived defaults and cross-feature data reuse to expenses, itinerary, map, members, travel history, passport, and sync flows
 - [ ] Complete a full cross-page visual review, checkpoint, and GitHub deployment
+
+
+## v9.0 Connected Travel & Insights (2026-11-08 Hong Kong)
+- [x] Refresh the global visual system, responsive navigation and version labels
+- [x] Replace placeholder dashboard statistics with real user-scoped analytics and add an analysis center
+- [x] Add explicit, source-labelled, duplicate-safe flight/itinerary/expense/map reuse actions with permission checks
+- [x] Upgrade expense, itinerary, map, logistics, passport, history and sync interfaces while preserving existing features
+- [x] Validate Hong Kong dates, multi-currency totals, idempotent imports, empty/error states and authorization in regression tests
+- [ ] Complete mobile/desktop visual verification, production build, checkpoint and immediate GitHub main push
+- Validation: TypeScript passes; 19 Vitest files / 289 tests pass; production build passes (existing large-bundle advisory).
+- Read-only Playwright: 10 primary routes at 390px and 1440px pass; no document overflow or application JavaScript errors; preview interactions and language changes submit no mutations.
+- Existing travel collection hashes unchanged: 4 trips, 384 expense rows, 46 passport flights and all original itinerary/activity, trip-flight, stay, pin and country records retained. Member counts unchanged; joined-user login timestamps excluded.
+- No SQL migrations, schema changes or cleanup/deletion commands. Known legacy SQL calendar strings normalized on read only, not rewritten.
+- Imports add missing entries and skip existing linked records. No automatic shared-ledger imports or two-way overwrite. Cross-instance simultaneous deduplication remains a limitation of legacy tables without uniqueness constraints.

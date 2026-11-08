@@ -2,17 +2,69 @@ import { trpc } from "@/lib/trpc";
 import AppLayout from "@/components/AppLayout";
 import { useI18n } from "@/hooks/useI18n";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Globe, Plus, Trash2, Loader2, MapPin, CheckCircle, Heart, Calendar, Edit2, Search, X } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Globe,
+  Plus,
+  Trash2,
+  Loader2,
+  MapPin,
+  CheckCircle,
+  Heart,
+  Calendar,
+  Edit2,
+  Search,
+  X,
+  ArrowUpRight,
+  Compass,
+  Link2,
+  RotateCcw,
+} from "lucide-react";
 import WorldMap from "@/components/WorldMap";
 import { MapView, type LeafletMap } from "@/components/Map";
 import L from "leaflet";
 import { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import { toast } from "sonner";
+import { Link } from "wouter";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
+import {
+  filterHistoryCountries,
+  historyDateInput,
+  historyVisitYear,
+  resolveHistoryVisitDate,
+  summarizeHistory,
+  uniqueHistoryCountries,
+  type HistoryStatus,
+} from "@/lib/historyInsights";
 
 // Comprehensive list of countries with ISO codes and regions
 const COUNTRIES = [
@@ -192,178 +244,432 @@ const COUNTRIES = [
 ];
 
 const STATUS_CONFIG_BASE = {
-  visited: { color: "bg-emerald-500", mapColor: "#10b981", icon: CheckCircle },
+  visited: { color: "bg-primary", mapColor: "#22c55e", icon: CheckCircle },
   planned: { color: "bg-blue-500", mapColor: "#3b82f6", icon: Calendar },
   wishlist: { color: "bg-amber-500", mapColor: "#f59e0b", icon: Heart },
 };
 
-const REGIONS_BASE = ["Asia", "Europe", "Africa", "North America", "South America", "Oceania"];
+const REGIONS_BASE = [
+  "Asia",
+  "Europe",
+  "Africa",
+  "North America",
+  "South America",
+  "Oceania",
+];
 
-const TOTAL_COUNTRIES = 195;
+const REGION_ZH: Record<string, string> = {
+  Asia: "亞洲",
+  Europe: "歐洲",
+  Africa: "非洲",
+  "North America": "北美洲",
+  "South America": "南美洲",
+  Oceania: "大洋洲",
+};
 
 // Country code → approximate center coordinates for map zoom
-const COUNTRY_CENTERS: Record<string, { lat: number; lng: number; zoom: number }> = {
-  JP: { lat: 36.2, lng: 138.3, zoom: 5 }, TW: { lat: 23.7, lng: 121.0, zoom: 7 },
-  KR: { lat: 36.5, lng: 127.8, zoom: 6 }, TH: { lat: 13.0, lng: 101.0, zoom: 6 },
-  SG: { lat: 1.35, lng: 103.82, zoom: 11 }, MY: { lat: 4.2, lng: 108.0, zoom: 5 },
-  ID: { lat: -2.5, lng: 118.0, zoom: 4 }, VN: { lat: 16.0, lng: 107.8, zoom: 5 },
-  PH: { lat: 12.9, lng: 122.0, zoom: 5 }, KH: { lat: 12.6, lng: 104.9, zoom: 7 },
-  CN: { lat: 35.9, lng: 104.2, zoom: 4 }, EG: { lat: 26.8, lng: 30.8, zoom: 6 },
-  GB: { lat: 55.4, lng: -3.4, zoom: 5 }, FR: { lat: 46.2, lng: 2.2, zoom: 5 },
-  DE: { lat: 51.2, lng: 10.5, zoom: 5 }, IT: { lat: 41.9, lng: 12.6, zoom: 5 },
-  ES: { lat: 40.5, lng: -3.7, zoom: 5 }, US: { lat: 37.1, lng: -95.7, zoom: 4 },
-  CA: { lat: 56.1, lng: -106.3, zoom: 3 }, AU: { lat: -25.3, lng: 133.8, zoom: 4 },
-  NZ: { lat: -41.3, lng: 172.5, zoom: 5 }, AE: { lat: 24.0, lng: 54.0, zoom: 7 },
-  GR: { lat: 39.1, lng: 22.0, zoom: 6 }, PT: { lat: 39.6, lng: -8.0, zoom: 6 },
-  NL: { lat: 52.3, lng: 5.3, zoom: 7 }, CH: { lat: 46.8, lng: 8.2, zoom: 7 },
-  AT: { lat: 47.5, lng: 14.6, zoom: 7 }, CZ: { lat: 49.8, lng: 15.5, zoom: 7 },
-  HU: { lat: 47.2, lng: 19.5, zoom: 7 }, PL: { lat: 51.9, lng: 19.1, zoom: 6 },
-  IN: { lat: 20.6, lng: 78.9, zoom: 4 }, MV: { lat: 3.2, lng: 73.2, zoom: 7 },
-  LK: { lat: 7.9, lng: 80.8, zoom: 7 }, NP: { lat: 28.4, lng: 84.1, zoom: 7 },
-  MA: { lat: 31.8, lng: -7.1, zoom: 6 }, TR: { lat: 39.1, lng: 35.2, zoom: 5 },
-  RU: { lat: 61.5, lng: 105.3, zoom: 3 }, BR: { lat: -14.2, lng: -51.9, zoom: 4 },
-  AR: { lat: -38.4, lng: -63.6, zoom: 4 }, MX: { lat: 23.6, lng: -102.6, zoom: 5 },
-  HK: { lat: 22.35, lng: 114.13, zoom: 10 }, MO: { lat: 22.2, lng: 113.55, zoom: 12 },
+const COUNTRY_CENTERS: Record<
+  string,
+  { lat: number; lng: number; zoom: number }
+> = {
+  JP: { lat: 36.2, lng: 138.3, zoom: 5 },
+  TW: { lat: 23.7, lng: 121.0, zoom: 7 },
+  KR: { lat: 36.5, lng: 127.8, zoom: 6 },
+  TH: { lat: 13.0, lng: 101.0, zoom: 6 },
+  SG: { lat: 1.35, lng: 103.82, zoom: 11 },
+  MY: { lat: 4.2, lng: 108.0, zoom: 5 },
+  ID: { lat: -2.5, lng: 118.0, zoom: 4 },
+  VN: { lat: 16.0, lng: 107.8, zoom: 5 },
+  PH: { lat: 12.9, lng: 122.0, zoom: 5 },
+  KH: { lat: 12.6, lng: 104.9, zoom: 7 },
+  CN: { lat: 35.9, lng: 104.2, zoom: 4 },
+  EG: { lat: 26.8, lng: 30.8, zoom: 6 },
+  GB: { lat: 55.4, lng: -3.4, zoom: 5 },
+  FR: { lat: 46.2, lng: 2.2, zoom: 5 },
+  DE: { lat: 51.2, lng: 10.5, zoom: 5 },
+  IT: { lat: 41.9, lng: 12.6, zoom: 5 },
+  ES: { lat: 40.5, lng: -3.7, zoom: 5 },
+  US: { lat: 37.1, lng: -95.7, zoom: 4 },
+  CA: { lat: 56.1, lng: -106.3, zoom: 3 },
+  AU: { lat: -25.3, lng: 133.8, zoom: 4 },
+  NZ: { lat: -41.3, lng: 172.5, zoom: 5 },
+  AE: { lat: 24.0, lng: 54.0, zoom: 7 },
+  GR: { lat: 39.1, lng: 22.0, zoom: 6 },
+  PT: { lat: 39.6, lng: -8.0, zoom: 6 },
+  NL: { lat: 52.3, lng: 5.3, zoom: 7 },
+  CH: { lat: 46.8, lng: 8.2, zoom: 7 },
+  AT: { lat: 47.5, lng: 14.6, zoom: 7 },
+  CZ: { lat: 49.8, lng: 15.5, zoom: 7 },
+  HU: { lat: 47.2, lng: 19.5, zoom: 7 },
+  PL: { lat: 51.9, lng: 19.1, zoom: 6 },
+  IN: { lat: 20.6, lng: 78.9, zoom: 4 },
+  MV: { lat: 3.2, lng: 73.2, zoom: 7 },
+  LK: { lat: 7.9, lng: 80.8, zoom: 7 },
+  NP: { lat: 28.4, lng: 84.1, zoom: 7 },
+  MA: { lat: 31.8, lng: -7.1, zoom: 6 },
+  TR: { lat: 39.1, lng: 35.2, zoom: 5 },
+  RU: { lat: 61.5, lng: 105.3, zoom: 3 },
+  BR: { lat: -14.2, lng: -51.9, zoom: 4 },
+  AR: { lat: -38.4, lng: -63.6, zoom: 4 },
+  MX: { lat: 23.6, lng: -102.6, zoom: 5 },
+  HK: { lat: 22.35, lng: 114.13, zoom: 10 },
+  MO: { lat: 22.2, lng: 113.55, zoom: 12 },
 };
 
 export default function TravelHistory() {
   const { t, lang } = useI18n();
+  const utils = trpc.useUtils();
+  const {
+    data: countries,
+    refetch,
+    isLoading,
+    isError,
+    error,
+  } = trpc.travelHistory.getCountries.useQuery();
+  type CountryRecord = NonNullable<typeof countries>[number];
+  const countryNames = useMemo(
+    () =>
+      new Intl.DisplayNames([lang === "zh" ? "zh-HK" : "en-HK"], {
+        type: "region",
+      }),
+    [lang]
+  );
+  const countryName = useCallback(
+    (code: string, fallback: string) => {
+      if (!COUNTRIES.some(country => country.code === code.toUpperCase()))
+        return fallback;
+      try {
+        return countryNames.of(code.toUpperCase()) || fallback;
+      } catch {
+        return fallback;
+      }
+    },
+    [countryNames]
+  );
+  const regionName = (region: string) =>
+    lang === "zh" ? (REGION_ZH[region] ?? region) : region;
   const STATUS_CONFIG = {
     visited: { ...STATUS_CONFIG_BASE.visited, label: t("statusVisited") },
     planned: { ...STATUS_CONFIG_BASE.planned, label: t("statusPlanned") },
     wishlist: { ...STATUS_CONFIG_BASE.wishlist, label: t("statusWishlist") },
   };
-  const REGIONS = [t("regionAll"), ...REGIONS_BASE];
-  const { data: countries, refetch, isLoading } = trpc.travelHistory.getCountries.useQuery();
-  const upsertCountry = trpc.travelHistory.upsertCountry.useMutation({ onSuccess: () => { refetch(); setShowAdd(false); toast.success(t("added")); } });
-  const removeCountry = trpc.travelHistory.removeCountry.useMutation({ onSuccess: () => { refetch(); toast.success(t("removed")); } });
-  const updateStatus = trpc.travelHistory.upsertCountry.useMutation({ onSuccess: () => { refetch(); toast.success(t("updated")); } });
 
   const [showAdd, setShowAdd] = useState(false);
-  const [editingCountry, setEditingCountry] = useState<any | null>(null);
-  const [editForm, setEditForm] = useState({ status: "visited" as "visited" | "planned" | "wishlist", visitedYear: "", notes: "" });
+  const [editingCountry, setEditingCountry] = useState<CountryRecord | null>(
+    null
+  );
+  const [editForm, setEditForm] = useState({
+    status: "visited" as HistoryStatus,
+    visitedYear: "",
+    visitedDate: "",
+    notes: "",
+  });
   const [search, setSearch] = useState("");
-  const [filterStatus, setFilterStatus] = useState<"all" | "visited" | "planned" | "wishlist">("all");
+  const [filterStatus, setFilterStatus] = useState<HistoryStatus | "all">(
+    "all"
+  );
   const [filterRegion, setFilterRegion] = useState("__all__");
-  const [addForm, setAddForm] = useState({ countryCode: "", countryName: "", status: "visited" as "visited" | "planned" | "wishlist", visitedYear: "" });
+  const [addForm, setAddForm] = useState({
+    countryCode: "",
+    countryName: "",
+    status: "visited" as HistoryStatus,
+    visitedYear: "",
+    visitedDate: "",
+  });
   const [activeTab, setActiveTab] = useState<"map" | "list">("map");
 
+  const mutationError = (err: { message: string }) =>
+    toast.error(
+      `${lang === "zh" ? "未能儲存變更" : "Could not save changes"}: ${err.message}`
+    );
+  const upsertCountry = trpc.travelHistory.upsertCountry.useMutation({
+    onSuccess: async () => {
+      setShowAdd(false);
+      setAddForm({
+        countryCode: "",
+        countryName: "",
+        status: "visited",
+        visitedYear: "",
+        visitedDate: "",
+      });
+      toast.success(t("added"));
+      await utils.invalidate();
+    },
+    onError: mutationError,
+  });
+  const removeCountry = trpc.travelHistory.removeCountry.useMutation({
+    onSuccess: async () => {
+      toast.success(t("removed"));
+      await utils.invalidate();
+    },
+    onError: mutationError,
+  });
+  const updateStatus = trpc.travelHistory.upsertCountry.useMutation({
+    onSuccess: async () => {
+      setEditingCountry(null);
+      toast.success(t("updated"));
+      await utils.invalidate();
+    },
+    onError: mutationError,
+  });
+  const mutationPending =
+    upsertCountry.isPending ||
+    removeCountry.isPending ||
+    updateStatus.isPending;
+  const dataReady = countries !== undefined;
+  const disableMutation = mutationPending || !dataReady;
+
   // Country detail sheet state
-  const [detailCountry, setDetailCountry] = useState<{ code: string; name: string } | null>(null);
+  const [detailCountry, setDetailCountry] = useState<{
+    code: string;
+    name: string;
+  } | null>(null);
   const [placeSearch, setPlaceSearch] = useState("");
-  const [placeSuggestions, setPlaceSuggestions] = useState<Array<{ placeId: string; description: string; lat?: number; lng?: number }>>([]);
-  const [savedPlaces, setSavedPlaces] = useState<Array<{ name: string; lat: number; lng: number }>>([]);
+  const [placeSuggestions, setPlaceSuggestions] = useState<
+    Array<{ placeId: string; description: string; lat?: number; lng?: number }>
+  >([]);
+  const [placeSearchPending, setPlaceSearchPending] = useState(false);
+  const [placeSearchError, setPlaceSearchError] = useState(false);
+  const [savedPlaces, setSavedPlaces] = useState<
+    Array<{ name: string; lat: number; lng: number }>
+  >([]);
   const detailMapRef = useRef<LeafletMap | null>(null);
   const markersRef = useRef<L.Marker[]>([]);
   const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const uniqueCountries = useMemo(
+    () => uniqueHistoryCountries(countries ?? []),
+    [countries]
+  );
+  const insights = useMemo(
+    () => summarizeHistory(uniqueCountries, COUNTRIES),
+    [uniqueCountries]
+  );
   const countryMap = useMemo(() => {
-    const m: Record<string, { status: string; visitedYear?: number | null }> = {};
-    countries?.forEach(c => { m[c.countryCode] = { status: c.status, visitedYear: c.visitedAt ? new Date(c.visitedAt).getFullYear() : null }; });
+    const m: Record<string, { status: string; visitedYear?: number | null }> =
+      {};
+    uniqueCountries.forEach(c => {
+      m[c.countryCode.toUpperCase()] = {
+        status: c.status,
+        visitedYear: historyVisitYear(c.visitedAt),
+      };
+    });
     return m;
-  }, [countries]);
-
-  const visitedCount = countries?.filter(c => c.status === "visited").length ?? 0;
-  const plannedCount = countries?.filter(c => c.status === "planned").length ?? 0;
-  const wishlistCount = countries?.filter(c => c.status === "wishlist").length ?? 0;
-  const visitedPct = TOTAL_COUNTRIES > 0 ? ((visitedCount / TOTAL_COUNTRIES) * 100).toFixed(1) : "0.0";
+  }, [uniqueCountries]);
 
   const filteredCountries = useMemo(() => {
-    return (countries ?? []).filter(c => {
-      const matchStatus = filterStatus === "all" || c.status === filterStatus;
-      const country = COUNTRIES.find(x => x.code === c.countryCode);
-      const matchRegion = filterRegion === "__all__" || country?.region === filterRegion;
-      const matchSearch = !search || c.countryName.toLowerCase().includes(search.toLowerCase());
-      return matchStatus && matchRegion && matchSearch;
-    });
-  }, [countries, filterStatus, filterRegion, search]);
+    return filterHistoryCountries(
+      uniqueCountries,
+      COUNTRIES,
+      { search, status: filterStatus, region: filterRegion },
+      code => countryName(code, code)
+    );
+  }, [uniqueCountries, filterStatus, filterRegion, search, countryName]);
 
   const availableToAdd = COUNTRIES.filter(c => !countryMap[c.code]);
+  const hasFilters =
+    Boolean(search.trim()) ||
+    filterStatus !== "all" ||
+    filterRegion !== "__all__";
+  const resetFilters = () => {
+    setSearch("");
+    setFilterStatus("all");
+    setFilterRegion("__all__");
+  };
+  const openAddCountry = () => {
+    setAddForm({
+      countryCode: "",
+      countryName: "",
+      status: "visited",
+      visitedYear: "",
+      visitedDate: "",
+    });
+    setShowAdd(true);
+  };
 
-  const openEditCountry = (c: any) => {
+  const openEditCountry = (c: CountryRecord) => {
     setEditingCountry(c);
     setEditForm({
       status: c.status,
-      visitedYear: c.visitedAt ? String(new Date(c.visitedAt as Date).getFullYear()) : "",
+      visitedYear: "",
+      visitedDate: historyDateInput(c.visitedAt),
       notes: c.notes ?? "",
     });
   };
 
   const handleEditCountry = () => {
-    if (!editingCountry) return;
+    if (!editingCountry || disableMutation) return;
+    let visitedAt: string | undefined;
+    try {
+      visitedAt = resolveHistoryVisitDate(
+        editForm.visitedDate,
+        editForm.visitedYear
+      );
+    } catch {
+      toast.error(
+        lang === "zh"
+          ? "請輸入有效日期或四位數年份"
+          : "Enter a valid date or a four-digit year"
+      );
+      return;
+    }
     updateStatus.mutate({
       countryCode: editingCountry.countryCode,
       countryName: editingCountry.countryName,
       status: editForm.status,
-      visitedAt: editForm.visitedYear ? `${editForm.visitedYear}-01-01` : undefined,
+      visitedAt,
       notes: editForm.notes || undefined,
-    }, { onSuccess: () => { setEditingCountry(null); refetch(); toast.success(t("updated")); } });
+    });
   };
 
   const handleAdd = () => {
-    if (!addForm.countryCode) { toast.error(t("selectCountryRequired")); return; }
+    if (disableMutation) return;
+    if (!addForm.countryCode) {
+      toast.error(t("selectCountryRequired"));
+      return;
+    }
     const country = COUNTRIES.find(c => c.code === addForm.countryCode);
+    let visitedAt: string | undefined;
+    try {
+      visitedAt =
+        addForm.status === "visited"
+          ? resolveHistoryVisitDate(addForm.visitedDate, addForm.visitedYear)
+          : undefined;
+    } catch {
+      toast.error(
+        lang === "zh"
+          ? "請輸入有效日期或四位數年份"
+          : "Enter a valid date or a four-digit year"
+      );
+      return;
+    }
     upsertCountry.mutate({
       countryCode: addForm.countryCode,
-      countryName: country?.name ?? addForm.countryCode,
+      countryName: country?.name ?? addForm.countryName ?? addForm.countryCode,
       status: addForm.status,
-      visitedAt: addForm.visitedYear ? `${addForm.visitedYear}-01-01` : undefined,
+      visitedAt,
     });
   };
 
   // Open country detail sheet
   const openDetail = (code: string, name: string) => {
+    markersRef.current.forEach(marker => marker.remove());
+    markersRef.current = [];
+    detailMapRef.current = null;
     setDetailCountry({ code, name });
     setPlaceSearch("");
     setPlaceSuggestions([]);
+    setPlaceSearchError(false);
     setSavedPlaces([]);
   };
 
   // Initialize detail map and zoom to country
-  const handleDetailMapReady = useCallback((map: LeafletMap) => {
-    detailMapRef.current = map;
-    if (detailCountry) {
-      const center = COUNTRY_CENTERS[detailCountry.code];
-      if (center) {
-        map.setView([center.lat, center.lng], center.zoom);
+  const handleDetailMapReady = useCallback(
+    (map: LeafletMap) => {
+      detailMapRef.current = map;
+      if (detailCountry) {
+        const center = COUNTRY_CENTERS[detailCountry.code];
+        if (center) {
+          map.setView([center.lat, center.lng], center.zoom);
+        }
       }
-    }
-  }, [detailCountry]);
+    },
+    [detailCountry]
+  );
 
   // Place search using Nominatim (OpenStreetMap)
   useEffect(() => {
-    if (!placeSearch.trim()) {
+    setPlaceSearchError(false);
+    if (!placeSearch.trim() || !detailCountry) {
       setPlaceSuggestions([]);
+      setPlaceSearchPending(false);
       return;
     }
-    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    const controller = new AbortController();
+    let active = true;
+    setPlaceSearchPending(true);
     searchTimeoutRef.current = setTimeout(() => {
-      const countryCode = detailCountry?.code?.toLowerCase() ?? "";
-      fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(placeSearch)}&countrycodes=${countryCode}&format=json&limit=5&accept-language=zh-TW,en`)
-        .then(r => r.json())
-        .then((results: any[]) => {
-          setPlaceSuggestions(results.map((r: any) => ({ placeId: String(r.place_id), description: r.display_name, lat: parseFloat(r.lat), lng: parseFloat(r.lon) })));
+      const countryCode = detailCountry.code.toLowerCase();
+      const language = lang === "zh" ? "zh-HK,zh-TW,en" : "en,zh-HK";
+      fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(placeSearch)}&countrycodes=${countryCode}&format=json&limit=5&accept-language=${language}`,
+        { signal: controller.signal }
+      )
+        .then(r => {
+          if (!r.ok) throw new Error("Place search unavailable");
+          return r.json();
         })
-        .catch(() => setPlaceSuggestions([]));
+        .then(
+          (
+            results: Array<{
+              place_id: number;
+              display_name: string;
+              lat: string;
+              lon: string;
+            }>
+          ) => {
+            if (!active) return;
+            setPlaceSuggestions(
+              results.map(r => ({
+                placeId: String(r.place_id),
+                description: r.display_name,
+                lat: parseFloat(r.lat),
+                lng: parseFloat(r.lon),
+              }))
+            );
+          }
+        )
+        .catch(() => {
+          if (active) {
+            setPlaceSuggestions([]);
+            setPlaceSearchError(true);
+          }
+        })
+        .finally(() => {
+          if (active) setPlaceSearchPending(false);
+        });
     }, 400);
-  }, [placeSearch, detailCountry]);
+    return () => {
+      active = false;
+      controller.abort();
+      if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    };
+  }, [placeSearch, detailCountry, lang]);
 
   // Select a place from suggestions → add Leaflet marker
-  const selectPlace = useCallback((suggestion: { placeId: string; description: string; lat?: number; lng?: number }) => {
-    setPlaceSearch("");
-    setPlaceSuggestions([]);
-    if (!detailMapRef.current || suggestion.lat === undefined || suggestion.lng === undefined) return;
-    const lat = suggestion.lat;
-    const lng = suggestion.lng;
-    detailMapRef.current.panTo([lat, lng]);
-    detailMapRef.current.setZoom(14);
-    const marker = L.marker([lat, lng])
-      .addTo(detailMapRef.current)
-      .bindPopup(suggestion.description)
-      .openPopup();
-    markersRef.current.push(marker);
-    setSavedPlaces(prev => [...prev, { name: suggestion.description, lat, lng }]);
-  }, []);
+  const selectPlace = useCallback(
+    (suggestion: {
+      placeId: string;
+      description: string;
+      lat?: number;
+      lng?: number;
+    }) => {
+      setPlaceSearch("");
+      setPlaceSuggestions([]);
+      if (
+        !detailMapRef.current ||
+        suggestion.lat === undefined ||
+        suggestion.lng === undefined ||
+        !Number.isFinite(suggestion.lat) ||
+        !Number.isFinite(suggestion.lng)
+      )
+        return;
+      const lat = suggestion.lat;
+      const lng = suggestion.lng;
+      detailMapRef.current.panTo([lat, lng]);
+      detailMapRef.current.setZoom(14);
+      const marker = L.marker([lat, lng])
+        .addTo(detailMapRef.current)
+        .bindPopup(suggestion.description)
+        .openPopup();
+      markersRef.current.push(marker);
+      setSavedPlaces(prev => [
+        ...prev,
+        { name: suggestion.description, lat, lng },
+      ]);
+    },
+    []
+  );
 
   // Clear markers when detail sheet closes
   const closeDetail = () => {
@@ -374,332 +680,1066 @@ export default function TravelHistory() {
 
   return (
     <AppLayout>
-    <div className="min-h-screen bg-background">
-      {/* Header */}
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur-sm border-b border-border px-4 sm:px-6 py-3">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shrink-0">
-              <Globe className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="font-bold text-foreground text-lg leading-tight">{t("travelHistoryTitle")}</h1>
-              <p className="text-muted-foreground text-xs">{visitedCount} / {TOTAL_COUNTRIES} {t("countriesCount")} · {visitedPct}%</p>
-            </div>
-          </div>
-          <Button onClick={() => setShowAdd(true)} size="sm" className="gap-1.5 bg-indigo-600 hover:bg-indigo-700 shrink-0">
-            <Plus className="w-4 h-4" />
-            <span className="hidden sm:inline">{t("add")}</span>
-          </Button>
-        </div>
-      </div>
-
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4 pb-24 sm:pb-6">
-        {/* Stats Cards */}
-        <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4">
-          {(Object.entries(STATUS_CONFIG) as [string, typeof STATUS_CONFIG["visited"]][]).map(([key, cfg]) => {
-            const count = key === "visited" ? visitedCount : key === "planned" ? plannedCount : wishlistCount;
-            const Icon = cfg.icon;
-            const pct = TOTAL_COUNTRIES > 0 ? ((count / TOTAL_COUNTRIES) * 100).toFixed(0) : "0";
-            return (
-              <button
-                key={key}
-                onClick={() => setFilterStatus(filterStatus === key ? "all" : key as any)}
-                className={`bg-card rounded-2xl border p-3 sm:p-4 text-left transition-all ${filterStatus === key ? "border-indigo-300 shadow-md" : "border-border hover:border-indigo-200"}`}
-              >
-                <div className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full ${cfg.color} flex items-center justify-center mb-1.5`}>
-                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-white" />
-                </div>
-                <p className="text-xl sm:text-2xl font-bold text-foreground">{count}</p>
-                <p className="text-xs text-muted-foreground leading-tight">{cfg.label}</p>
-                {key === "visited" && <p className="text-xs text-indigo-500 font-medium mt-0.5">{pct}%</p>}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={v => setActiveTab(v as any)} className="mb-4">
-          <TabsList>
-            <TabsTrigger value="map" className="gap-2"><Globe className="w-4 h-4" />{t("mapTab")}</TabsTrigger>
-            <TabsTrigger value="list" className="gap-2"><MapPin className="w-4 h-4" />{t("listTab")}</TabsTrigger>
-          </TabsList>
-        </Tabs>
-
-        {activeTab === "map" ? (
-          /* World Map View */
-          <div className="bg-card rounded-2xl border border-border overflow-hidden">
-            <div className="p-3 sm:p-4 border-b border-border flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-medium text-foreground">{t("worldMap")}</p>
-              <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-muted-foreground">
-                {(Object.entries(STATUS_CONFIG) as [string, typeof STATUS_CONFIG["visited"]][]).map(([key, cfg]) => (
-                  <div key={key} className="flex items-center gap-1">
-                    <div className="w-3 h-3 rounded-full" style={{ backgroundColor: cfg.mapColor }} />
-                    <span>{cfg.label}</span>
+      <div className="min-h-screen bg-background text-foreground">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-5 sm:py-8 space-y-5 pb-8">
+          <section className="voyage-hero relative overflow-hidden">
+            <Globe
+              aria-hidden="true"
+              className="absolute -right-10 -top-10 h-56 w-56 opacity-[0.07]"
+              strokeWidth={0.7}
+            />
+            <div className="relative grid gap-6 md:grid-cols-[1fr_240px] md:items-center">
+              <div>
+                <p className="text-xs font-semibold tracking-[0.18em] uppercase text-emerald-200 flex items-center gap-2 mb-3">
+                  <Compass className="h-4 w-4" />
+                  {lang === "zh"
+                    ? "你的世界 · 旅行手帳"
+                    : "Your world · Travel journal"}
+                </p>
+                <h1 className="text-3xl sm:text-4xl font-bold tracking-tight">
+                  {t("travelHistoryTitle")}
+                </h1>
+                <p className="text-sm text-white/75 mt-3 leading-relaxed max-w-lg">
+                  {lang === "zh"
+                    ? "走過的地方，下一站的期待。把每一次出發，慢慢拼成你的世界。"
+                    : "Places you have been. Places still calling. Build your own world, one journey at a time."}
+                </p>
+                <Button
+                  onClick={openAddCountry}
+                  disabled={disableMutation}
+                  className="mt-5 gap-2 bg-white text-primary hover:bg-white/90 rounded-xl"
+                >
+                  <Plus className="h-4 w-4" />
+                  {t("addCountry")}
+                </Button>
+              </div>
+              <div className="rounded-2xl border border-white/20 bg-white/10 p-4 backdrop-blur-sm">
+                <p className="text-xs text-white/75">
+                  {lang === "zh" ? "目錄探索進度" : "Catalog exploration"}
+                </p>
+                <p className="text-4xl font-bold tracking-tight mt-2 tabular-nums">
+                  {dataReady && insights.visitedPercentage !== null
+                    ? `${insights.visitedPercentage.toFixed(1)}%`
+                    : "—"}
+                </p>
+                <p className="text-xs text-white/80 mt-2 leading-relaxed">
+                  {dataReady
+                    ? lang === "zh"
+                      ? `已到訪 ${insights.catalogVisited} / ${insights.catalogTotal} 個目錄國家／地區`
+                      : `${insights.catalogVisited} of ${insights.catalogTotal} catalog countries / territories visited`
+                    : isError
+                      ? lang === "zh"
+                        ? "足跡資料暫時不可用"
+                        : "Footprint data is unavailable"
+                      : lang === "zh"
+                        ? "正在讀取你的足跡…"
+                        : "Loading your footprint…"}
+                </p>
+                {dataReady ? (
+                  <div
+                    role="progressbar"
+                    aria-label={
+                      lang === "zh" ? "目錄探索進度" : "Catalog exploration"
+                    }
+                    aria-valuenow={insights.catalogVisited}
+                    aria-valuemin={0}
+                    aria-valuemax={insights.catalogTotal}
+                    className="h-1.5 rounded-full bg-white/20 mt-3 overflow-hidden"
+                  >
+                    <div
+                      className="h-full bg-emerald-200 rounded-full"
+                      style={{ width: `${insights.visitedPercentage ?? 0}%` }}
+                    />
                   </div>
-                ))}
-                <div className="flex items-center gap-1">
-                  <div className="w-3 h-3 rounded-full bg-muted-foreground/20" />
-                  <span>{t("notVisited")}</span>
-                </div>
+                ) : (
+                  <Skeleton className="h-1.5 w-full mt-3 bg-white/20" />
+                )}
+                <p className="text-[10px] text-white/60 mt-3 leading-relaxed">
+                  {lang === "zh"
+                    ? "以本頁可選目錄為分母；並非全球主權國家比例。"
+                    : "Based on this page's supported catalog, not the world's sovereign-state count."}
+                </p>
+                {dataReady && insights.unmappedVisited > 0 && (
+                  <p className="text-[10px] text-emerald-200 mt-2">
+                    {lang === "zh"
+                      ? `另有 ${insights.unmappedVisited} 個已到訪記錄未列入目錄，仍保留於清單。`
+                      : `${insights.unmappedVisited} visited records outside the catalog are retained in your list.`}
+                  </p>
+                )}
               </div>
             </div>
-            <WorldMap
-              visitedCountries={(countries ?? []).map(c => ({ countryCode: c.countryCode, status: c.status as "visited" | "planned" | "wishlist" }))}
-              onCountryClick={(code, name) => {
-                if (countryMap[code]) {
-                  // Already visited → open detail map
-                  openDetail(code, name);
-                } else {
-                  // Not yet added → open add dialog pre-filled
-                  setAddForm({ countryCode: code, countryName: name, status: "visited", visitedYear: "" });
-                  setShowAdd(true);
-                }
-              }}
-              className="w-full"
-            />
-            <p className="text-xs text-muted-foreground text-center py-2">{t("mapClickHint")}</p>
-          </div>
-        ) : (
-          /* List View */
-          <div>
-            {/* Filters */}
-            <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
-              <Input
-                placeholder={t("searchCountry")}
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="flex-1"
-              />
-              <Select value={filterRegion} onValueChange={setFilterRegion}>
-                <SelectTrigger className="w-full sm:w-40">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {REGIONS.map(r => <SelectItem key={r} value={r}>{r}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+          </section>
 
+          {isError && (
+            <div
+              role="alert"
+              className="voyage-panel border-destructive/25 flex flex-wrap items-center justify-between gap-3"
+            >
+              <div className="min-w-0">
+                <p className="font-semibold text-sm">
+                  {lang === "zh"
+                    ? "未能載入旅遊足跡"
+                    : "Could not load your travel history"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1 break-words">
+                  {error.message}
+                </p>
+              </div>
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                <RotateCcw className="h-4 w-4 mr-2" />
+                {lang === "zh" ? "重試" : "Retry"}
+              </Button>
+            </div>
+          )}
+
+          <div className="grid grid-cols-3 gap-2 sm:gap-4">
+            {(
+              Object.entries(STATUS_CONFIG) as [
+                HistoryStatus,
+                (typeof STATUS_CONFIG)["visited"],
+              ][]
+            ).map(([key, cfg]) => {
+              const Icon = cfg.icon;
+              return (
+                <button
+                  key={key}
+                  onClick={() =>
+                    setFilterStatus(filterStatus === key ? "all" : key)
+                  }
+                  aria-pressed={filterStatus === key}
+                  className={`voyage-metric text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${filterStatus === key ? "ring-2 ring-primary" : "hover:border-primary/40"}`}
+                >
+                  <div className="flex items-center justify-between gap-1">
+                    <span
+                      className={`w-8 h-8 rounded-xl ${cfg.color} flex items-center justify-center`}
+                    >
+                      <Icon className="w-4 h-4 text-white" />
+                    </span>
+                    <ArrowUpRight className="h-3.5 w-3.5 text-muted-foreground" />
+                  </div>
+                  {dataReady ? (
+                    <p className="text-3xl font-bold tracking-tight mt-3 tabular-nums">
+                      {insights.counts[key]}
+                    </p>
+                  ) : (
+                    <Skeleton className="w-12 h-8 mt-3" />
+                  )}
+                  <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                    {cfg.label}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+
+          <section className="voyage-panel flex flex-col sm:flex-row gap-4 sm:items-center sm:justify-between">
+            <div className="flex gap-3">
+              <span className="h-10 w-10 rounded-xl bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <Link2 className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="font-semibold text-sm">
+                  {lang === "zh"
+                    ? "資料只輸入一次，足跡保持相連"
+                    : "Enter once. Keep your footprint connected."}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed max-w-2xl">
+                  {lang === "zh"
+                    ? "在資料同步中心，將飛行護照航班及行程目的地同步至國家足跡；手動新增的國家仍會保留。以下統計只使用你目前儲存的記錄，並非即時位置追蹤。"
+                    : "Sync Flight Passport records and trip destinations into your country history in the Sync Center. Manually added countries are retained. Insights use your saved records, not live location tracking."}
+                </p>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              className="rounded-xl gap-2 shrink-0"
+              asChild
+            >
+              <Link href="/sync">
+                {lang === "zh" ? "前往同步中心" : "Open Sync Center"}
+                <ArrowUpRight className="h-4 w-4" />
+              </Link>
+            </Button>
+          </section>
+
+          <Tabs
+            value={activeTab}
+            onValueChange={v => setActiveTab(v as "map" | "list")}
+          >
+            <TabsList className="rounded-xl bg-primary/5">
+              <TabsTrigger value="map" className="rounded-lg gap-2">
+                <Globe className="w-4 h-4" />
+                {t("mapTab")}
+              </TabsTrigger>
+              <TabsTrigger value="list" className="rounded-lg gap-2">
+                <MapPin className="w-4 h-4" />
+                {t("listTab")}
+              </TabsTrigger>
+            </TabsList>
+          </Tabs>
+
+          {activeTab === "map" && (
+            <section className="rounded-2xl border border-border bg-card text-card-foreground shadow-sm overflow-hidden">
+              <div className="p-4 sm:p-5 border-b border-border flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="voyage-eyebrow">
+                    {lang === "zh" ? "世界畫布" : "The world canvas"}
+                  </p>
+                  <h2 className="voyage-section-title mt-1">{t("worldMap")}</h2>
+                </div>
+                <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                  {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                    <span key={key} className="flex items-center gap-1.5">
+                      <span
+                        className="w-2.5 h-2.5 rounded-full"
+                        style={{ backgroundColor: cfg.mapColor }}
+                      />
+                      {cfg.label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              {dataReady ? (
+                <WorldMap
+                  visitedCountries={uniqueCountries.map(c => ({
+                    countryCode: c.countryCode,
+                    status: c.status,
+                  }))}
+                  onCountryClick={(code, name) => {
+                    if (countryMap[code.toUpperCase()])
+                      openDetail(code, countryName(code, name));
+                    else if (!disableMutation) {
+                      setAddForm({
+                        countryCode: code,
+                        countryName: name,
+                        status: "visited",
+                        visitedYear: "",
+                        visitedDate: "",
+                      });
+                      setShowAdd(true);
+                    }
+                  }}
+                  className="w-full"
+                />
+              ) : (
+                <div className="p-5">
+                  <Skeleton className="h-52 sm:h-72 w-full rounded-xl" />
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground text-center px-4 py-3 leading-relaxed">
+                {t("mapClickHint")}
+              </p>
+            </section>
+          )}
+
+          <section
+            className="space-y-4"
+            aria-label={
+              lang === "zh" ? "國家足跡清單" : "Country footprint list"
+            }
+          >
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <p className="voyage-eyebrow">
+                  {lang === "zh" ? "你的收藏" : "Your collection"}
+                </p>
+                <h2 className="voyage-section-title mt-1">
+                  {lang === "zh"
+                    ? "每一站，都值得記下"
+                    : "Every stop has a story"}
+                </h2>
+              </div>
+              <span
+                className="text-xs text-muted-foreground shrink-0"
+                aria-live="polite"
+              >
+                {dataReady
+                  ? `${filteredCountries.length} / ${insights.trackedCount}`
+                  : "—"}
+              </span>
+            </div>
+            <div className="voyage-panel space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  aria-label={t("searchCountry")}
+                  placeholder={
+                    lang === "zh"
+                      ? "搜尋國家、中英文名稱或代碼…"
+                      : "Search country, Chinese / English name or code…"
+                  }
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="pl-9 rounded-xl"
+                />
+              </div>
+              <div className="flex gap-2">
+                <Select
+                  value={filterStatus}
+                  onValueChange={v =>
+                    setFilterStatus(v as HistoryStatus | "all")
+                  }
+                >
+                  <SelectTrigger
+                    aria-label={t("status")}
+                    className="flex-1 min-w-0 rounded-xl"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">
+                      {lang === "zh" ? "所有狀態" : "All statuses"}
+                    </SelectItem>
+                    {Object.entries(STATUS_CONFIG).map(([key, cfg]) => (
+                      <SelectItem key={key} value={key}>
+                        {cfg.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={filterRegion} onValueChange={setFilterRegion}>
+                  <SelectTrigger
+                    aria-label={lang === "zh" ? "洲份篩選" : "Region filter"}
+                    className="flex-1 min-w-0 rounded-xl"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">
+                      {lang === "zh" ? "所有洲份" : "All regions"}
+                    </SelectItem>
+                    {REGIONS_BASE.map(region => (
+                      <SelectItem key={region} value={region}>
+                        {regionName(region)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {hasFilters && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={resetFilters}
+                  className="gap-1.5 text-primary"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  {lang === "zh" ? "重設篩選" : "Reset filters"}
+                </Button>
+              )}
+            </div>
             {isLoading ? (
-              <div className="flex justify-center py-20"><Loader2 className="w-8 h-8 animate-spin text-primary" /></div>
-            ) : filteredCountries.length === 0 ? (
-              <div className="text-center py-20">
-                <Globe className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                <p className="text-muted-foreground">{t("noCountriesYet")}</p>
-                <button onClick={() => setShowAdd(true)} className="text-indigo-600 hover:underline mt-2 text-sm">+ {t("addFirstCountry")}</button>
+              <div className="grid sm:grid-cols-2 gap-3">
+                {[1, 2, 3, 4].map(key => (
+                  <Skeleton key={key} className="h-36 rounded-2xl" />
+                ))}
+              </div>
+            ) : !dataReady ? null : filteredCountries.length === 0 ? (
+              <div className="voyage-panel text-center py-10">
+                <Globe className="h-10 w-10 mx-auto text-primary/40 mb-3" />
+                <h3 className="font-semibold">
+                  {hasFilters
+                    ? lang === "zh"
+                      ? "沒有符合的國家"
+                      : "No matching countries"
+                    : t("noCountriesYet")}
+                </h3>
+                <p className="text-xs text-muted-foreground mt-2 mb-4">
+                  {hasFilters
+                    ? lang === "zh"
+                      ? "試試其他名稱、狀態或洲份，或重設篩選。"
+                      : "Try another name, status or region, or reset your filters."
+                    : t("noCountriesDesc")}
+                </p>
+                <Button
+                  variant="outline"
+                  onClick={hasFilters ? resetFilters : openAddCountry}
+                  disabled={disableMutation}
+                >
+                  {hasFilters
+                    ? lang === "zh"
+                      ? "顯示全部記錄"
+                      : "Show all records"
+                    : t("addFirstCountry")}
+                </Button>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-3">
                 {filteredCountries.map(c => {
-                  const cfg = STATUS_CONFIG[c.status as keyof typeof STATUS_CONFIG];
-                  const Icon = cfg?.icon ?? CheckCircle;
-                  const country = COUNTRIES.find(x => x.code === c.countryCode);
+                  const cfg = STATUS_CONFIG[c.status];
+                  const Icon = cfg.icon;
+                  const country = COUNTRIES.find(
+                    x => x.code === c.countryCode.toUpperCase()
+                  );
+                  const name = countryName(c.countryCode, c.countryName);
+                  const visitYear = historyVisitYear(c.visitedAt);
                   return (
-                    <div key={c.id} className="bg-card rounded-xl border border-border p-3 flex items-center gap-3">
-                      <div className={`w-9 h-9 rounded-full ${cfg?.color ?? "bg-muted"} flex items-center justify-center shrink-0`}>
-                        <Icon className="w-4 h-4 text-white" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-foreground text-sm truncate">{c.countryName}</p>
-                          {c.visitedAt && <span className="text-xs text-muted-foreground shrink-0">{new Date(c.visitedAt as Date).getFullYear()}</span>}
+                    <article
+                      key={c.id}
+                      className="voyage-panel flex flex-col gap-3 hover:border-primary/25 transition-colors"
+                    >
+                      <div className="flex items-center gap-3">
+                        <span
+                          className={`w-10 h-10 rounded-xl ${cfg.color} flex items-center justify-center shrink-0`}
+                        >
+                          <Icon className="w-5 h-5 text-white" />
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <h3 className="font-semibold text-base truncate">
+                            {name}
+                          </h3>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {country
+                              ? regionName(country.region)
+                              : lang === "zh"
+                                ? "未分類地區"
+                                : "Unmapped region"}{" "}
+                            · {c.countryCode.toUpperCase()}
+                          </p>
                         </div>
-                        <p className="text-xs text-muted-foreground">{country?.region ?? ""}</p>
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        {/* Detail map button */}
-                        <button
-                          onClick={() => openDetail(c.countryCode, c.countryName)}
-                          className="p-1.5 rounded-lg hover:bg-accent transition-colors"
-                          title={t("viewDetailMap")}
+                      <div className="flex flex-wrap gap-2 items-center text-xs">
+                        <span className="rounded-full bg-primary/5 px-2.5 py-1 font-medium">
+                          {cfg.label}
+                        </span>
+                        <span className="text-muted-foreground">
+                          {c.status === "visited"
+                            ? (visitYear ??
+                              (lang === "zh"
+                                ? "到訪年份未記錄"
+                                : "Visit year unknown"))
+                            : lang === "zh"
+                              ? "尚未到訪"
+                              : "Not visited yet"}
+                        </span>
+                      </div>
+                      {c.notes && (
+                        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-2 break-words">
+                          {c.notes}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-1 pt-2 border-t border-border mt-auto">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() =>
+                            openDetail(c.countryCode.toUpperCase(), name)
+                          }
+                          className="mr-auto gap-1.5 text-primary px-2"
                         >
-                          <MapPin className="w-3.5 h-3.5 text-indigo-500" />
-                        </button>
-                        <button
+                          <MapPin className="h-3.5 w-3.5" />
+                          {lang === "zh" ? "探索地點" : "Explore places"}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title={`${t("editCountry")} ${name}`}
+                          aria-label={`${t("editCountry")} ${name}`}
+                          disabled={disableMutation}
                           onClick={() => openEditCountry(c)}
-                          className="p-1.5 rounded-lg hover:bg-accent transition-colors"
+                          className="h-9 w-9"
                         >
-                          <Edit2 className="w-3.5 h-3.5 text-muted-foreground" />
-                        </button>
-                        <button
-                          onClick={() => removeCountry.mutate({ countryCode: c.countryCode })}
-                          className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
+                          <Edit2 className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title={`${t("removeCountry")} ${name}`}
+                          aria-label={`${t("removeCountry")} ${name}`}
+                          disabled={disableMutation}
+                          onClick={() => {
+                            if (!disableMutation)
+                              removeCountry.mutate({
+                                countryCode: c.countryCode,
+                              });
+                          }}
+                          className="h-9 w-9 text-destructive hover:text-destructive hover:bg-destructive/10"
                         >
-                          <Trash2 className="w-3.5 h-3.5 text-destructive" />
-                        </button>
+                          {removeCountry.isPending &&
+                          removeCountry.variables?.countryCode ===
+                            c.countryCode ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-4 w-4" />
+                          )}
+                        </Button>
                       </div>
-                    </div>
+                    </article>
                   );
                 })}
               </div>
             )}
-          </div>
-        )}
-      </div>
+          </section>
 
-      {/* Country Detail Sheet */}
-      <Sheet open={!!detailCountry} onOpenChange={o => !o && closeDetail()}>
-        <SheetContent side="right" className="w-full sm:max-w-lg p-0 flex flex-col">
-          <SheetHeader className="px-4 pt-4 pb-3 border-b border-border shrink-0">
-            <div className="flex items-center justify-between">
-              <SheetTitle className="text-lg font-bold">{detailCountry?.name}</SheetTitle>
-              <button onClick={closeDetail} className="p-1.5 rounded-lg hover:bg-accent transition-colors">
-                <X className="w-4 h-4 text-muted-foreground" />
-              </button>
-            </div>
-            {/* Bilingual place search */}
-            <div className="relative mt-2">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
-              <Input
-                className="pl-9 pr-4"
-                placeholder={lang === "zh" ? "搜尋地點（中文或英文）..." : "Search places (Chinese or English)..."}
-                value={placeSearch}
-                onChange={e => setPlaceSearch(e.target.value)}
-              />
-              {placeSearch && (
-                <button
-                  className="absolute right-3 top-1/2 -translate-y-1/2"
-                  onClick={() => { setPlaceSearch(""); setPlaceSuggestions([]); }}
-                >
-                  <X className="w-3.5 h-3.5 text-muted-foreground" />
-                </button>
-              )}
-              {/* Autocomplete dropdown */}
-              {placeSuggestions.length > 0 && (
-                <div className="absolute top-full left-0 right-0 z-50 bg-popover border border-border rounded-xl shadow-lg mt-1 overflow-hidden">
-                  {placeSuggestions.map(s => (
-                    <button
-                      key={s.placeId}
-                      className="w-full text-left px-4 py-2.5 text-sm hover:bg-accent transition-colors flex items-center gap-2"
-                      onClick={() => selectPlace(s)}
-                    >
-                      <MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-                      <span className="truncate">{s.description}</span>
-                    </button>
+          <div className="grid md:grid-cols-2 gap-4">
+            <section className="voyage-panel">
+              <p className="voyage-eyebrow">
+                {lang === "zh" ? "足跡分佈" : "Footprint distribution"}
+              </p>
+              <h2 className="voyage-section-title mt-1">
+                {lang === "zh" ? "按洲份探索" : "Explore by region"}
+              </h2>
+              <p className="text-xs text-muted-foreground mt-2 mb-5">
+                {lang === "zh"
+                  ? "按現有目錄分類；每列為已到訪／該洲份目錄總數。"
+                  : "Uses the existing catalog's region mapping. Each row is visited / catalog total."}
+              </p>
+              {dataReady ? (
+                <div className="space-y-4">
+                  {insights.regions.map(region => (
+                    <div key={region.region}>
+                      <div className="flex justify-between gap-3 text-xs mb-1.5">
+                        <span className="font-medium">
+                          {regionName(region.region)}
+                        </span>
+                        <span className="text-muted-foreground tabular-nums">
+                          {region.visited} / {region.total}
+                        </span>
+                      </div>
+                      <div
+                        className="h-2 bg-primary/5 rounded-full overflow-hidden"
+                        role="progressbar"
+                        aria-label={regionName(region.region)}
+                        aria-valuenow={region.visited}
+                        aria-valuemin={0}
+                        aria-valuemax={region.total}
+                      >
+                        <div
+                          className="h-full bg-primary rounded-full"
+                          style={{
+                            width: `${region.total ? (region.visited / region.total) * 100 : 0}%`,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  {insights.unmappedVisited > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {lang === "zh"
+                        ? `${insights.unmappedVisited} 個已到訪記錄未分類，不納入洲份比例。`
+                        : `${insights.unmappedVisited} unmapped visited records are excluded from region ratios.`}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {[1, 2, 3, 4, 5, 6].map(key => (
+                    <Skeleton key={key} className="h-7 w-full" />
                   ))}
                 </div>
               )}
-            </div>
-          </SheetHeader>
-
-          {/* Map */}
-          <div className="flex-1 min-h-0 relative">
-            {detailCountry && (
-              <MapView
-                key={detailCountry.code}
-                className="w-full h-full"
-                initialCenter={COUNTRY_CENTERS[detailCountry.code] ? { lat: COUNTRY_CENTERS[detailCountry.code].lat, lng: COUNTRY_CENTERS[detailCountry.code].lng } : { lat: 0, lng: 0 }}
-                initialZoom={COUNTRY_CENTERS[detailCountry.code]?.zoom ?? 5}
-                onMapReady={handleDetailMapReady}
-              />
-            )}
+            </section>
+            <section className="voyage-panel">
+              <p className="voyage-eyebrow">
+                {lang === "zh" ? "旅行年誌" : "The yearbook"}
+              </p>
+              <h2 className="voyage-section-title mt-1">
+                {lang === "zh" ? "到訪記錄年份" : "Recorded visit years"}
+              </h2>
+              <p className="text-xs text-muted-foreground mt-2 mb-3 leading-relaxed">
+                {lang === "zh"
+                  ? "每個已到訪國家／地區只按目前儲存的年份計算一次，不代表旅程次數。日期採用香港時間（UTC+8）。"
+                  : "Each visited country / territory is counted once using its saved visit year, not the number of trips. Dates use Hong Kong time (UTC+8)."}
+              </p>
+              {!dataReady ? (
+                <Skeleton className="h-48 w-full rounded-xl" />
+              ) : insights.visitsByYear.length === 0 ? (
+                <div className="rounded-xl bg-primary/5 text-center py-10 px-4">
+                  <Calendar className="h-7 w-7 text-primary mx-auto mb-2" />
+                  <p className="text-sm font-medium">
+                    {lang === "zh"
+                      ? "尚未有已知到訪年份"
+                      : "No known visit years yet"}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {lang === "zh"
+                      ? "編輯國家記錄，補上你記得的日期或年份。"
+                      : "Edit a country to add a date or year you remember."}
+                  </p>
+                </div>
+              ) : (
+                <div className="h-52 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart
+                      data={insights.visitsByYear}
+                      margin={{ top: 8, right: 4, left: -25, bottom: 0 }}
+                      accessibilityLayer
+                    >
+                      <CartesianGrid
+                        strokeDasharray="3 3"
+                        vertical={false}
+                        stroke="var(--border)"
+                      />
+                      <XAxis
+                        dataKey="year"
+                        tick={{ fontSize: 11 }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        allowDecimals={false}
+                        tick={{ fontSize: 11 }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          borderRadius: 12,
+                          border: "1px solid var(--border)",
+                          backgroundColor: "var(--card)",
+                          color: "var(--card-foreground)",
+                        }}
+                        labelFormatter={year =>
+                          lang === "zh" ? `${year} 年` : String(year)
+                        }
+                      />
+                      <Bar
+                        dataKey="count"
+                        name={
+                          lang === "zh"
+                            ? "已到訪國家／地區"
+                            : "Visited countries / territories"
+                        }
+                        fill="var(--primary)"
+                        radius={[6, 6, 0, 0]}
+                        maxBarSize={40}
+                        isAnimationActive={false}
+                      />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+              {dataReady && (
+                <p className="text-xs text-muted-foreground mt-4 pt-3 border-t border-border">
+                  {lang === "zh"
+                    ? `年份未記錄：${insights.unknownVisitYear} 個已到訪國家／地區（獨立列示，不計入年度圖表）。`
+                    : `Unknown year: ${insights.unknownVisitYear} visited countries / territories, listed separately and excluded from the chart.`}
+                </p>
+              )}
+            </section>
           </div>
+        </div>
 
-          {/* Saved places list */}
-          {savedPlaces.length > 0 && (
-            <div className="shrink-0 border-t border-border px-4 py-3 max-h-40 overflow-y-auto">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">{t("markedPlaces")}</p>
-              <div className="space-y-1.5">
-                {savedPlaces.map((p, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    <MapPin className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                    <span className="truncate text-foreground">{p.name}</span>
-                  </div>
-                ))}
+        {/* Country Detail Sheet */}
+        <Sheet open={!!detailCountry} onOpenChange={o => !o && closeDetail()}>
+          <SheetContent
+            side="right"
+            className="w-full sm:max-w-lg p-0 flex flex-col"
+          >
+            <SheetHeader className="px-4 pt-4 pb-3 border-b border-border shrink-0">
+              <div className="flex items-center justify-between">
+                <SheetTitle className="text-lg font-bold">
+                  {detailCountry?.name}
+                </SheetTitle>
+                <button
+                  onClick={closeDetail}
+                  aria-label={
+                    lang === "zh"
+                      ? "關閉國家詳細地圖"
+                      : "Close country detail map"
+                  }
+                  className="p-1.5 rounded-lg hover:bg-accent transition-colors"
+                >
+                  <X className="w-4 h-4 text-muted-foreground" />
+                </button>
               </div>
-            </div>
-          )}
-        </SheetContent>
-      </Sheet>
-
-      {/* Edit Country Dialog */}
-      <Dialog open={!!editingCountry} onOpenChange={(o) => !o && setEditingCountry(null)}>
-        <DialogContent className="sm:max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{t("editCountry")} {editingCountry?.countryName}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div>
-              <label className="text-sm font-medium text-foreground">{t("status")}</label>
-              <Select value={editForm.status} onValueChange={v => setEditForm({ ...editForm, status: v as any })}>
-                <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.entries(STATUS_CONFIG).map(([k, v]) => (
-                    <SelectItem key={k} value={k}>{v.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-foreground">{t("visitedYear")}</label>
-              <Input className="mt-1.5" type="number" placeholder={lang === "zh" ? "例：2024" : "e.g. 2024"} value={editForm.visitedYear} onChange={e => setEditForm({ ...editForm, visitedYear: e.target.value })} />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-foreground">{t("notes")}</label>
-              <Input className="mt-1.5" placeholder={t("notesPlaceholder")} value={editForm.notes} onChange={e => setEditForm({ ...editForm, notes: e.target.value })} />
-            </div>
-            <Button className="w-full bg-indigo-600 hover:bg-indigo-700" onClick={handleEditCountry} disabled={updateStatus.isPending}>
-              {updateStatus.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              {t("saveChanges")}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Add Country Dialog */}
-      <Dialog open={showAdd} onOpenChange={setShowAdd}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t("addCountry")}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div>
-              <label className="text-sm font-medium text-foreground">{t("country")} *</label>
-              <Select value={addForm.countryCode} onValueChange={v => setAddForm({ ...addForm, countryCode: v })}>
-                <SelectTrigger className="mt-1.5">
-                  <SelectValue placeholder={t("selectCountry")} />
-                </SelectTrigger>
-                <SelectContent className="max-h-60">
-                  {availableToAdd.map(c => (
-                    <SelectItem key={c.code} value={c.code}>
-                      {c.name} ({c.region})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-foreground">{t("status")}</label>
-              <Select value={addForm.status} onValueChange={v => setAddForm({ ...addForm, status: v as any })}>
-                <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.entries(STATUS_CONFIG).map(([k, v]) => (
-                    <SelectItem key={k} value={k}>{v.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            {addForm.status === "visited" && (
-              <div>
-                <label className="text-sm font-medium text-foreground">{t("visitedYear")}</label>
+              {/* Bilingual place search */}
+              <div className="relative mt-2">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
                 <Input
+                  className="pl-9 pr-4"
+                  aria-label={lang === "zh" ? "搜尋地點" : "Search places"}
+                  placeholder={
+                    lang === "zh"
+                      ? "搜尋地點（中文或英文）..."
+                      : "Search places (Chinese or English)..."
+                  }
+                  value={placeSearch}
+                  onChange={e => setPlaceSearch(e.target.value)}
+                />
+                {placeSearch && (
+                  <button
+                    className="absolute right-3 top-1/2 -translate-y-1/2"
+                    aria-label={
+                      lang === "zh" ? "清除地點搜尋" : "Clear place search"
+                    }
+                    onClick={() => {
+                      setPlaceSearch("");
+                      setPlaceSuggestions([]);
+                    }}
+                  >
+                    <X className="w-3.5 h-3.5 text-muted-foreground" />
+                  </button>
+                )}
+                {/* Autocomplete dropdown */}
+                {placeSuggestions.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 z-50 bg-popover border border-border rounded-xl shadow-lg mt-1 overflow-hidden">
+                    {placeSuggestions.map(s => (
+                      <button
+                        key={s.placeId}
+                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-accent transition-colors flex items-center gap-2"
+                        onClick={() => selectPlace(s)}
+                      >
+                        <MapPin className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+                        <span className="truncate">{s.description}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {placeSearchPending && (
+                <p
+                  className="text-xs text-muted-foreground flex items-center gap-1.5 mt-2"
+                  role="status"
+                >
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  {lang === "zh" ? "正在搜尋地點…" : "Searching places…"}
+                </p>
+              )}
+              {placeSearchError && (
+                <p className="text-xs text-destructive mt-2" role="alert">
+                  {lang === "zh"
+                    ? "地點搜尋暫時不可用，請稍後再試。"
+                    : "Place search is temporarily unavailable. Please try again."}
+                </p>
+              )}
+              {placeSearch.trim() &&
+                !placeSearchPending &&
+                !placeSearchError &&
+                placeSuggestions.length === 0 && (
+                  <p className="text-xs text-muted-foreground mt-2">
+                    {lang === "zh"
+                      ? "找不到地點，試試另一個名稱。"
+                      : "No places found. Try another name."}
+                  </p>
+                )}
+            </SheetHeader>
+
+            {/* Map */}
+            <div className="flex-1 min-h-0 relative">
+              {detailCountry && (
+                <MapView
+                  key={detailCountry.code}
+                  className="w-full h-full"
+                  initialCenter={
+                    COUNTRY_CENTERS[detailCountry.code]
+                      ? {
+                          lat: COUNTRY_CENTERS[detailCountry.code].lat,
+                          lng: COUNTRY_CENTERS[detailCountry.code].lng,
+                        }
+                      : { lat: 0, lng: 0 }
+                  }
+                  initialZoom={COUNTRY_CENTERS[detailCountry.code]?.zoom ?? 5}
+                  onMapReady={handleDetailMapReady}
+                />
+              )}
+            </div>
+
+            {/* Saved places list */}
+            {savedPlaces.length > 0 && (
+              <div className="shrink-0 border-t border-border px-4 py-3 max-h-40 overflow-y-auto">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-2">
+                  {t("markedPlaces")}
+                </p>
+                <p className="text-[11px] text-muted-foreground mb-2">
+                  {lang === "zh"
+                    ? "只在此地圖暫時標記，關閉後不會儲存。"
+                    : "Temporary map markers only; not saved after closing."}
+                </p>
+                <div className="space-y-1.5">
+                  {savedPlaces.map((p, i) => (
+                    <div key={i} className="flex items-center gap-2 text-sm">
+                      <MapPin className="w-3.5 h-3.5 text-primary shrink-0" />
+                      <span className="truncate text-foreground">{p.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </SheetContent>
+        </Sheet>
+
+        {/* Edit Country Dialog */}
+        <Dialog
+          open={!!editingCountry}
+          onOpenChange={o => !o && setEditingCountry(null)}
+        >
+          <DialogContent className="sm:max-w-sm rounded-2xl max-h-[85dvh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>
+                {t("editCountry")}{" "}
+                {editingCountry &&
+                  countryName(
+                    editingCountry.countryCode,
+                    editingCountry.countryName
+                  )}
+              </DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 mt-2">
+              <div>
+                <label className="text-sm font-medium text-foreground">
+                  {t("status")}
+                </label>
+                <Select
+                  value={editForm.status}
+                  disabled={mutationPending}
+                  onValueChange={v =>
+                    setEditForm({ ...editForm, status: v as HistoryStatus })
+                  }
+                >
+                  <SelectTrigger aria-label={t("status")} className="mt-1.5">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(STATUS_CONFIG).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>
+                        {v.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label
+                  htmlFor="history-edit-date"
+                  className="text-sm font-medium text-foreground"
+                >
+                  {lang === "zh" ? "到訪日期（選填）" : "Visit date (optional)"}
+                </label>
+                <Input
+                  id="history-edit-date"
+                  className="mt-1.5"
+                  type="date"
+                  disabled={mutationPending}
+                  value={editForm.visitedDate}
+                  onChange={e =>
+                    setEditForm({
+                      ...editForm,
+                      visitedDate: e.target.value,
+                      visitedYear: "",
+                    })
+                  }
+                />
+                <p className="text-[11px] text-muted-foreground mt-1.5">
+                  {lang === "zh"
+                    ? "香港時間（UTC+8）；儲存為 YYYY-MM-DD，不轉換日期。"
+                    : "Hong Kong (UTC+8); saved as YYYY-MM-DD without shifting the calendar date."}
+                </p>
+              </div>
+              <div>
+                <label
+                  htmlFor="history-edit-year"
+                  className="text-sm font-medium text-foreground"
+                >
+                  {t("visitedYear")}
+                </label>
+                <Input
+                  id="history-edit-year"
                   className="mt-1.5"
                   type="number"
-                  placeholder={lang === "zh" ? "例：2024" : "e.g. 2024"}
-                  value={addForm.visitedYear}
-                  onChange={e => setAddForm({ ...addForm, visitedYear: e.target.value })}
+                  min={1000}
+                  max={9999}
+                  inputMode="numeric"
+                  disabled={mutationPending}
+                  placeholder={
+                    lang === "zh"
+                      ? "只記得年份？例：2024"
+                      : "Only remember the year? e.g. 2024"
+                  }
+                  value={editForm.visitedYear}
+                  onChange={e =>
+                    setEditForm({
+                      ...editForm,
+                      visitedYear: e.target.value,
+                      visitedDate: "",
+                    })
+                  }
+                />
+                <p className="text-[11px] text-muted-foreground mt-1.5">
+                  {lang === "zh"
+                    ? "只填年份時，以該年 1 月 1 日儲存作年份記錄，不代表實際到訪日。"
+                    : "Year-only entries use January 1 as a year marker, not an actual visit day."}
+                </p>
+              </div>
+              <div>
+                <label
+                  htmlFor="history-edit-notes"
+                  className="text-sm font-medium text-foreground"
+                >
+                  {t("notes")}
+                </label>
+                <Input
+                  id="history-edit-notes"
+                  className="mt-1.5"
+                  disabled={mutationPending}
+                  placeholder={t("notesPlaceholder")}
+                  value={editForm.notes}
+                  onChange={e =>
+                    setEditForm({ ...editForm, notes: e.target.value })
+                  }
                 />
               </div>
-            )}
-            <Button className="w-full bg-indigo-600 hover:bg-indigo-700" onClick={handleAdd} disabled={upsertCountry.isPending}>
-              {upsertCountry.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}
-              {t("add")}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+              <Button
+                className="w-full rounded-xl"
+                onClick={handleEditCountry}
+                disabled={disableMutation}
+              >
+                {updateStatus.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : null}
+                {t("saveChanges")}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Add Country Dialog */}
+        <Dialog open={showAdd} onOpenChange={setShowAdd}>
+          <DialogContent className="sm:max-w-md rounded-2xl max-h-[85dvh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>{t("addCountry")}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 mt-2">
+              <div>
+                <label className="text-sm font-medium text-foreground">
+                  {t("country")} *
+                </label>
+                <Select
+                  value={addForm.countryCode}
+                  disabled={mutationPending}
+                  onValueChange={v =>
+                    setAddForm({ ...addForm, countryCode: v })
+                  }
+                >
+                  <SelectTrigger aria-label={t("country")} className="mt-1.5">
+                    <SelectValue placeholder={t("selectCountry")} />
+                  </SelectTrigger>
+                  <SelectContent className="max-h-60">
+                    {addForm.countryCode &&
+                      !availableToAdd.some(
+                        c => c.code === addForm.countryCode
+                      ) &&
+                      !countryMap[addForm.countryCode] && (
+                        <SelectItem value={addForm.countryCode}>
+                          {countryName(
+                            addForm.countryCode,
+                            addForm.countryName
+                          )}
+                        </SelectItem>
+                      )}
+                    {availableToAdd.map(c => (
+                      <SelectItem key={c.code} value={c.code}>
+                        {countryName(c.code, c.name)} ({regionName(c.region)})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-sm font-medium text-foreground">
+                  {t("status")}
+                </label>
+                <Select
+                  value={addForm.status}
+                  disabled={mutationPending}
+                  onValueChange={v =>
+                    setAddForm({ ...addForm, status: v as HistoryStatus })
+                  }
+                >
+                  <SelectTrigger aria-label={t("status")} className="mt-1.5">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Object.entries(STATUS_CONFIG).map(([k, v]) => (
+                      <SelectItem key={k} value={k}>
+                        {v.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {addForm.status === "visited" && (
+                <div className="space-y-4">
+                  <div>
+                    <label
+                      htmlFor="history-add-date"
+                      className="text-sm font-medium text-foreground"
+                    >
+                      {lang === "zh"
+                        ? "到訪日期（選填）"
+                        : "Visit date (optional)"}
+                    </label>
+                    <Input
+                      id="history-add-date"
+                      className="mt-1.5"
+                      type="date"
+                      disabled={mutationPending}
+                      value={addForm.visitedDate}
+                      onChange={e =>
+                        setAddForm({
+                          ...addForm,
+                          visitedDate: e.target.value,
+                          visitedYear: "",
+                        })
+                      }
+                    />
+                    <p className="text-[11px] text-muted-foreground mt-1.5">
+                      {lang === "zh"
+                        ? "香港時間（UTC+8）；儲存為 YYYY-MM-DD。"
+                        : "Hong Kong (UTC+8); saved as YYYY-MM-DD."}
+                    </p>
+                  </div>
+                  <div>
+                    <label
+                      htmlFor="history-add-year"
+                      className="text-sm font-medium text-foreground"
+                    >
+                      {t("visitedYear")}
+                    </label>
+                    <Input
+                      id="history-add-year"
+                      className="mt-1.5"
+                      type="number"
+                      min={1000}
+                      max={9999}
+                      inputMode="numeric"
+                      disabled={mutationPending}
+                      placeholder={
+                        lang === "zh"
+                          ? "只記得年份？例：2024"
+                          : "Only remember the year? e.g. 2024"
+                      }
+                      value={addForm.visitedYear}
+                      onChange={e =>
+                        setAddForm({
+                          ...addForm,
+                          visitedYear: e.target.value,
+                          visitedDate: "",
+                        })
+                      }
+                    />
+                    <p className="text-[11px] text-muted-foreground mt-1.5">
+                      {lang === "zh"
+                        ? "只填年份時，以該年 1 月 1 日儲存作年份記錄，不代表實際到訪日。"
+                        : "Year-only entries use January 1 as a year marker, not an actual visit day."}
+                    </p>
+                  </div>
+                </div>
+              )}
+              <Button
+                className="w-full rounded-xl"
+                onClick={handleAdd}
+                disabled={disableMutation || !addForm.countryCode}
+              >
+                {upsertCountry.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : null}
+                {t("add")}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
     </AppLayout>
   );
 }

@@ -1,18 +1,11 @@
+import { TRPCError } from "@trpc/server";
 import { z } from "zod";
+import { getHongKongDateInput } from "@shared/flightPassport";
+import { normalizeStoredCalendarDate } from "@shared/legacyDateOnly";
 import { protectedProcedure, router } from "./_core/trpc";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface FrankfurterRateRow {
-  date: string;
-  base: string;
-  quote: string;
-  rate: number;
-}
-
-// ─── Fallback rates (HKD-based, approximate 2025-2026) ───────────────────────
-// Used when the API is unavailable. Values = how many X per 1 HKD.
-const FALLBACK_RATES: Record<string, number> = {
+// Approximate rates only: quote currency per 1 HKD, not historical market data.
+const FALLBACK_RATES: Readonly<Record<string, number>> = Object.freeze({
   HKD: 1,
   JPY: 19.8,
   TWD: 4.2,
@@ -30,277 +23,457 @@ const FALLBACK_RATES: Record<string, number> = {
   IDR: 2050,
   PHP: 7.3,
   VND: 3280,
-};
-
-// Currencies supported by frankfurter.dev (subset we care about)
+});
 const FRANKFURTER_SUPPORTED = new Set([
-  "USD","EUR","GBP","JPY","CNY","HKD","SGD","AUD","CAD","KRW",
-  "TWD","THB","EGP","MYR","IDR","PHP","VND","CHF","SEK","NOK",
-  "DKK","NZD","ZAR","BRL","MXN","INR","RUB","TRY","PLN","CZK",
-  "HUF","RON","BGN","HRK","ISK","ILS","AED","SAR","QAR","KWD",
+  "USD",
+  "EUR",
+  "GBP",
+  "JPY",
+  "CNY",
+  "HKD",
+  "SGD",
+  "AUD",
+  "CAD",
+  "KRW",
+  "TWD",
+  "THB",
+  "EGP",
+  "MYR",
+  "IDR",
+  "PHP",
+  "VND",
+  "CHF",
+  "SEK",
+  "NOK",
+  "DKK",
+  "NZD",
+  "ZAR",
+  "BRL",
+  "MXN",
+  "INR",
+  "RUB",
+  "TRY",
+  "PLN",
+  "CZK",
+  "HUF",
+  "RON",
+  "BGN",
+  "HRK",
+  "ISK",
+  "ILS",
+  "AED",
+  "SAR",
+  "QAR",
+  "KWD",
 ]);
+const DAY_MS = 24 * 60 * 60 * 1000;
+const FALLBACK_TTL_MS = 60_000;
+const MAX_CONCURRENT_REQUESTS = 6;
 
-// ─── In-memory cache: { "YYYY-MM-DD:TARGET" → { rate, fetchedAt } } ──────────
-// Keyed by "date:quoteCurrency" with HKD as the implicit base.
-const rateCache = new Map<string, { rate: number; fetchedAt: number }>();
-
-// Latest-rates cache (for "today" fallback)
-let latestRatesCache: { rates: Record<string, number>; fetchedAt: number } | null = null;
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-/** Format a Date as YYYY-MM-DD */
-function toDateStr(d: Date): string {
-  return d.toISOString().split("T")[0];
+/** A calendar date is kept verbatim; never round-trip it through a UTC timestamp. */
+export function isValidCurrencyDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || value.startsWith("0000"))
+    return false;
+  const parsed = new Date(`${value}T12:00:00Z`);
+  return (
+    Number.isFinite(parsed.getTime()) &&
+    parsed.toISOString().slice(0, 10) === value
+  );
 }
-
-/** Step back one calendar day */
-function prevDay(dateStr: string): string {
-  const d = new Date(dateStr + "T12:00:00Z");
-  d.setUTCDate(d.getUTCDate() - 1);
-  return toDateStr(d);
+const dateSchema = z
+  .string()
+  .refine(isValidCurrencyDate, "Date must be a valid YYYY-MM-DD calendar date");
+const currencySchema = z
+  .string()
+  .trim()
+  .toUpperCase()
+  .regex(/^[A-Z]{3}$/, "Currency must be a three-letter code");
+const decimalPattern = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)$/;
+function validAmount(value: string, allowRefunds = false): boolean {
+  return (
+    decimalPattern.test(value.trim()) &&
+    Number.isFinite(Number(value)) &&
+    (allowRefunds || Number(value) >= 0)
+  );
 }
+const amountSchema = z
+  .string()
+  .refine(
+    value => validAmount(value),
+    "Amount must be a finite nonnegative decimal"
+  );
 
-/**
- * Fetch the HKD→target rate for a specific date from frankfurter.dev v2.
- * The API automatically returns the last available trading day if the requested
- * date is a weekend or holiday (it returns the actual date used in the response).
- * Returns null if the API call fails.
- */
-async function fetchHistoricalRate(
-  dateStr: string,
-  targetCurrency: string
-): Promise<{ rate: number; actualDate: string } | null> {
-  if (!FRANKFURTER_SUPPORTED.has(targetCurrency)) return null;
-  if (targetCurrency === "HKD") return { rate: 1, actualDate: dateStr };
-
-  const cacheKey = `${dateStr}:${targetCurrency}`;
-  const cached = rateCache.get(cacheKey);
-  // Cache historical rates for 24 hours (they don't change)
-  if (cached && Date.now() - cached.fetchedAt < 24 * 60 * 60 * 1000) {
-    return { rate: cached.rate, actualDate: dateStr };
+function requireCurrency(value: string): string {
+  const currency = currencySchema.parse(value);
+  if (
+    !FRANKFURTER_SUPPORTED.has(currency) &&
+    !Object.hasOwn(FALLBACK_RATES, currency)
+  ) {
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: `Unsupported currency ${currency}; no supported fallback rate is available`,
+    });
   }
+  return currency;
+}
+function requireRate(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    throw new Error("Exchange rate must be finite and positive");
+  }
+  return value;
+}
+function previousDay(date: string): string {
+  const parsed = new Date(`${date}T12:00:00Z`);
+  parsed.setUTCDate(parsed.getUTCDate() - 1);
+  return parsed.toISOString().slice(0, 10);
+}
 
-  try {
-    const url = `https://api.frankfurter.dev/v2/rates?date=${dateStr}&base=HKD&quotes=${targetCurrency}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) {
-      if (res.status === 404 || res.status === 422) return null;
-      throw new Error(`HTTP ${res.status}`);
-    }
-    const rows = await res.json() as FrankfurterRateRow[];
-    if (!Array.isArray(rows) || rows.length === 0) return null;
-    const row = rows[0];
-    const rate = row.rate;
-    const actualDate = row.date; // API returns the actual trading day used
-    rateCache.set(cacheKey, { rate, fetchedAt: Date.now() });
-    // Also cache under the actual date returned (in case it differs from requested)
-    if (actualDate !== dateStr) {
-      rateCache.set(`${actualDate}:${targetCurrency}`, { rate, fetchedAt: Date.now() });
-    }
-    return { rate, actualDate };
-  } catch {
+export interface HistoricalRate {
+  rate: number;
+  rateDate: string;
+  isFallback: boolean;
+}
+interface CachedRate extends HistoricalRate {
+  fetchedAt: number;
+}
+const rateCache = new Map<string, CachedRate>();
+const historicalInFlight = new Map<string, Promise<HistoricalRate>>();
+const requestInFlight = new Map<string, Promise<HistoricalRate | null>>();
+const MAX_CACHE_ENTRIES = 10_000;
+function cacheRate(key: string, value: CachedRate): void {
+  // Bound process memory only; this never changes persisted application data.
+  if (!rateCache.has(key) && rateCache.size >= MAX_CACHE_ENTRIES) {
+    const oldest = rateCache.keys().next().value;
+    if (oldest !== undefined) rateCache.delete(oldest);
+  }
+  rateCache.set(key, value);
+}
+function cachedRate(key: string): HistoricalRate | null {
+  const cached = rateCache.get(key);
+  if (
+    !cached ||
+    Date.now() - cached.fetchedAt >=
+      (cached.isFallback ? FALLBACK_TTL_MS : DAY_MS)
+  )
     return null;
+  return {
+    rate: cached.rate,
+    rateDate: cached.rateDate,
+    isFallback: cached.isFallback,
+  };
+}
+
+// This semaphore applies across simultaneous callers, not merely within one batch.
+let activeRequests = 0;
+const requestQueue: Array<() => void> = [];
+async function limitedFetch(url: string): Promise<unknown> {
+  await new Promise<void>(resolve => {
+    const enter = () => {
+      activeRequests++;
+      resolve();
+    };
+    if (activeRequests < MAX_CONCURRENT_REQUESTS) enter();
+    else requestQueue.push(enter);
+  });
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+    if (!response.ok)
+      throw new Error(`Exchange-rate API returned HTTP ${response.status}`);
+    return await response.json();
+  } finally {
+    activeRequests--;
+    requestQueue.shift()?.();
   }
 }
 
-/**
- * Get the HKD→target rate for a given date.
- * Strategy:
- *   1. Try the exact date (frankfurter auto-returns last trading day for weekends/holidays)
- *   2. If API fails, try up to 5 previous calendar days
- *   3. If all fail, return the fallback hardcoded rate
- */
-export async function getHistoricalRate(
-  dateStr: string,
-  targetCurrency: string
-): Promise<{ rate: number; rateDate: string; isFallback: boolean }> {
-  if (targetCurrency === "HKD") {
-    return { rate: 1, rateDate: dateStr, isFallback: false };
-  }
-
-  // Try the requested date first (API handles weekends automatically)
-  const result = await fetchHistoricalRate(dateStr, targetCurrency);
-  if (result) {
-    return { rate: result.rate, rateDate: result.actualDate, isFallback: false };
-  }
-
-  // If the first call failed (network error), try up to 5 previous days
-  let tryDate = prevDay(dateStr);
-  for (let i = 0; i < 5; i++) {
-    const r = await fetchHistoricalRate(tryDate, targetCurrency);
-    if (r) {
-      return { rate: r.rate, rateDate: r.actualDate, isFallback: false };
+const apiRowSchema = z.object({
+  date: dateSchema,
+  base: z.literal("HKD"),
+  quote: z.string().regex(/^[A-Z]{3}$/),
+  rate: z.number().finite().positive(),
+});
+async function fetchHistoricalRate(
+  date: string,
+  currency: string
+): Promise<HistoricalRate | null> {
+  const key = `${date}:${currency}`;
+  const cached = cachedRate(key);
+  if (cached && !cached.isFallback) return cached;
+  const pending = requestInFlight.get(key);
+  if (pending) return pending;
+  const request = (async () => {
+    try {
+      const data = await limitedFetch(
+        `https://api.frankfurter.dev/v2/rates?date=${date}&base=HKD&quotes=${currency}`
+      );
+      const rows = z.array(apiRowSchema).min(1).parse(data);
+      const row = rows.find(row => row.quote === currency && row.date <= date);
+      if (!row) return null;
+      const result = { rate: row.rate, rateDate: row.date, isFallback: false };
+      const cached = { ...result, fetchedAt: Date.now() };
+      cacheRate(key, cached);
+      cacheRate(`${row.date}:${currency}`, cached);
+      return result;
+    } catch {
+      return null;
     }
-    tryDate = prevDay(tryDate);
+  })();
+  requestInFlight.set(key, request);
+  try {
+    return await request;
+  } finally {
+    requestInFlight.delete(key);
   }
-
-  // Final fallback: hardcoded approximate rate
-  const fallbackRate = FALLBACK_RATES[targetCurrency] ?? 1;
-  return { rate: fallbackRate, rateDate: dateStr, isFallback: true };
 }
 
-/**
- * Fetch latest rates for all supported currencies (used for the summary totals).
- * Falls back to hardcoded rates if the API is unavailable.
- */
-export async function getLatestRates(): Promise<{
+/** HKD-to-quote historical rate; an unavailable unsupported fallback is an error, never 1:1. */
+export async function getHistoricalRate(
+  date: string,
+  targetCurrency: string
+): Promise<HistoricalRate> {
+  dateSchema.parse(date);
+  const currency = requireCurrency(targetCurrency);
+  if (currency === "HKD") return { rate: 1, rateDate: date, isFallback: false };
+  const key = `${date}:${currency}`;
+  const cached = cachedRate(key);
+  if (cached) return cached;
+  const pending = historicalInFlight.get(key);
+  if (pending) return pending;
+  const lookup = (async () => {
+    let candidate = date;
+    for (let i = 0; i <= 5; i++) {
+      if (!isValidCurrencyDate(candidate)) break;
+      const result = await fetchHistoricalRate(candidate, currency);
+      if (result) {
+        cacheRate(key, { ...result, fetchedAt: Date.now() });
+        return result;
+      }
+      candidate = previousDay(candidate);
+    }
+    const rate = FALLBACK_RATES[currency];
+    if (rate === undefined) {
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message: `Exchange rate for ${currency} is unavailable; no supported fallback rate is available`,
+      });
+    }
+    const result = {
+      rate: requireRate(rate),
+      rateDate: date,
+      isFallback: true,
+    };
+    cacheRate(key, { ...result, fetchedAt: Date.now() });
+    return result;
+  })();
+  historicalInFlight.set(key, lookup);
+  try {
+    return await lookup;
+  } finally {
+    historicalInFlight.delete(key);
+  }
+}
+
+interface LatestRates {
   rates: Record<string, number>;
   fetchedAt: number;
   isFallback: boolean;
-}> {
-  const now = Date.now();
-  if (latestRatesCache && now - latestRatesCache.fetchedAt < 60 * 60 * 1000) {
-    return { ...latestRatesCache, isFallback: false };
+  rateDate: string | null;
+}
+let latestRatesCache: LatestRates | null = null;
+let latestInFlight: Promise<LatestRates> | null = null;
+function copyLatest(result: LatestRates): LatestRates {
+  return { ...result, rates: { ...result.rates } };
+}
+export async function getLatestRates(): Promise<LatestRates> {
+  const cached = latestRatesCache;
+  if (
+    cached &&
+    Date.now() - cached.fetchedAt <
+      (cached.isFallback ? FALLBACK_TTL_MS : 60 * 60 * 1000)
+  ) {
+    return copyLatest(cached);
   }
-
-  try {
-    const quotes = Object.keys(FALLBACK_RATES).filter(c => c !== "HKD").join(",");
-    const url = `https://api.frankfurter.dev/v2/rates?base=HKD&quotes=${quotes}`;
-    const res = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const rows = await res.json() as FrankfurterRateRow[];
-    if (!Array.isArray(rows)) throw new Error("Unexpected response");
-    const rates: Record<string, number> = { HKD: 1 };
-    for (const row of rows) {
-      rates[row.quote] = row.rate;
+  if (latestInFlight) return copyLatest(await latestInFlight);
+  latestInFlight = (async () => {
+    try {
+      const quotes = Object.keys(FALLBACK_RATES).filter(
+        currency => currency !== "HKD"
+      );
+      const data = await limitedFetch(
+        `https://api.frankfurter.dev/v2/rates?base=HKD&quotes=${quotes.join(",")}`
+      );
+      const rows = z.array(apiRowSchema).min(1).parse(data);
+      const rates: Record<string, number> = { HKD: 1 };
+      for (const row of rows) {
+        if (!quotes.includes(row.quote) || row.date > getHongKongDateInput())
+          throw new Error("Unexpected currency or rate date");
+        rates[row.quote] = row.rate;
+      }
+      if (quotes.some(quote => rates[quote] === undefined))
+        throw new Error("Incomplete exchange-rate response");
+      latestRatesCache = {
+        rates,
+        fetchedAt: Date.now(),
+        isFallback: false,
+        rateDate: rows.map(row => row.date).sort()[0],
+      };
+    } catch {
+      latestRatesCache = {
+        rates: { ...FALLBACK_RATES },
+        fetchedAt: Date.now(),
+        isFallback: true,
+        rateDate: null,
+      };
     }
-    latestRatesCache = { rates, fetchedAt: now };
-    return { rates, fetchedAt: now, isFallback: false };
-  } catch {
-    latestRatesCache = { rates: FALLBACK_RATES, fetchedAt: now };
-    return { rates: FALLBACK_RATES, fetchedAt: now, isFallback: true };
+    return latestRatesCache;
+  })();
+  try {
+    return copyLatest(await latestInFlight);
+  } finally {
+    latestInFlight = null;
   }
 }
 
-// ─── tRPC Router ──────────────────────────────────────────────────────────────
+export interface ExpenseConversionInput {
+  id: number;
+  amount: string;
+  currency: string;
+  date: string;
+}
+export interface ExpenseConversion {
+  id: number;
+  convertedAmount: number;
+  convertedCurrency: string;
+  rateDate: string;
+  fromRateDate: string;
+  toRateDate: string;
+  isFallback: boolean;
+  isEstimated: boolean;
+  isIdentical: boolean;
+}
 
-export const currencyRouter = router({
-  /**
-   * Get the latest exchange rates (for display/summary).
-   * Returns rates as: how many [quote] per 1 HKD.
-   */
-  getRates: protectedProcedure
-    .input(z.object({ base: z.string().default("HKD") }))
-    .query(async ({ input }) => {
-      const { rates, fetchedAt, isFallback } = await getLatestRates();
-      return { base: input.base, rates, fetchedAt, isFallback };
-    }),
-
-  /**
-   * Convert a list of expense amounts using historical rates.
-   * Each item uses the rate on its own payment date.
-   * Returns the converted amounts plus the rate and actual rate date used.
-   */
-  convertExpenses: protectedProcedure
-    .input(z.object({
-      targetCurrency: z.string(),
-      expenses: z.array(z.object({
-        id: z.number(),
-        amount: z.string(),          // stored as string in DB
-        currency: z.string(),
-        date: z.string(),            // YYYY-MM-DD
-      })),
-    }))
-    .query(async ({ input }) => {
-      const { targetCurrency, expenses } = input;
-
-      // Deduplicate (date, fromCurrency, toCurrency) combos to minimise API calls
-      const pairs = new Map<string, { fromCurrency: string; date: string }>();
-      for (const e of expenses) {
-        if (e.currency === targetCurrency) continue;
-        const key = `${e.date}:${e.currency}:${targetCurrency}`;
-        if (!pairs.has(key)) {
-          pairs.set(key, { fromCurrency: e.currency, date: e.date });
+/** Shared by the expense conversion endpoint and split summaries, one historical date per expense. */
+export async function convertExpenseAmounts(
+  expenses: ExpenseConversionInput[],
+  targetCurrency: string,
+  options: { allowRefunds?: boolean } = {}
+): Promise<ExpenseConversion[]> {
+  const target = requireCurrency(targetCurrency);
+  // Validate the entire batch before fetching; signed stored refunds remain supported explicitly.
+  const validated = expenses.map(expense => {
+    // Database date columns can contain legacy HK wall-clock SQL strings.
+    // Normalize copies only; public procedure inputs still use strict dateSchema.
+    const date = normalizeStoredCalendarDate(expense.date);
+    if (!date) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Expense ${expense.id} has an invalid calendar date`,
+      });
+    }
+    dateSchema.parse(date);
+    if (!validAmount(expense.amount, options.allowRefunds)) {
+      throw new TRPCError({
+        code: "BAD_REQUEST",
+        message: `Expense ${expense.id} has an invalid amount`,
+      });
+    }
+    return { ...expense, date, currency: requireCurrency(expense.currency) };
+  });
+  const results: ExpenseConversion[] = new Array(validated.length);
+  let cursor = 0;
+  await Promise.all(
+    Array.from(
+      { length: Math.min(MAX_CONCURRENT_REQUESTS, validated.length) },
+      async () => {
+        while (cursor < validated.length) {
+          const index = cursor++;
+          const expense = validated[index];
+          const isIdentical = expense.currency === target;
+          const [from, to] = isIdentical
+            ? [
+                { rate: 1, rateDate: expense.date, isFallback: false },
+                { rate: 1, rateDate: expense.date, isFallback: false },
+              ]
+            : await Promise.all([
+                getHistoricalRate(expense.date, expense.currency),
+                getHistoricalRate(expense.date, target),
+              ]);
+          const converted =
+            (Number(expense.amount) / requireRate(from.rate)) *
+            requireRate(to.rate);
+          const rounded = Math.round(converted * 100) / 100;
+          if (!Number.isFinite(converted) || !Number.isFinite(rounded)) {
+            throw new TRPCError({
+              code: "BAD_REQUEST",
+              message: `Expense ${expense.id} conversion exceeds the supported amount range`,
+            });
+          }
+          const isFallback = from.isFallback || to.isFallback;
+          results[index] = {
+            id: expense.id,
+            convertedAmount: isIdentical ? Number(expense.amount) : rounded,
+            convertedCurrency: target,
+            rateDate: from.rateDate < to.rateDate ? from.rateDate : to.rateDate,
+            fromRateDate: from.rateDate,
+            toRateDate: to.rateDate,
+            isFallback,
+            isEstimated:
+              isFallback ||
+              from.rateDate !== expense.date ||
+              to.rateDate !== expense.date,
+            isIdentical,
+          };
         }
       }
+    )
+  );
+  return results;
+}
 
-      // Fetch all unique rates in parallel (caching prevents duplicate HTTP calls)
-      const rateMap = new Map<string, { fromRate: number; toRate: number; rateDate: string; isFallback: boolean }>();
-
-      await Promise.all(
-        Array.from(pairs.entries()).map(async ([key, { fromCurrency, date }]) => {
-          // We need: amount_in_fromCurrency → HKD → targetCurrency
-          // fromRate = HKD per 1 fromCurrency = 1 / (fromCurrency per 1 HKD)
-          // toRate   = targetCurrency per 1 HKD
-          let fromRate = 1;
-          let fromRateDate = date;
-          let fromIsFallback = false;
-
-          if (fromCurrency !== "HKD") {
-            const r = await getHistoricalRate(date, fromCurrency);
-            // r.rate = fromCurrency per 1 HKD, so HKD per 1 fromCurrency = 1/r.rate
-            fromRate = r.rate;
-            fromRateDate = r.rateDate;
-            fromIsFallback = r.isFallback;
-          }
-
-          let toRate = 1;
-          let toRateDate = date;
-          let toIsFallback = false;
-
-          if (targetCurrency !== "HKD") {
-            const r = await getHistoricalRate(date, targetCurrency);
-            toRate = r.rate;
-            toRateDate = r.rateDate;
-            toIsFallback = r.isFallback;
-          }
-
-          // Use the earlier of the two rate dates (most conservative)
-          const rateDate = fromRateDate < toRateDate ? fromRateDate : toRateDate;
-          rateMap.set(key, {
-            fromRate,
-            toRate,
-            rateDate,
-            isFallback: fromIsFallback || toIsFallback,
-          });
-        })
-      );
-
-      // Build per-expense results
-      const results = expenses.map(e => {
-        const rawAmount = parseFloat(e.amount);
-        if (e.currency === targetCurrency) {
-          return {
-            id: e.id,
-            convertedAmount: rawAmount,
-            convertedCurrency: targetCurrency,
-            rateDate: e.date,
-            isFallback: false,
-            isIdentical: true,
-          };
-        }
-
-        const key = `${e.date}:${e.currency}:${targetCurrency}`;
-        const rateInfo = rateMap.get(key);
-        if (!rateInfo) {
-          // Shouldn't happen, but handle gracefully
-          return {
-            id: e.id,
-            convertedAmount: rawAmount,
-            convertedCurrency: e.currency,
-            rateDate: e.date,
-            isFallback: true,
-            isIdentical: false,
-          };
-        }
-
-        const { fromRate, toRate, rateDate, isFallback } = rateInfo;
-        // fromRate = fromCurrency per 1 HKD
-        // toRate   = targetCurrency per 1 HKD
-        // converted = amount / fromRate * toRate
-        const converted = (rawAmount / fromRate) * toRate;
-
-        return {
-          id: e.id,
-          convertedAmount: Math.round(converted * 100) / 100,
-          convertedCurrency: targetCurrency,
-          rateDate,
-          isFallback,
-          isIdentical: false,
-        };
-      });
-
-      return { targetCurrency, results };
+export const currencyRouter = router({
+  getRates: protectedProcedure
+    .input(z.object({ base: currencySchema.default("HKD") }))
+    .query(async ({ input }) => {
+      const base = requireCurrency(input.base);
+      const latest = await getLatestRates();
+      if (latest.rates[base] === undefined) {
+        const baseRate = await getHistoricalRate(
+          latest.rateDate ?? getHongKongDateInput(),
+          base
+        );
+        latest.rates[base] = baseRate.rate;
+        latest.isFallback ||= baseRate.isFallback;
+        if (latest.rateDate && baseRate.rateDate < latest.rateDate)
+          latest.rateDate = baseRate.rateDate;
+      }
+      const denominator = requireRate(latest.rates[base]);
+      const rates: Record<string, number> = {};
+      for (const [quote, rate] of Object.entries(latest.rates))
+        rates[quote] = requireRate(requireRate(rate) / denominator);
+      rates[base] = 1;
+      return { ...latest, base, rates };
     }),
+  convertExpenses: protectedProcedure
+    .input(
+      z.object({
+        targetCurrency: currencySchema,
+        expenses: z
+          .array(
+            z.object({
+              id: z.number().int(),
+              amount: amountSchema,
+              currency: currencySchema,
+              date: dateSchema,
+            })
+          )
+          .max(1000),
+      })
+    )
+    .query(async ({ input }) => ({
+      targetCurrency: input.targetCurrency,
+      results: await convertExpenseAmounts(
+        input.expenses,
+        input.targetCurrency
+      ),
+    })),
 });

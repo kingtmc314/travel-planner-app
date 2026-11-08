@@ -1,14 +1,11 @@
 import type { Lang } from "@/lib/i18n";
+import { normalizeStoredCalendarDate } from "@shared/legacyDateOnly";
 
 export type DateOnly = `${number}-${string}-${string}`;
 
 /** Keeps business dates as YYYY-MM-DD calendar values without browser-local drift. */
 export function normalizeDateOnly(value: string | null | undefined): string {
-  const date = (value ?? "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return "";
-  const [year, month, day] = date.split("-").map(Number);
-  const probe = new Date(Date.UTC(year, month - 1, day));
-  return probe.getUTCFullYear() === year && probe.getUTCMonth() === month - 1 && probe.getUTCDate() === day ? date : "";
+  return normalizeStoredCalendarDate(value) ?? "";
 }
 
 export function isValidDateRange(startDate: string, endDate: string): boolean {

@@ -1,619 +1,1478 @@
 import { useI18n } from "@/hooks/useI18n";
-import { useState, useMemo } from "react";
+import React, { useMemo, useRef, useState } from "react";
+import { Link } from "wouter";
 import AppLayout from "@/components/AppLayout";
 import { trpc } from "@/lib/trpc";
+import { formatDateOnlyInHongKong } from "@/lib/hongKongDate";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Separator } from "@/components/ui/separator";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
 import {
-  RefreshCw, CheckCircle2, AlertCircle, Loader2,
-  Plane, MapPin, Receipt, Hotel, Globe, Map, Activity, Database, Zap, Sparkles, ChevronDown, ChevronUp,
+  RefreshCw,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  ArrowRight,
+  ArrowDown,
+  Plane,
+  MapPin,
+  Receipt,
+  Hotel,
+  Globe,
+  CalendarDays,
+  Activity,
+  ShieldCheck,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  Layers3,
 } from "lucide-react";
 
-type SyncStatus = "idle" | "syncing" | "done" | "error";
-
-const getCategoryLabels = (lang: string): Record<string, string> => lang === "zh" ? {
-  transport: "交通",
-  food: "餐飲",
-  accommodation: "住宿",
-  attraction: "景點",
-  shopping: "購物",
-  other: "其他",
-} : {
-  transport: "Transport",
-  food: "Food",
-  accommodation: "Accommodation",
-  attraction: "Attraction",
-  shopping: "Shopping",
-  other: "Other",
-};
+const getCategoryLabels = (lang: string): Record<string, string> =>
+  lang === "zh"
+    ? {
+        transport: "交通",
+        food: "餐飲",
+        accommodation: "住宿",
+        attraction: "景點",
+        shopping: "購物",
+        other: "其他",
+      }
+    : {
+        transport: "Transport",
+        food: "Food",
+        accommodation: "Accommodation",
+        attraction: "Attraction",
+        shopping: "Shopping",
+        other: "Other",
+      };
 
 const CATEGORY_COLORS: Record<string, string> = {
-  transport: "bg-blue-100 text-blue-700",
-  food: "bg-orange-100 text-orange-700",
-  accommodation: "bg-purple-100 text-purple-700",
-  attraction: "bg-green-100 text-green-700",
-  shopping: "bg-pink-100 text-pink-700",
-  other: "bg-slate-100 text-slate-600",
+  transport: "bg-sky-100 text-sky-800",
+  food: "bg-orange-100 text-orange-800",
+  accommodation: "bg-violet-100 text-violet-800",
+  attraction: "bg-emerald-100 text-emerald-800",
+  shopping: "bg-pink-100 text-pink-800",
+  other: "bg-slate-100 text-slate-700",
 };
-
-interface SyncCardProps {
-  icon: React.ReactNode;
-  title: string;
-  description: string;
-  count?: number;
-  countLabel?: string;
-  status: SyncStatus;
-  onSync: () => void;
-  result?: string;
-}
-
-function SyncCard({ icon, title, description, count, countLabel, status, onSync, result }: SyncCardProps) {
-  const { t, lang } = useI18n();
-  return (
-    <Card className={`transition-all duration-300 ${status === "done" ? "border-green-300 bg-green-50/50 dark:bg-green-950/20" : status === "error" ? "border-destructive/30 bg-destructive/5" : ""}`}>
-      <CardContent className="p-5">
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3 flex-1 min-w-0">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-              status === "done" ? "bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400" :
-              status === "error" ? "bg-destructive/10 text-destructive" :
-              "bg-primary/10 text-primary"
-            }`}>
-              {status === "syncing" ? <Loader2 className="w-5 h-5 animate-spin" /> :
-               status === "done" ? <CheckCircle2 className="w-5 h-5" /> :
-               status === "error" ? <AlertCircle className="w-5 h-5" /> :
-               icon}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-semibold text-foreground text-sm">{title}</h3>
-                {count !== undefined && (
-                  <Badge variant="secondary" className="text-xs font-mono">
-                    {count} {countLabel ?? t("syncItems")}
-                  </Badge>
-                )}
-                {status === "done" && (
-                  <Badge className="text-xs bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-400">{t("syncDone")}</Badge>
-                )}
-                {status === "error" && (
-                  <Badge variant="destructive" className="text-xs">{t("syncFailed")}</Badge>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">{description}</p>
-              {result && (
-                <p className={`text-xs mt-1.5 font-medium ${status === "done" ? "text-green-600" : "text-destructive"}`}>
-                  {result}
-                </p>
-              )}
-            </div>
-          </div>
-          <Button
-            size="sm"
-            variant={status === "done" ? "outline" : "default"}
-            onClick={onSync}
-            disabled={status === "syncing"}
-            className="shrink-0"
-          >
-            {status === "syncing" ? (
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            ) : (
-              <RefreshCw className="w-3.5 h-3.5" />
-            )}
-            <span className="ml-1.5 hidden sm:inline">{status === "done" ? lang === "zh" ? "重新同步" : "Resync" : t("syncNow")}</span>
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// ─── AI Auto-Classify Card ────────────────────────────────────────────────────
-type ClassifyPhase = "idle" | "selecting-trip" | "classifying" | "reviewing" | "applying" | "done";
 
 type Suggestion = {
   id: number;
   title: string;
-  suggestedCategory: "transport" | "food" | "accommodation" | "attraction" | "shopping" | "other";
+  suggestedCategory:
+    | "transport"
+    | "food"
+    | "accommodation"
+    | "attraction"
+    | "shopping"
+    | "other";
 };
 
-function AiClassifyCard({ trips, uncategorisedCount }: { trips: Array<{ id: number; name: string }>; uncategorisedCount?: number }) {
-  const { t, lang } = useI18n();
-  const [phase, setPhase] = useState<ClassifyPhase>("idle");
+type ActionResult = {
+  title: string;
+  tripName?: string;
+  created?: number;
+  updated?: number;
+  skipped?: number;
+  invalid?: number;
+  details?: string[];
+};
+
+function AiClassifyCard({
+  trips,
+  uncategorisedCount,
+  disabled,
+  onBusyChange,
+}: {
+  trips: Array<{ id: number; name: string; userRole: string }>;
+  uncategorisedCount?: number;
+  disabled: boolean;
+  onBusyChange: (busy: boolean) => void;
+}) {
+  const { lang } = useI18n();
+  const utils = trpc.useUtils();
+  const [phase, setPhase] = useState<
+    "idle" | "selecting" | "analysing" | "reviewing" | "applying" | "done"
+  >("idle");
   const [selectedTripId, setSelectedTripId] = useState<number | null>(null);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [overrides, setOverrides] = useState<Record<number, string>>({});
-  const [expanded, setExpanded] = useState(false);
-  const [applyResult, setApplyResult] = useState<string | null>(null);
-
-  const utils = trpc.useUtils();
-
-  const autoClassify = trpc.expenses.autoClassify.useQuery(
-    { tripId: selectedTripId ?? 0 },
-    {
-      enabled: false, // manually triggered
-      retry: false,
-    }
+  const [overrides, setOverrides] = useState<
+    Record<number, Suggestion["suggestedCategory"]>
+  >({});
+  const [expanded, setExpanded] = useState(true);
+  const [applyCount, setApplyCount] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const operationLock = useRef(false);
+  const editableTrips = trips.filter(
+    trip => trip.userRole === "owner" || trip.userRole === "editor"
   );
+  const isBusy = phase === "analysing" || phase === "applying";
 
   const applyClassification = trpc.expenses.applyClassification.useMutation({
-    onSuccess: (data) => {
-      setApplyResult(lang === "zh" ? `已成功更新 ${data.updated} 筆費用的分類` : `Successfully updated ${data.updated} expense categories`);
+    onSuccess: async data => {
+      setApplyCount(data.updated);
       setPhase("done");
-      toast.success(lang === "zh" ? `AI 分類完成：${data.updated} 筆費用已更新` : `AI classification done: ${data.updated} expenses updated`);
-      utils.expenses.list.invalidate();
+      toast.success(
+        lang === "zh"
+          ? `已更新 ${data.updated} 筆費用分類`
+          : `Updated ${data.updated} expense categories`
+      );
+      await utils.invalidate();
     },
-    onError: (e) => {
-      toast.error(lang === "zh" ? `套用失敗：${e.message}` : `Apply failed: ${e.message}`);
+    onError: e => {
+      setError(e.message);
       setPhase("reviewing");
+      toast.error(
+        lang === "zh" ? `套用失敗：${e.message}` : `Apply failed: ${e.message}`
+      );
+    },
+    onSettled: () => {
+      operationLock.current = false;
+      onBusyChange(false);
     },
   });
 
-  const handleStartClassify = async () => {
-    if (!selectedTripId) {
-      toast.error(lang === "zh" ? "請先選擇行程" : "Please select a trip first");
-      return;
-    }
-    setPhase("classifying");
-    setSuggestions([]);
-    setOverrides({});
-    setApplyResult(null);
-    try {
-      const result = await utils.expenses.autoClassify.fetch({ tripId: selectedTripId });
-      if (result.suggestions.length === 0) {
-        toast.info(lang === "zh" ? "此行程沒有未分類的費用" : "No uncategorised expenses in this trip");
-        setPhase("done");
-        setApplyResult(lang === "zh" ? "此行程所有費用已有分類，無需更新。" : "All expenses already categorised.");
-        return;
-      }
-      setSuggestions(result.suggestions);
-      setPhase("reviewing");
-      setExpanded(true);
-    } catch (e: any) {
-      toast.error(lang === "zh" ? `AI 分類失敗：${e.message}` : `AI classification failed: ${e.message}`);
-      setPhase("idle");
-    }
-  };
-
-  const handleApply = () => {
-    if (!selectedTripId) return;
-    setPhase("applying");
-    const classifications = suggestions.map(s => ({
-      id: s.id,
-      category: (overrides[s.id] ?? s.suggestedCategory) as Suggestion["suggestedCategory"],
-    }));
-    applyClassification.mutate({ tripId: selectedTripId, classifications });
-  };
-
-  const handleReset = () => {
+  const reset = () => {
+    if (operationLock.current) return;
     setPhase("idle");
     setSuggestions([]);
     setOverrides({});
-    setApplyResult(null);
-    setExpanded(false);
+    setApplyCount(null);
+    setError(null);
   };
 
-  const isClassifying = phase === "classifying";
-  const isApplying = phase === "applying";
-  const isDone = phase === "done";
+  const analyse = async () => {
+    if (!selectedTripId || operationLock.current || disabled) return;
+    operationLock.current = true;
+    onBusyChange(true);
+    setPhase("analysing");
+    setSuggestions([]);
+    setOverrides({});
+    setApplyCount(null);
+    setError(null);
+    try {
+      const result = await utils.expenses.autoClassify.fetch({
+        tripId: selectedTripId,
+      });
+      setSuggestions(result.suggestions);
+      setExpanded(true);
+      setPhase(result.suggestions.length ? "reviewing" : "done");
+      if (!result.suggestions.length) setApplyCount(0);
+    } catch (e: unknown) {
+      const message =
+        e instanceof Error
+          ? e.message
+          : lang === "zh"
+            ? "分析失敗，請重試"
+            : "Analysis failed. Please retry.";
+      setError(message);
+      setPhase("selecting");
+      toast.error(message);
+    } finally {
+      operationLock.current = false;
+      onBusyChange(false);
+    }
+  };
+
+  const apply = () => {
+    if (
+      !selectedTripId ||
+      !suggestions.length ||
+      operationLock.current ||
+      disabled
+    )
+      return;
+    operationLock.current = true;
+    onBusyChange(true);
+    setError(null);
+    setPhase("applying");
+    applyClassification.mutate({
+      tripId: selectedTripId,
+      classifications: suggestions.map(s => ({
+        id: s.id,
+        category: overrides[s.id] ?? s.suggestedCategory,
+      })),
+    });
+  };
 
   return (
-    <Card className={`transition-all duration-300 ${isDone ? "border-green-300 bg-green-50/50 dark:bg-green-950/20" : "border-primary/20"}`}>
-      <CardContent className="p-5">
-        {/* Header row */}
-        <div className="flex items-start justify-between gap-4">
-          <div className="flex items-start gap-3 flex-1 min-w-0">
-            <div className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${
-              isDone ? "bg-green-100 text-green-600 dark:bg-green-900/40 dark:text-green-400" :
-              isClassifying || isApplying ? "bg-primary/10 text-primary" :
-              "bg-violet-100 text-violet-600 dark:bg-violet-900/30 dark:text-violet-400"
-            }`}>
-              {isClassifying || isApplying
-                ? <Loader2 className="w-5 h-5 animate-spin" />
-                : isDone
-                  ? <CheckCircle2 className="w-5 h-5" />
-                  : <Sparkles className="w-5 h-5" />
-              }
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="font-semibold text-foreground text-sm">{lang === "zh" ? "AI 自動分類費用" : "AI Auto-Classify Expenses"}</h3>
-                <Badge className="text-xs bg-violet-100 text-violet-700 border-violet-200 dark:bg-violet-900/30 dark:text-violet-400">AI</Badge>
-                {uncategorisedCount !== undefined && uncategorisedCount > 0 && phase === "idle" && (
-                  <Badge variant="secondary" className="text-xs font-mono">{uncategorisedCount} {lang === "zh" ? "筆未分類" : "uncategorised"}</Badge>
-                )}
-                {suggestions.length > 0 && phase === "reviewing" && (
-                  <Badge variant="secondary" className="text-xs font-mono">{suggestions.length} {lang === "zh" ? "筆待確認" : "to review"}</Badge>
-                )}
-                {isDone && (
-                  <Badge className="text-xs bg-green-100 text-green-700 border-green-200 dark:bg-green-900/40 dark:text-green-400">{t("syncDone")}</Badge>
-                )}
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {lang === "zh" ? "使用 AI 分析費用名稱，自動將「其他」類別歸類為餐飲、交通、購物等正確分類" : "Use AI to analyse expense names and auto-categorise them into food, transport, shopping, etc."}
-              </p>
-              {applyResult && (
-                <p className={`text-xs mt-1.5 font-medium ${isDone ? "text-green-600" : "text-muted-foreground"}`}>
-                  {applyResult}
-                </p>
+    <section
+      className="voyage-panel space-y-4"
+      aria-labelledby="classification-title"
+    >
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex gap-3">
+          <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <Sparkles className="size-5" />
+          </span>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 id="classification-title" className="font-semibold">
+                {lang === "zh" ? "AI 費用分類助手" : "AI expense organiser"}
+              </h3>
+              {uncategorisedCount !== undefined && (
+                <Badge variant="secondary">
+                  {uncategorisedCount}{" "}
+                  {lang === "zh" ? "筆其他／未分類" : "other / unclassified"}
+                </Badge>
               )}
             </div>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+              {lang === "zh"
+                ? "先分析現有費用，再逐筆確認或修改分類；不會新增費用或更改金額。"
+                : "Analyse existing expenses, then review each suggested category. No new expenses or amount changes."}
+            </p>
           </div>
-
-          {/* Action button */}
-          {phase === "idle" || phase === "selecting-trip" ? (
-            <Button
-              size="sm"
-              variant="default"
-              className="shrink-0 bg-violet-600 hover:bg-violet-700 text-white"
-              onClick={() => setPhase("selecting-trip")}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span className="ml-1.5 hidden sm:inline">{lang === "zh" ? "開始分類" : "Start"}</span>
-            </Button>
-          ) : isDone ? (
-            <Button size="sm" variant="outline" onClick={handleReset} className="shrink-0">
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span className="ml-1.5 hidden sm:inline">{lang === "zh" ? "重新分類" : "Retry"}</span>
-            </Button>
-          ) : null}
         </div>
-
-        {/* Trip selector */}
-        {(phase === "selecting-trip" || phase === "classifying" || phase === "reviewing" || phase === "applying") && (
-          <div className="mt-4 flex items-center gap-2 flex-wrap">
-            <Select
-              value={selectedTripId ? String(selectedTripId) : ""}
-              onValueChange={v => setSelectedTripId(Number(v))}
-              disabled={isClassifying || isApplying}
-            >
-              <SelectTrigger className="flex-1 min-w-0 h-8 text-sm">
-                <SelectValue placeholder={lang === "zh" ? "選擇行程…" : "Select trip…"} />
-              </SelectTrigger>
-              <SelectContent>
-                {trips.map(t => (
-                  <SelectItem key={t.id} value={String(t.id)}>{t.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {phase === "selecting-trip" && (
-              <Button
-                size="sm"
-                className="shrink-0 bg-violet-600 hover:bg-violet-700 text-white"
-                onClick={handleStartClassify}
-                disabled={!selectedTripId}
-              >
-                {isClassifying ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
-                <span className="ml-1.5">{lang === "zh" ? "分析" : "Analyse"}</span>
-              </Button>
-            )}
-            {isClassifying && (
-              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                <Loader2 className="w-3 h-3 animate-spin" />
-                {lang === "zh" ? "AI 分析中，請稍候…" : "AI analysing, please wait…"}
-              </div>
-            )}
-          </div>
+        {(phase === "idle" || phase === "done") && (
+          <Button
+            className="h-auto min-h-10 rounded-xl whitespace-normal sm:shrink-0"
+            variant="outline"
+            disabled={disabled || !editableTrips.length}
+            onClick={() => {
+              reset();
+              setPhase("selecting");
+            }}
+          >
+            <Sparkles />
+            {lang === "zh"
+              ? phase === "done"
+                ? "再次分類"
+                : "開始分類"
+              : phase === "done"
+                ? "Classify again"
+                : "Start classification"}
+          </Button>
         )}
-
-        {/* Preview table */}
-        {phase === "reviewing" && suggestions.length > 0 && (
-          <div className="mt-4">
-            <button
-              className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground mb-2 transition-colors"
-              onClick={() => setExpanded(v => !v)}
+      </div>
+      {phase !== "idle" && phase !== "done" && (
+        <div className="flex flex-col gap-2 sm:flex-row">
+          <Select
+            value={selectedTripId ? String(selectedTripId) : ""}
+            disabled={disabled || isBusy}
+            onValueChange={value => {
+              setSelectedTripId(Number(value));
+              setSuggestions([]);
+              setOverrides({});
+              setError(null);
+              setPhase("selecting");
+            }}
+          >
+            <SelectTrigger
+              className="w-full min-w-0 flex-1 rounded-xl [&>span]:truncate"
+              aria-label={
+                lang === "zh" ? "選擇要分類的行程" : "Choose trip to classify"
+              }
             >
-              {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-              {expanded ? (lang === "zh" ? "收起" : "Collapse") : (lang === "zh" ? "展開" : "Expand")} {lang === "zh" ? "AI 建議" : "AI suggestions"} ({suggestions.length})
-            </button>
-
-            {expanded && (
-              <div className="border border-border rounded-xl overflow-hidden">
-                <div className="grid grid-cols-[1fr_auto] text-[10px] font-semibold text-muted-foreground uppercase tracking-wide bg-muted/50 px-3 py-2 gap-3">
-                  <span>{lang === "zh" ? "費用名稱" : "Expense"}</span>
-                  <span className="text-right">{lang === "zh" ? "AI 建議分類" : "AI Category"}</span>
-                </div>
-                <div className="divide-y divide-border max-h-64 overflow-y-auto">
-                  {suggestions.map(s => {
-                    const effective = (overrides[s.id] ?? s.suggestedCategory) as string;
-                    return (
-                      <div key={s.id} className="grid grid-cols-[1fr_auto] items-center px-3 py-2 gap-3 hover:bg-muted/30 transition-colors">
-                        <span className="text-sm text-foreground truncate">{s.title}</span>
-                        <Select
-                          value={effective}
-                          onValueChange={v => setOverrides(prev => ({ ...prev, [s.id]: v }))}
+              <SelectValue
+                placeholder={lang === "zh" ? "選擇行程…" : "Select a trip…"}
+              />
+            </SelectTrigger>
+            <SelectContent className="max-w-[calc(100vw-2rem)]">
+              {editableTrips.map(trip => (
+                <SelectItem
+                  key={trip.id}
+                  value={String(trip.id)}
+                  className="break-words"
+                >
+                  {trip.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {phase === "selecting" && (
+            <Button
+              className="min-h-10 rounded-xl"
+              onClick={analyse}
+              disabled={!selectedTripId || disabled}
+            >
+              <Sparkles />
+              {lang === "zh" ? "分析費用" : "Analyse expenses"}
+            </Button>
+          )}
+          {isBusy && (
+            <p
+              className="flex items-center gap-2 text-sm text-muted-foreground"
+              role="status"
+            >
+              <Loader2 className="size-4 animate-spin" />
+              {lang === "zh"
+                ? phase === "analysing"
+                  ? "正在分析…"
+                  : "正在套用…"
+                : phase === "analysing"
+                  ? "Analysing…"
+                  : "Applying…"}
+            </p>
+          )}
+        </div>
+      )}
+      {phase === "reviewing" && suggestions.length > 0 && (
+        <div>
+          <button
+            className="mb-3 flex min-h-10 items-center gap-2 text-sm font-medium text-primary focus-visible:outline focus-visible:outline-2"
+            aria-expanded={expanded}
+            onClick={() => setExpanded(v => !v)}
+          >
+            {expanded ? (
+              <ChevronUp className="size-4" />
+            ) : (
+              <ChevronDown className="size-4" />
+            )}
+            {lang === "zh"
+              ? `確認 ${suggestions.length} 筆建議`
+              : `Review ${suggestions.length} suggestions`}
+          </button>
+          {expanded && (
+            <div className="max-h-72 overflow-y-auto rounded-2xl border border-border divide-y divide-border">
+              {suggestions.map(s => {
+                const category = overrides[s.id] ?? s.suggestedCategory;
+                return (
+                  <div
+                    key={s.id}
+                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 p-3"
+                  >
+                    <p className="break-words text-sm">{s.title}</p>
+                    <Select
+                      value={category}
+                      disabled={disabled || isBusy}
+                      onValueChange={value =>
+                        setOverrides(prev => ({
+                          ...prev,
+                          [s.id]: value as Suggestion["suggestedCategory"],
+                        }))
+                      }
+                    >
+                      <SelectTrigger
+                        className="h-10 w-28 rounded-xl text-xs"
+                        aria-label={
+                          lang === "zh"
+                            ? `${s.title} 的分類`
+                            : `Category for ${s.title}`
+                        }
+                      >
+                        <span
+                          className={`rounded-md px-1.5 py-1 ${CATEGORY_COLORS[category]}`}
                         >
-                          <SelectTrigger className="h-7 text-xs w-28 shrink-0">
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${CATEGORY_COLORS[effective] ?? ""}`}>
-                              {getCategoryLabels(lang)[effective] ?? effective}
-                            </span>
-                          </SelectTrigger>
-                          <SelectContent>
-                            {Object.entries(getCategoryLabels(lang)).map(([val, label]) => (
-                              <SelectItem key={val} value={val}>
-                                <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${CATEGORY_COLORS[val]}`}>{label}</span>
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 mt-3">
-              <Button
-                size="sm"
-                className="bg-violet-600 hover:bg-violet-700 text-white"
-                onClick={handleApply}
-                disabled={isApplying}
-              >
-                {isApplying ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />}
-                {lang === "zh" ? `確認套用 ${suggestions.length} 筆分類` : `Apply ${suggestions.length} classifications`}
-              </Button>
-              <Button size="sm" variant="ghost" onClick={handleReset} disabled={isApplying} className="text-muted-foreground">
-                {lang === "zh" ? "取消" : "Cancel"}
-              </Button>
+                          {getCategoryLabels(lang)[category]}
+                        </span>
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(getCategoryLabels(lang)).map(
+                          ([value, label]) => (
+                            <SelectItem key={value} value={value}>
+                              {label}
+                            </SelectItem>
+                          )
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                );
+              })}
             </div>
+          )}
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <Button
+              className="min-h-10 rounded-xl whitespace-normal"
+              onClick={apply}
+              disabled={disabled || isBusy}
+            >
+              <CheckCircle2 />
+              {lang === "zh"
+                ? `確認套用 ${suggestions.length} 筆分類`
+                : `Apply ${suggestions.length} categories`}
+            </Button>
+            <Button
+              className="min-h-10 rounded-xl"
+              variant="ghost"
+              onClick={reset}
+              disabled={disabled || isBusy}
+            >
+              {lang === "zh" ? "取消" : "Cancel"}
+            </Button>
           </div>
-        )}
-      </CardContent>
-    </Card>
+        </div>
+      )}
+      {phase === "done" && (
+        <p
+          className="rounded-xl bg-primary/5 p-3 text-sm text-primary"
+          role="status"
+        >
+          {lang === "zh"
+            ? applyCount === 0
+              ? "沒有需要更新的分類。"
+              : `已更新 ${applyCount} 筆分類。`
+            : applyCount === 0
+              ? "No categories need updating."
+              : `Updated ${applyCount} categories.`}
+        </p>
+      )}
+      {error && (
+        <p
+          className="break-words rounded-xl bg-destructive/5 p-3 text-sm text-destructive"
+          role="alert"
+        >
+          {error}
+        </p>
+      )}
+      {!editableTrips.length && (
+        <p className="text-xs text-muted-foreground">
+          {lang === "zh"
+            ? "需要可編輯的行程，才能套用分類。"
+            : "An editable trip is required to apply categories."}
+        </p>
+      )}
+    </section>
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SyncPage() {
   const { t, lang } = useI18n();
-  const { data: summary, refetch: refetchSummary, isLoading } = trpc.sync.getSummary.useQuery();
-  const { data: tripsData } = trpc.trips.list.useQuery();
-
-  const trips = useMemo(() =>
-    (tripsData ?? []).map(t => ({ id: t.id, name: t.name })),
-    [tripsData]
+  const utils = trpc.useUtils();
+  const auth = trpc.auth.me.useQuery(undefined, { retry: false });
+  const summaryQuery = trpc.sync.getSummary.useQuery(undefined, {
+    enabled: !!auth.data,
+  });
+  const tripsQuery = trpc.trips.list.useQuery(undefined, {
+    enabled: !!auth.data,
+  });
+  const summary = summaryQuery.data;
+  const trips = tripsQuery.data ?? [];
+  const [selectedTripId, setSelectedTripId] = useState<number | null>(null);
+  const [classifyBusy, setClassifyBusy] = useState(false);
+  const [lastResult, setLastResult] = useState<ActionResult | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
+  const mutationLock = useRef(false);
+  const selectedTrip = trips.find(trip => trip.id === selectedTripId);
+  const canEdit =
+    selectedTrip?.userRole === "owner" || selectedTrip?.userRole === "editor";
+  const tripInput = useMemo(
+    () => ({ tripId: selectedTripId ?? 0 }),
+    [selectedTripId]
   );
-
-  const [statuses, setStatuses] = useState<Record<string, SyncStatus>>({});
-  const [results, setResults] = useState<Record<string, string>>({});
-  const [isSyncingAll, setIsSyncingAll] = useState(false);
-  const [syncAllLog, setSyncAllLog] = useState<string[]>([]);
-
-  const setStatus = (key: string, s: SyncStatus) => setStatuses(p => ({ ...p, [key]: s }));
-  const setResult = (key: string, r: string) => setResults(p => ({ ...p, [key]: r }));
-
-  const syncCountriesFromFlights = trpc.sync.syncCountriesFromFlights.useMutation({
-    onSuccess: (data) => {
-      setStatus("flights2countries", "done");
-      setResult("flights2countries", lang === "zh" ? `已從 ${data.total} 個航班同步 ${data.synced} 個國家` : `Synced ${data.synced} countries from ${data.total} flights`);
-      toast.success(lang === "zh" ? `飛行護照 → 旅遊足跡：同步 ${data.synced} 個國家` : `Flight Passport → Travel History: synced ${data.synced} countries`);
-      refetchSummary();
-    },
-    onError: (e) => { setStatus("flights2countries", "error"); setResult("flights2countries", e.message); },
+  const flightsQuery = trpc.flights.list.useQuery(tripInput, {
+    enabled: !!auth.data && !!selectedTrip,
+  });
+  const hotelsQuery = trpc.hotels.list.useQuery(tripInput, {
+    enabled: !!auth.data && !!selectedTrip,
+  });
+  const daysQuery = trpc.itinerary.getDays.useQuery(tripInput, {
+    enabled: !!auth.data && !!selectedTrip,
   });
 
-  const syncCountriesFromTrips = trpc.sync.syncCountriesFromTrips.useMutation({
-    onSuccess: (data) => {
-      setStatus("trips2countries", "done");
-      setResult("trips2countries", lang === "zh" ? `已從 ${data.total} 個行程同步 ${data.synced} 個國家` : `Synced ${data.synced} countries from ${data.total} trips`);
-      toast.success(lang === "zh" ? `行程目的地 → 旅遊足跡：同步 ${data.synced} 個國家` : `Trip destinations → Travel History: synced ${data.synced} countries`);
-      refetchSummary();
-    },
-    onError: (e) => { setStatus("trips2countries", "error"); setResult("trips2countries", e.message); },
-  });
-
-  const syncDataIntegrity = trpc.sync.syncDataIntegrity.useMutation({
-    onSuccess: (data) => {
-      setStatus("integrity", "done");
-      setResult("integrity", data.message);
-      toast.success(data.message);
-    },
-    onError: (e) => { setStatus("integrity", "error"); setResult("integrity", e.message); },
-  });
-
-  const syncAll = trpc.sync.syncAll.useMutation({
-    onSuccess: (data) => {
-      setIsSyncingAll(false);
-      const log = data.results.map(r => `✓ ${r.label}: ${r.synced}`);
-      setSyncAllLog(log);
-      setStatuses({
-        flights2countries: "done",
-        trips2countries: "done",
-        integrity: "done",
-      });
-      toast.success(lang === "zh" ? `全部同步完成！共 ${data.results.length} 項操作` : `All synced! ${data.results.length} operations completed`);
-      refetchSummary();
-    },
-    onError: (e) => {
-      setIsSyncingAll(false);
-      toast.error(lang === "zh" ? `同步失敗：${e.message}` : `Sync failed: ${e.message}`);
-    },
-  });
-
-  const handleSyncAll = () => {
-    setIsSyncingAll(true);
-    setSyncAllLog([]);
-    setStatuses({
-      flights2countries: "syncing",
-      trips2countries: "syncing",
-      integrity: "syncing",
-    });
-    syncAll.mutate();
+  const reportError = (e: { message: string }) => {
+    setLastError(e.message);
+    toast.error(
+      lang === "zh" ? `操作失敗：${e.message}` : `Action failed: ${e.message}`
+    );
+  };
+  const complete = async (result: ActionResult) => {
+    setLastResult(result);
+    toast.success(
+      lang === "zh"
+        ? "操作完成，已更新相關頁面"
+        : "Action complete. Related pages refreshed."
+    );
+    await utils.invalidate();
+  };
+  const release = () => {
+    mutationLock.current = false;
   };
 
-  const syncCards = [
+  const importFlights = trpc.connected.importFlightsToPassport.useMutation({
+    onSuccess: data =>
+      complete({
+        title:
+          lang === "zh"
+            ? "行程航班 → 飛行護照"
+            : "Trip flights → flight passport",
+        tripName: selectedTrip?.name,
+        ...data,
+      }),
+    onError: reportError,
+    onSettled: release,
+  });
+  const syncLogistics = trpc.connected.syncLogisticsToItinerary.useMutation({
+    onSuccess: data =>
+      complete({
+        title:
+          lang === "zh"
+            ? "航班與住宿 → 每日行程"
+            : "Flights & stays → itinerary",
+        tripName: selectedTrip?.name,
+        ...data,
+      }),
+    onError: reportError,
+    onSettled: release,
+  });
+  const syncCountriesFromFlights =
+    trpc.sync.syncCountriesFromFlights.useMutation({
+      onSuccess: data =>
+        complete({
+          title:
+            lang === "zh"
+              ? "飛行護照 → 國家足跡"
+              : "Flight passport → country history",
+          details: [
+            lang === "zh"
+              ? `已處理 ${data.total} 個航班；同步 ${data.synced} 個國家。`
+              : `Processed ${data.total} flights; synced ${data.synced} countries.`,
+          ],
+        }),
+      onError: reportError,
+      onSettled: release,
+    });
+  const syncCountriesFromTrips = trpc.sync.syncCountriesFromTrips.useMutation({
+    onSuccess: data =>
+      complete({
+        title:
+          lang === "zh"
+            ? "行程目的地 → 國家足跡"
+            : "Trip destinations → country history",
+        details: [
+          lang === "zh"
+            ? `已處理 ${data.total} 個行程；同步 ${data.synced} 筆國家資料。`
+            : `Processed ${data.total} trips; synced ${data.synced} country records.`,
+        ],
+      }),
+    onError: reportError,
+    onSettled: release,
+  });
+  const syncDataIntegrity = trpc.sync.syncDataIntegrity.useMutation({
+    onSuccess: data =>
+      complete({
+        title: lang === "zh" ? "記錄關聯檢查" : "Record relationship check",
+        details: [
+          lang === "zh"
+            ? `已檢查 ${data.validTrips} 個行程、${data.totalExpenses} 筆費用、${data.totalFlights} 個航班、${data.totalHotels} 筆住宿記錄。`
+            : `Checked ${data.validTrips} trips, ${data.totalExpenses} expenses, ${data.totalFlights} flights and ${data.totalHotels} stays.`,
+          ...(data.issues.length
+            ? [
+                lang === "zh"
+                  ? "部分行程或費用資料尚未建立；不會刪除任何記錄。"
+                  : "Some trip or expense records have not been added. No records are deleted.",
+              ]
+            : []),
+        ],
+      }),
+    onError: reportError,
+    onSettled: release,
+  });
+  const syncAll = trpc.sync.syncAll.useMutation({
+    onSuccess: data =>
+      complete({
+        title:
+          lang === "zh"
+            ? "國家同步與記錄驗證"
+            : "Country sync & record verification",
+        details: data.results.map((result, index) => {
+          const labels =
+            lang === "zh"
+              ? [
+                  "護照國家同步",
+                  "目的地國家同步",
+                  "費用記錄驗證",
+                  "航班記錄驗證",
+                  "住宿記錄驗證",
+                  "國家記錄總計",
+                ]
+              : [
+                  "Passport country sync",
+                  "Destination country sync",
+                  "Expense verification",
+                  "Flight verification",
+                  "Stay verification",
+                  "Country record total",
+                ];
+          return `${labels[index] ?? (lang === "zh" ? "操作" : "Operation")}: ${result.synced}`;
+        }),
+      }),
+    onError: reportError,
+    onSettled: release,
+  });
+
+  const isPending =
+    importFlights.isPending ||
+    syncLogistics.isPending ||
+    syncCountriesFromFlights.isPending ||
+    syncCountriesFromTrips.isPending ||
+    syncDataIntegrity.isPending ||
+    syncAll.isPending;
+  const busy = isPending || classifyBusy;
+  const run = (action: () => void) => {
+    if (mutationLock.current || busy || !auth.data) return;
+    mutationLock.current = true;
+    setLastError(null);
+    setLastResult(null);
+    action();
+  };
+  const numberFormat = new Intl.NumberFormat(lang === "zh" ? "zh-HK" : "en-HK");
+  const snapshotTime = summaryQuery.dataUpdatedAt
+    ? new Intl.DateTimeFormat(lang === "zh" ? "zh-HK" : "en-HK", {
+        timeZone: "Asia/Hong_Kong",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(summaryQuery.dataUpdatedAt)
+    : null;
+  const metrics = [
     {
-      key: "flights2countries",
-      icon: <Plane className="w-5 h-5" />,
-      title: lang === "zh" ? "飛行護照 → 旅遊足跡" : "Flight Passport → Travel History",
-      description: lang === "zh" ? "從所有歷史航班記錄中提取到訪國家，自動更新旅遊足跡地圖" : "Extract visited countries from flight records and update travel map",
-      count: summary?.pastFlights,
-      countLabel: lang === "zh" ? "個航班" : "flights",
-      onSync: () => {
-        setStatus("flights2countries", "syncing");
-        syncCountriesFromFlights.mutate();
-      },
+      Icon: Layers3,
+      label: lang === "zh" ? "行程" : "Trips",
+      value: summary?.trips,
     },
     {
-      key: "trips2countries",
-      icon: <Globe className="w-5 h-5" />,
-      title: lang === "zh" ? "行程目的地 → 旅遊足跡" : "Trip Destinations → Travel History",
-      description: lang === "zh" ? "從所有旅程的目的地自動識別國家，標記為已到訪" : "Auto-detect countries from trip destinations and mark as visited",
-      count: summary?.trips,
-      countLabel: lang === "zh" ? "個行程" : "trips",
-      onSync: () => {
-        setStatus("trips2countries", "syncing");
-        syncCountriesFromTrips.mutate();
-      },
+      Icon: Activity,
+      label: lang === "zh" ? "行程活動" : "Activities",
+      value: summary?.activities,
     },
     {
-      key: "integrity",
-      icon: <Database className="w-5 h-5" />,
-      title: lang === "zh" ? "資料完整性檢查" : "Data Integrity Check",
-      description: lang === "zh" ? "驗證所有行程、費用、航班、住宿資料的關聯完整性" : "Verify relational integrity of all trips, expenses, flights, and hotels",
-      count: summary?.trips,
-      countLabel: lang === "zh" ? "個行程" : "trips",
-      onSync: () => {
-        setStatus("integrity", "syncing");
-        syncDataIntegrity.mutate();
-      },
+      Icon: Receipt,
+      label: lang === "zh" ? "費用記錄" : "Expense records",
+      value: summary?.expenses,
+    },
+    {
+      Icon: MapPin,
+      label: lang === "zh" ? "地圖標記" : "Map pins",
+      value: summary?.mapPins,
+    },
+    {
+      Icon: Plane,
+      label: lang === "zh" ? "行程航班" : "Trip flights",
+      value: summary?.tripFlights,
+    },
+    {
+      Icon: Hotel,
+      label: lang === "zh" ? "住宿記錄" : "Stays",
+      value: summary?.hotels,
+    },
+    {
+      Icon: Plane,
+      label: lang === "zh" ? "護照航班" : "Passport flights",
+      value: summary?.pastFlights,
+    },
+    {
+      Icon: Globe,
+      label: lang === "zh" ? "國家記錄" : "Country records",
+      value: summary?.visitedCountries,
     },
   ];
 
   return (
     <AppLayout>
-      <div className="max-w-2xl mx-auto px-4 sm:px-6 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
-              <RefreshCw className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-foreground">{t("syncCenterTitle")}</h1>
-              <p className="text-sm text-muted-foreground">{lang === "zh" ? "同步、驗證並智能整理所有旅行資料" : "Sync, verify, and intelligently organise all travel data"}</p>
+      <div className="mx-auto w-full max-w-6xl space-y-6 px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
+        <header className="voyage-hero relative overflow-hidden">
+          <div
+            className="pointer-events-none absolute -right-10 -top-12 size-48 rounded-full border border-white/10"
+            aria-hidden="true"
+          />
+          <div className="relative max-w-2xl">
+            <p className="mb-3 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.22em] text-emerald-100">
+              <Layers3 className="size-4" />
+              {lang === "zh"
+                ? "你的旅行資料，彼此連接"
+                : "A connected travel journal"}
+            </p>
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              {t("syncCenterTitle")}
+            </h1>
+            <p className="mt-3 max-w-xl text-sm leading-relaxed text-white/80">
+              {lang === "zh"
+                ? "輸入一次，按需要連接。將航班、住宿與每日行程串連，再由你確認費用和地圖標記。"
+                : "Enter once. Connect intentionally. Bring flights, stays and daily plans together, then choose the expenses and map pins to import."}
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <span className="flex items-center gap-1.5 rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs">
+                <ShieldCheck className="size-3.5" />
+                {lang === "zh" ? "保留手動記錄" : "Manual records retained"}
+              </span>
+              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1.5 text-xs">
+                {lang === "zh"
+                  ? "由你決定何時匯入"
+                  : "You choose when to import"}
+              </span>
             </div>
           </div>
-        </div>
+        </header>
 
-        {/* Data Summary */}
-        <Card className="mb-6">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base flex items-center gap-2">
-              <Activity className="w-4 h-4 text-primary" />
-              {lang === "zh" ? "資料總覽" : "Data Summary"}
-            </CardTitle>
-            <CardDescription className="text-xs">{lang === "zh" ? "目前資料庫中的所有記錄" : "All records in the database"}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="grid grid-cols-4 gap-3">
-                {[...Array(8)].map((_, i) => (
-                  <div key={i} className="h-14 bg-muted rounded-lg animate-pulse" />
-                ))}
+        {!auth.isLoading && !auth.data ? (
+          <section className="voyage-panel space-y-3">
+            <h2 className="voyage-section-title">
+              {lang === "zh"
+                ? "登入後連接你的旅行資料"
+                : "Sign in to connect your travel records"}
+            </h2>
+            <p
+              className="text-sm text-muted-foreground"
+              role={auth.error ? "alert" : undefined}
+            >
+              {auth.error
+                ? lang === "zh"
+                  ? `無法確認登入狀態：${auth.error.message}`
+                  : `Could not confirm sign-in: ${auth.error.message}`
+                : lang === "zh"
+                  ? "同步中心只會讀取你有權限查看的行程。"
+                  : "The hub only reads trips you are authorised to access."}
+            </p>
+            <Button asChild className="rounded-xl">
+              <Link href="/dashboard">
+                {lang === "zh" ? "返回我的行程" : "Go to my trips"}
+                <ArrowRight />
+              </Link>
+            </Button>
+            {auth.error && (
+              <Button
+                variant="outline"
+                className="ml-2 rounded-xl"
+                onClick={() => void auth.refetch()}
+              >
+                {lang === "zh" ? "重試" : "Retry"}
+              </Button>
+            )}
+          </section>
+        ) : (
+          <>
+            <section aria-labelledby="summary-title" className="space-y-3">
+              <div className="flex flex-wrap items-end justify-between gap-2">
+                <div>
+                  <p className="voyage-eyebrow">
+                    {lang === "zh" ? "真實資料快照" : "Your record snapshot"}
+                  </p>
+                  <h2 id="summary-title" className="voyage-section-title mt-1">
+                    {lang === "zh" ? "旅行資料總覽" : "Your travel records"}
+                  </h2>
+                </div>
+                <span className="text-[11px] text-muted-foreground">
+                  {summaryQuery.isFetching
+                    ? lang === "zh"
+                      ? "更新中…"
+                      : "Refreshing…"
+                    : snapshotTime
+                      ? lang === "zh"
+                        ? `快照更新 ${snapshotTime} · 香港時間 UTC+8`
+                        : `Refreshed ${snapshotTime} · Hong Kong UTC+8`
+                      : "—"}
+                </span>
               </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                {[
-                  { icon: <Plane className="w-4 h-4" />, label: lang === "zh" ? "行程" : "Trips", value: summary?.trips ?? 0 },
-                  { icon: <Receipt className="w-4 h-4" />, label: lang === "zh" ? "費用" : "Expenses", value: summary?.expenses ?? 0 },
-                  { icon: <Plane className="w-4 h-4 rotate-45" />, label: lang === "zh" ? "行程航班" : "Trip Flights", value: summary?.tripFlights ?? 0 },
-                  { icon: <Hotel className="w-4 h-4" />, label: lang === "zh" ? "住宿" : "Hotels", value: summary?.hotels ?? 0 },
-                  { icon: <Map className="w-4 h-4" />, label: lang === "zh" ? "地圖標記" : "Map Pins", value: summary?.mapPins ?? 0 },
-                  { icon: <Plane className="w-4 h-4" />, label: lang === "zh" ? "歷史航班" : "Past Flights", value: summary?.pastFlights ?? 0 },
-                  { icon: <Globe className="w-4 h-4" />, label: lang === "zh" ? "到訪國家" : "Countries", value: summary?.visitedCountries ?? 0 },
-                  { icon: <Activity className="w-4 h-4" />, label: lang === "zh" ? "行程活動" : "Activities", value: summary?.activities ?? 0 },
-                ].map((item, i) => (
-                  <div key={i} className="flex flex-col items-center justify-center p-3 rounded-xl bg-muted/50 gap-1">
-                    <div className="text-muted-foreground">{item.icon}</div>
-                    <div className="text-xl font-bold text-foreground tabular-nums">{item.value}</div>
-                    <div className="text-[10px] text-muted-foreground">{item.label}</div>
+              <p className="text-xs text-muted-foreground">
+                {lang === "zh"
+                  ? "以下為你可查看行程的現有記錄數，並非已同步或已完成的旅行數。國家記錄可包含計劃到訪。"
+                  : "Existing records from accessible trips, not counts of synced or completed journeys. Country records may include planned visits."}
+              </p>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {metrics.map(({ Icon, label, value }) => (
+                  <div key={label} className="voyage-metric min-w-0">
+                    <div className="mb-2 flex items-center gap-2 text-muted-foreground">
+                      <Icon className="size-4 shrink-0 text-primary" />
+                      <p className="text-xs">{label}</p>
+                    </div>
+                    {auth.isLoading || (summaryQuery.isLoading && !summary) ? (
+                      <div
+                        className="h-8 w-16 animate-pulse rounded-lg bg-muted"
+                        aria-label={lang === "zh" ? "載入中" : "Loading"}
+                      />
+                    ) : (
+                      <p className="text-3xl font-semibold tabular-nums tracking-tight">
+                        {value === undefined ? "—" : numberFormat.format(value)}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
-            )}
-          </CardContent>
-        </Card>
+              {summaryQuery.error && (
+                <div
+                  className="flex flex-wrap items-center gap-2 rounded-xl border border-destructive/20 bg-destructive/5 p-3 text-xs text-destructive"
+                  role="alert"
+                >
+                  <AlertCircle className="size-4" />
+                  <span className="min-w-0 flex-1 break-words">
+                    {lang === "zh"
+                      ? "資料總覽載入失敗："
+                      : "Could not load summary: "}
+                    {summaryQuery.error.message}
+                  </span>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={summaryQuery.isFetching}
+                    onClick={() => void summaryQuery.refetch()}
+                  >
+                    {lang === "zh" ? "重試" : "Retry"}
+                  </Button>
+                </div>
+              )}
+            </section>
 
-        {/* Sync All Button */}
-        <div className="mb-6">
-          <Button
-            size="lg"
-            className="w-full gap-2 h-12 text-base font-semibold"
-            onClick={handleSyncAll}
-            disabled={isSyncingAll}
-          >
-            {isSyncingAll ? (
-              <Loader2 className="w-5 h-5 animate-spin" />
-            ) : (
-              <Zap className="w-5 h-5" />
-            )}
-            {isSyncingAll ? t("syncing") : (lang === "zh" ? "一鍵全部同步" : "Sync All")}
-          </Button>
+            <section
+              className="voyage-panel space-y-5"
+              aria-labelledby="connection-title"
+            >
+              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div className="max-w-xl">
+                  <p className="voyage-eyebrow">
+                    {lang === "zh"
+                      ? "01 / 選擇資料來源"
+                      : "01 / Choose your source"}
+                  </p>
+                  <h2
+                    id="connection-title"
+                    className="voyage-section-title mt-1"
+                  >
+                    {lang === "zh" ? "連接這趟旅程" : "Connect this journey"}
+                  </h2>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {lang === "zh"
+                      ? "先選擇行程，再按下需要的匯入操作；不會在背景自動匯入。"
+                      : "Select a trip and run only the imports you need. Nothing is imported automatically in the background."}
+                  </p>
+                </div>
+                <div className="w-full space-y-2 lg:max-w-xs">
+                  <label
+                    htmlFor="connection-trip"
+                    className="text-xs font-semibold"
+                  >
+                    {lang === "zh" ? "來源行程" : "Source trip"}
+                  </label>
+                  <Select
+                    value={selectedTripId ? String(selectedTripId) : ""}
+                    disabled={
+                      busy ||
+                      !trips.length ||
+                      tripsQuery.isLoading ||
+                      auth.isLoading
+                    }
+                    onValueChange={value => {
+                      setSelectedTripId(Number(value));
+                      setLastError(null);
+                      setLastResult(null);
+                    }}
+                  >
+                    <SelectTrigger
+                      id="connection-trip"
+                      className="min-h-11 w-full min-w-0 rounded-xl [&>span]:truncate"
+                    >
+                      <SelectValue
+                        placeholder={
+                          tripsQuery.isLoading || auth.isLoading
+                            ? lang === "zh"
+                              ? "載入行程…"
+                              : "Loading trips…"
+                            : lang === "zh"
+                              ? "選擇一個行程"
+                              : "Choose a trip"
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent className="max-w-[calc(100vw-2rem)]">
+                      {trips.map(trip => (
+                        <SelectItem
+                          key={trip.id}
+                          value={String(trip.id)}
+                          className="break-words"
+                        >
+                          {trip.name}
+                          {trip.userRole === "viewer"
+                            ? lang === "zh"
+                              ? "（唯讀）"
+                              : " (view only)"
+                            : ""}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {tripsQuery.error && (
+                    <p
+                      className="break-words text-xs text-destructive"
+                      role="alert"
+                    >
+                      {tripsQuery.error.message}
+                      <button
+                        className="ml-2 underline"
+                        onClick={() => void tripsQuery.refetch()}
+                      >
+                        {lang === "zh" ? "重試" : "Retry"}
+                      </button>
+                    </p>
+                  )}
+                </div>
+              </div>
+              {selectedTrip ? (
+                <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4">
+                  <p className="break-words font-semibold text-primary">
+                    {selectedTrip.name}
+                  </p>
+                  <p className="mt-1 break-words text-xs text-muted-foreground">
+                    {selectedTrip.destination} ·{" "}
+                    {formatDateOnlyInHongKong(selectedTrip.startDate, lang) ||
+                      "—"}{" "}
+                    —{" "}
+                    {formatDateOnlyInHongKong(selectedTrip.endDate, lang) ||
+                      "—"}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                    <span className="rounded-lg bg-card px-2.5 py-1.5 text-card-foreground">
+                      {lang === "zh" ? "航班" : "Flights"} ·{" "}
+                      {flightsQuery.data
+                        ? numberFormat.format(flightsQuery.data.length)
+                        : "—"}
+                    </span>
+                    <span className="rounded-lg bg-card px-2.5 py-1.5 text-card-foreground">
+                      {lang === "zh" ? "住宿" : "Stays"} ·{" "}
+                      {hotelsQuery.data
+                        ? numberFormat.format(hotelsQuery.data.length)
+                        : "—"}
+                    </span>
+                    <span className="rounded-lg bg-card px-2.5 py-1.5 text-card-foreground">
+                      {lang === "zh" ? "活動" : "Activities"} ·{" "}
+                      {daysQuery.data
+                        ? numberFormat.format(
+                            daysQuery.data.reduce(
+                              (count, day) => count + day.activities.length,
+                              0
+                            )
+                          )
+                        : "—"}
+                    </span>
+                  </div>
+                  {(flightsQuery.isLoading ||
+                    hotelsQuery.isLoading ||
+                    daysQuery.isLoading) && (
+                    <p
+                      className="mt-2 text-xs text-muted-foreground"
+                      role="status"
+                    >
+                      {lang === "zh"
+                        ? "正在讀取來源記錄…"
+                        : "Reading source records…"}
+                    </p>
+                  )}
+                  {(flightsQuery.error ||
+                    hotelsQuery.error ||
+                    daysQuery.error) && (
+                    <p
+                      className="mt-2 break-words text-xs text-destructive"
+                      role="alert"
+                    >
+                      {lang === "zh"
+                        ? "部分來源資料未能載入："
+                        : "Some sources could not be loaded: "}
+                      {flightsQuery.error?.message ??
+                        hotelsQuery.error?.message ??
+                        daysQuery.error?.message}
+                      <button
+                        className="ml-2 underline"
+                        onClick={() => {
+                          void flightsQuery.refetch();
+                          void hotelsQuery.refetch();
+                          void daysQuery.refetch();
+                        }}
+                      >
+                        {lang === "zh" ? "重試" : "Retry"}
+                      </button>
+                    </p>
+                  )}
+                  {!canEdit && (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {lang === "zh"
+                        ? "此行程為唯讀：可匯入自己的飛行護照，但修改共用行程、費用或地圖需要擁有者或編輯者權限。"
+                        : "This trip is view-only. You can import to your own passport; changing shared itinerary, expenses or map data requires owner or editor access."}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-start gap-3 rounded-2xl border border-dashed border-primary/25 bg-primary/5 p-4">
+                  <Layers3 className="mt-0.5 size-5 shrink-0 text-primary" />
+                  <div>
+                    <p className="text-sm font-medium">
+                      {!tripsQuery.isLoading &&
+                      !!auth.data &&
+                      !trips.length &&
+                      !tripsQuery.error
+                        ? lang === "zh"
+                          ? "先建立你的第一個行程"
+                          : "Create your first trip"
+                        : lang === "zh"
+                          ? "選擇行程以開始連接"
+                          : "Choose a trip to begin"}
+                    </p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {lang === "zh"
+                        ? "所有匯入均以所選行程為來源。手動新增方式仍然保留。"
+                        : "Imports use the selected trip as their source. Manual entry remains available."}
+                    </p>
+                    <Link
+                      href="/dashboard"
+                      className="mt-2 inline-flex min-h-9 items-center gap-1 text-xs font-semibold text-primary"
+                    >
+                      {lang === "zh" ? "查看我的行程" : "View my trips"}
+                      <ArrowRight className="size-3.5" />
+                    </Link>
+                  </div>
+                </div>
+              )}
 
-          {syncAllLog.length > 0 && (
-            <div className="mt-3 p-3 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800">
-              <p className="text-xs font-semibold text-green-700 dark:text-green-400 mb-1.5">{lang === "zh" ? "同步完成" : "Sync Complete"}</p>
-              {syncAllLog.map((line, i) => (
-                <p key={i} className="text-xs text-green-600 dark:text-green-500">{line}</p>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <Separator className="mb-6" />
-
-        {/* AI Section */}
-        <div className="mb-6">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5" />
-            {lang === "zh" ? "AI 智能功能" : "AI Features"}
-          </h2>
-          <AiClassifyCard trips={trips} uncategorisedCount={summary?.uncategorisedExpenses} />
-        </div>
-
-        <Separator className="mb-6" />
-
-        {/* Individual Sync Cards */}
-        <div className="mb-4">
-          <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">
-            {lang === "zh" ? "分項同步操作" : "Individual Sync Operations"}
-          </h2>
-          <div className="space-y-3">
-            {syncCards.map(card => (
-              <SyncCard
-                key={card.key}
-                icon={card.icon}
-                title={card.title}
-                description={card.description}
-                count={card.count}
-                countLabel={card.countLabel}
-                status={statuses[card.key] ?? "idle"}
-                onSync={card.onSync}
-                result={results[card.key]}
-              />
-            ))}
-          </div>
-        </div>
-
-        {/* Info section */}
-        <Card className="mt-6 bg-muted/30 border-dashed">
-          <CardContent className="p-4">
-            <div className="flex gap-3">
-              <AlertCircle className="w-4 h-4 text-muted-foreground shrink-0 mt-0.5" />
-              <div>
-                <p className="text-xs font-medium text-foreground mb-1">{lang === "zh" ? "關於同步" : "About Sync"}</p>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  {lang === "zh" ? "同步操作會自動更新各模組之間的關聯資料。AI 自動分類功能會分析費用名稱並建議適合的分類，你可以在套用前逐一確認或修改每筆建議。所有操作均為安全的 upsert 操作，不會刪除現有資料。" : "Sync operations automatically update cross-module data. AI auto-classify analyses expense names and suggests categories — you can review and edit each suggestion before applying. All operations are safe upserts and will not delete existing data."}
+              <div className="grid gap-4 lg:grid-cols-2">
+                <article className="flex flex-col rounded-2xl border border-border bg-card p-4 text-card-foreground sm:p-5">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-primary">
+                    <Plane className="size-4" />
+                    {lang === "zh" ? "行程航班" : "Trip flights"}
+                    <ArrowRight className="size-3" />
+                    {lang === "zh" ? "飛行護照" : "Flight passport"}
+                  </div>
+                  <h3 className="mt-3 text-lg font-semibold">
+                    {lang === "zh"
+                      ? "留住每一次飛行"
+                      : "Keep every flight in your journal"}
+                  </h3>
+                  <p className="mt-2 flex-1 text-xs leading-relaxed text-muted-foreground">
+                    {lang === "zh"
+                      ? "匯入香港今天或之前的有效航班至自己的護照，並更新護照國家足跡。未來或重複航班會略過；日期或機場資料不完整的記錄列為無效。"
+                      : "Import valid flights dated today or earlier in Hong Kong to your own passport, updating passport country history too. Future or duplicate flights are skipped; incomplete dates or airports are invalid."}
+                  </p>
+                  <Button
+                    className="mt-4 h-auto min-h-11 w-full rounded-xl whitespace-normal"
+                    disabled={
+                      !selectedTrip ||
+                      busy ||
+                      flightsQuery.isLoading ||
+                      !!flightsQuery.error ||
+                      !flightsQuery.data?.length
+                    }
+                    onClick={() => {
+                      if (selectedTripId)
+                        run(() =>
+                          importFlights.mutate({ tripId: selectedTripId })
+                        );
+                    }}
+                  >
+                    {importFlights.isPending ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <Plane />
+                    )}
+                    {importFlights.isPending
+                      ? lang === "zh"
+                        ? "匯入中…"
+                        : "Importing…"
+                      : lang === "zh"
+                        ? "匯入飛行護照"
+                        : "Import to flight passport"}
+                  </Button>
+                  <Link
+                    href="/flight-passport"
+                    className="mt-2 inline-flex min-h-10 items-center justify-center gap-1 text-xs font-medium text-primary"
+                  >
+                    {lang === "zh"
+                      ? "查看護照／手動新增"
+                      : "View passport / add manually"}
+                    <ArrowRight className="size-3.5" />
+                  </Link>
+                </article>
+                <article className="flex flex-col rounded-2xl border border-border bg-card p-4 text-card-foreground sm:p-5">
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-primary">
+                    <Hotel className="size-4" />
+                    {lang === "zh" ? "航班與住宿" : "Flights & stays"}
+                    <ArrowRight className="size-3" />
+                    {lang === "zh" ? "每日行程" : "Daily itinerary"}
+                  </div>
+                  <h3 className="mt-3 text-lg font-semibold">
+                    {lang === "zh"
+                      ? "把旅程骨架排好"
+                      : "Give your days a structure"}
+                  </h3>
+                  <p className="mt-2 flex-1 text-xs leading-relaxed text-muted-foreground">
+                    {lang === "zh"
+                      ? "將航班及住宿入住／退房連接至行程。再次執行會識別來源，不重複新增；手動活動保留。"
+                      : "Connect flights and stay check-in / check-out to the itinerary. Source-aware repeat runs avoid duplicate entries; manual activities remain."}
+                  </p>
+                  <Button
+                    className="mt-4 h-auto min-h-11 w-full rounded-xl whitespace-normal"
+                    disabled={
+                      !canEdit ||
+                      busy ||
+                      flightsQuery.isLoading ||
+                      hotelsQuery.isLoading ||
+                      !!flightsQuery.error ||
+                      !!hotelsQuery.error ||
+                      (!flightsQuery.data?.length && !hotelsQuery.data?.length)
+                    }
+                    onClick={() => {
+                      if (selectedTripId)
+                        run(() =>
+                          syncLogistics.mutate({ tripId: selectedTripId })
+                        );
+                    }}
+                  >
+                    {syncLogistics.isPending ? (
+                      <Loader2 className="animate-spin" />
+                    ) : (
+                      <CalendarDays />
+                    )}
+                    {syncLogistics.isPending
+                      ? lang === "zh"
+                        ? "連接中…"
+                        : "Connecting…"
+                      : lang === "zh"
+                        ? "連接至每日行程"
+                        : "Connect to daily itinerary"}
+                  </Button>
+                  {selectedTripId ? (
+                    <Link
+                      href={`/trips/${selectedTripId}/itinerary`}
+                      className="mt-2 inline-flex min-h-10 items-center justify-center gap-1 text-xs font-medium text-primary"
+                    >
+                      {lang === "zh"
+                        ? "查看行程／手動編輯"
+                        : "View itinerary / edit manually"}
+                      <ArrowRight className="size-3.5" />
+                    </Link>
+                  ) : (
+                    <p className="mt-2 py-3 text-center text-xs text-muted-foreground">
+                      {lang === "zh"
+                        ? "選擇行程後可查看"
+                        : "Choose a trip to view"}
+                    </p>
+                  )}
+                </article>
+              </div>
+              <div className="flex items-start gap-2 text-xs leading-relaxed text-muted-foreground">
+                <ShieldCheck className="mt-0.5 size-4 shrink-0 text-primary" />
+                <p>
+                  {lang === "zh"
+                    ? "匯入只新增缺少的紀錄，已連接項目會略過，不會覆寫手動修改或刪除資料。這並非雙向同步；來源日後修改時，請在目標頁面確認。"
+                    : "Imports only add missing records. Linked entries are skipped; manual edits are not overwritten and nothing is deleted. This is not two-way sync: review later source changes on the destination page."}
                 </p>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </section>
+
+            <section className="space-y-3" aria-labelledby="preview-title">
+              <div>
+                <p className="voyage-eyebrow">
+                  {lang === "zh"
+                    ? "02 / 先預覽，再選擇"
+                    : "02 / Preview, then choose"}
+                </p>
+                <h2 id="preview-title" className="voyage-section-title mt-1">
+                  {lang === "zh"
+                    ? "費用與地點，由你確認"
+                    : "You decide what becomes a record"}
+                </h2>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                {[
+                  {
+                    Icon: Receipt,
+                    path: "expenses",
+                    title:
+                      lang === "zh"
+                        ? "行程活動 → 費用記錄"
+                        : "Activities → expense records",
+                    text:
+                      lang === "zh"
+                        ? "活動費用可能只是預算估算。前往費用頁預覽並選取要匯入的項目，確認金額、幣別和付款人；估算不代表實際已支付。"
+                        : "Activity costs may be budget estimates. Preview and select items in Expenses, checking amount, currency and payer. An estimate is not proof of payment.",
+                    action:
+                      lang === "zh"
+                        ? "預覽並選擇費用"
+                        : "Preview & select expenses",
+                  },
+                  {
+                    Icon: MapPin,
+                    path: "map",
+                    title:
+                      lang === "zh"
+                        ? "行程活動 → 地圖標記"
+                        : "Activities → map pins",
+                    text:
+                      lang === "zh"
+                        ? "只匯入你選取並具有效座標的活動。前往地圖頁先查看候選地點；不會自動猜測地址或新增所有標記。"
+                        : "Import only selected activities with valid coordinates. Review candidate locations in Map; addresses are not guessed and pins are not added blindly.",
+                    action:
+                      lang === "zh"
+                        ? "預覽並選擇地點"
+                        : "Preview & select locations",
+                  },
+                ].map(({ Icon, path, title, text, action }) => (
+                  <article key={path} className="voyage-panel flex flex-col">
+                    <div className="flex items-center gap-3">
+                      <span className="flex size-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                        <Icon className="size-5" />
+                      </span>
+                      <h3 className="font-semibold">{title}</h3>
+                    </div>
+                    <p className="mt-3 flex-1 text-xs leading-relaxed text-muted-foreground">
+                      {text}
+                    </p>
+                    {selectedTripId ? (
+                      <Button
+                        variant="outline"
+                        className="mt-4 h-auto min-h-11 w-full rounded-xl whitespace-normal"
+                        asChild
+                      >
+                        <Link href={`/trips/${selectedTripId}/${path}`}>
+                          <Icon />
+                          {action}
+                          <ArrowRight />
+                        </Link>
+                      </Button>
+                    ) : (
+                      <p className="mt-4 rounded-xl bg-muted/50 p-3 text-center text-xs text-muted-foreground">
+                        {lang === "zh"
+                          ? "先在上方選擇行程"
+                          : "Choose a trip above first"}
+                      </p>
+                    )}
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            {(lastResult || lastError || isPending) && (
+              <section
+                className={`voyage-panel ${lastError ? "border-destructive/30" : "border-primary/25"}`}
+                aria-live="polite"
+                aria-atomic="true"
+              >
+                {isPending && (
+                  <p
+                    className="flex items-center gap-2 text-sm font-medium text-primary"
+                    role="status"
+                  >
+                    <Loader2 className="size-4 animate-spin" />
+                    {lang === "zh"
+                      ? "正在處理，請勿重複按下…"
+                      : "Working. Please do not run this again yet…"}
+                  </p>
+                )}
+                {lastError && (
+                  <div role="alert">
+                    <p className="flex items-center gap-2 font-semibold text-destructive">
+                      <AlertCircle className="size-4" />
+                      {lang === "zh"
+                        ? "未能完成操作"
+                        : "Action could not be completed"}
+                    </p>
+                    <p className="mt-2 break-words text-sm text-destructive">
+                      {lastError}
+                    </p>
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {lang === "zh"
+                        ? "請檢查權限及來源資料後重試。若操作部分完成，重複匯入會略過已建立項目。"
+                        : "Check your access and source data, then retry. If an import partially completed, existing items are skipped on repeat."}
+                    </p>
+                  </div>
+                )}
+                {lastResult && (
+                  <div>
+                    <p className="flex items-center gap-2 font-semibold text-primary">
+                      <CheckCircle2 className="size-4" />
+                      {lastResult.title}
+                    </p>
+                    {lastResult.tripName && (
+                      <p className="mt-1 break-words text-xs text-muted-foreground">
+                        {lastResult.tripName}
+                      </p>
+                    )}
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {[
+                        {
+                          label: lang === "zh" ? "已新增" : "Created",
+                          count: lastResult.created,
+                        },
+                        {
+                          label: lang === "zh" ? "已更新" : "Updated",
+                          count: lastResult.updated,
+                        },
+                        {
+                          label: lang === "zh" ? "已略過" : "Skipped",
+                          count: lastResult.skipped,
+                        },
+                        {
+                          label: lang === "zh" ? "資料無效" : "Invalid",
+                          count: lastResult.invalid,
+                        },
+                      ]
+                        .filter(item => item.count !== undefined)
+                        .map(item => (
+                          <span
+                            key={item.label}
+                            className="rounded-xl bg-primary/5 px-3 py-2 text-xs text-primary"
+                          >
+                            {item.label}{" "}
+                            <strong className="ml-1 tabular-nums">
+                              {numberFormat.format(item.count!)}
+                            </strong>
+                          </span>
+                        ))}
+                    </div>
+                    {lastResult.details && (
+                      <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+                        {lastResult.details.map((detail, index) => (
+                          <li key={index} className="break-words">
+                            {detail}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {!!lastResult.invalid && (
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        {lang === "zh"
+                          ? "請在來源頁補全日期、機場或其他必要資料後重試。"
+                          : "Complete dates, airports or other required source fields before retrying."}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
+
+            <section
+              className="voyage-panel space-y-4"
+              aria-labelledby="countries-title"
+            >
+              <div>
+                <p className="voyage-eyebrow">
+                  {lang === "zh"
+                    ? "03 / 串連旅行足跡"
+                    : "03 / Connect your travel history"}
+                </p>
+                <h2 id="countries-title" className="voyage-section-title mt-1">
+                  {lang === "zh"
+                    ? "目的地，化成你的國家足跡"
+                    : "Turn destinations into country history"}
+                </h2>
+              </div>
+              <div className="flex flex-col items-stretch gap-2 rounded-2xl bg-primary/5 p-4 text-sm font-medium sm:flex-row sm:items-center sm:justify-center">
+                <span className="flex items-center justify-center gap-2">
+                  <Plane className="size-4 text-primary" />
+                  {lang === "zh"
+                    ? "行程 → 飛行護照"
+                    : "Trips → flight passport"}
+                </span>
+                <ArrowDown className="mx-auto size-4 text-primary sm:hidden" />
+                <ArrowRight className="hidden size-4 text-primary sm:block" />
+                <span className="flex items-center justify-center gap-2">
+                  <Globe className="size-4 text-primary" />
+                  {lang === "zh" ? "國家足跡" : "Country history"}
+                </span>
+              </div>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {lang === "zh"
+                  ? "以下操作使用你可查看的全部行程／護照記錄，不限上方所選行程。未來旅程標為計劃到訪，已到訪的手動標記會保留；不會自動匯入費用或地圖標記。"
+                  : "These actions use all accessible trip / passport records, not just the selected trip above. Future journeys are planned visits; manually visited countries are retained. Expenses and map pins are not auto-imported."}
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button
+                  variant="outline"
+                  className="h-auto min-h-11 rounded-xl whitespace-normal"
+                  disabled={busy || !auth.data}
+                  onClick={() => run(() => syncCountriesFromFlights.mutate())}
+                >
+                  {syncCountriesFromFlights.isPending ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Plane />
+                  )}
+                  {lang === "zh"
+                    ? "護照航班 → 國家足跡"
+                    : "Passport flights → countries"}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-auto min-h-11 rounded-xl whitespace-normal"
+                  disabled={busy || !auth.data}
+                  onClick={() => run(() => syncCountriesFromTrips.mutate())}
+                >
+                  {syncCountriesFromTrips.isPending ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Globe />
+                  )}
+                  {lang === "zh"
+                    ? "行程目的地 → 國家足跡"
+                    : "Trip destinations → countries"}
+                </Button>
+              </div>
+              <Link
+                href="/travel-history"
+                className="inline-flex min-h-10 items-center gap-1 text-xs font-semibold text-primary"
+              >
+                {lang === "zh"
+                  ? "查看國家足跡／手動標記"
+                  : "View country history / mark manually"}
+                <ArrowRight className="size-3.5" />
+              </Link>
+            </section>
+
+            <AiClassifyCard
+              trips={trips}
+              uncategorisedCount={summary?.uncategorisedExpenses}
+              disabled={busy || !auth.data}
+              onBusyChange={setClassifyBusy}
+            />
+
+            <section
+              className="voyage-panel space-y-3"
+              aria-labelledby="verification-title"
+            >
+              <div className="flex items-start gap-3">
+                <ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" />
+                <div>
+                  <h2 id="verification-title" className="font-semibold">
+                    {lang === "zh"
+                      ? "記錄驗證與傳統同步"
+                      : "Record checks & existing sync"}
+                  </h2>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                    {lang === "zh"
+                      ? "關聯檢查只驗證及統計記錄，不清理、不刪除。整合同步只處理國家足跡及記錄驗證；上方的航班、行程、費用和地圖匯入仍需分別確認。"
+                      : "Relationship checks verify and count records, without cleanup or deletion. Combined sync handles country history and record verification only; flight, itinerary, expense and map imports above remain separate explicit actions."}
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Button
+                  variant="outline"
+                  className="h-auto min-h-11 rounded-xl whitespace-normal"
+                  disabled={busy || !auth.data}
+                  onClick={() => run(() => syncDataIntegrity.mutate())}
+                >
+                  {syncDataIntegrity.isPending ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <ShieldCheck />
+                  )}
+                  {lang === "zh"
+                    ? "檢查記錄關聯（不刪除）"
+                    : "Check relationships (no deletion)"}
+                </Button>
+                <Button
+                  variant="outline"
+                  className="h-auto min-h-11 rounded-xl whitespace-normal"
+                  disabled={busy || !auth.data}
+                  onClick={() => run(() => syncAll.mutate())}
+                >
+                  {syncAll.isPending ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <RefreshCw />
+                  )}
+                  {lang === "zh"
+                    ? "同步國家並驗證記錄"
+                    : "Sync countries & verify records"}
+                </Button>
+              </div>
+            </section>
+          </>
+        )}
       </div>
     </AppLayout>
   );

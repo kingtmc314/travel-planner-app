@@ -3,6 +3,9 @@ import { trpc } from "@/lib/trpc";
 import { MapPin, Calendar, Clock, DollarSign, Utensils, Hotel, Train, Camera, ShoppingBag, Star, ChevronDown, ChevronUp } from "lucide-react";
 import { useState } from "react";
 import { useRoute } from "wouter";
+import { APP_VERSION, TRAVEL_COVER_IMAGE } from "@/lib/design";
+import { dateOnlyToHongKongDate, formatDateOnlyInHongKong } from "@/lib/hongKongDate";
+import { sumAmountsByCurrency } from "@shared/moneyTotals";
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   transport: <Train className="w-4 h-4" />,
@@ -72,20 +75,19 @@ export default function SharedTripPage() {
   }
 
   const { trip, days } = data;
-  const startDate = new Date(trip.startDate);
-  const endDate = new Date(trip.endDate);
-  const locale = lang === "zh" ? "zh-HK" : "en-US";
-  const dateRange = `${startDate.toLocaleDateString(locale, { month: "short", day: "numeric" })} – ${endDate.toLocaleDateString(locale, { month: "short", day: "numeric", year: "numeric" })}`;
-  const totalDays = Math.round((endDate.getTime() - startDate.getTime()) / 86400000) + 1;
+  const startDate = dateOnlyToHongKongDate(trip.startDate);
+  const endDate = dateOnlyToHongKongDate(trip.endDate);
+  const dateRange = `${formatDateOnlyInHongKong(trip.startDate, lang) || "—"} – ${formatDateOnlyInHongKong(trip.endDate, lang) || "—"}`;
+  const totalDays = startDate && endDate && endDate >= startDate ? Math.round((endDate.getTime() - startDate.getTime()) / 86400000) + 1 : null;
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-background">
       {/* Hero Banner */}
-      <div className="relative h-64 sm:h-80 overflow-hidden">
+      <div className="relative h-72 sm:h-96 overflow-hidden">
         {trip.coverImage ? (
           <img src={trip.coverImage} alt={trip.name} className="w-full h-full object-cover" />
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-blue-500 to-indigo-600" />
+          <img src={TRAVEL_COVER_IMAGE} alt="" className="w-full h-full object-cover" />
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent" />
         {/* Readonly badge */}
@@ -107,7 +109,7 @@ export default function SharedTripPage() {
             </div>
             <div className="flex items-center gap-1.5">
               <Clock className="w-4 h-4" />
-              <span className="text-sm">{totalDays} {lang === "zh" ? "天" : "days"}</span>
+              <span className="text-sm">{totalDays ?? days.length} {lang === "zh" ? (totalDays === null ? "個已排程日" : "天") : (totalDays === null ? "scheduled days" : "days")}</span>
             </div>
           </div>
         </div>
@@ -130,13 +132,9 @@ export default function SharedTripPage() {
         ) : (
           <div className="space-y-4">
             {days.map((day: any, dayIdx: number) => {
-              const dayDate = new Date(day.date);
               const isExpanded = expandedDays.has(dayIdx);
               const activities = day.activities ?? [];
-              const dayTotal = activities.reduce((sum: number, a: any) => {
-                if (a.cost) return sum + parseFloat(a.cost);
-                return sum;
-              }, 0);
+              const dayTotals = sumAmountsByCurrency(activities, trip.baseCurrency);
 
               return (
                 <div key={day.id} className="bg-white rounded-2xl overflow-hidden shadow-sm border border-border">
@@ -152,12 +150,8 @@ export default function SharedTripPage() {
                       <div className="text-left">
                         <div className="font-semibold text-foreground">{day.title}</div>
                         <div className="text-xs text-muted-foreground">
-                          {dayDate.toLocaleDateString(locale, { weekday: "short", month: "short", day: "numeric" })}
-                          {dayTotal > 0 && (
-                            <span className="ml-2 text-primary font-medium">
-                              {trip.baseCurrency} {dayTotal.toLocaleString()}
-                            </span>
-                          )}
+                          {formatDateOnlyInHongKong(day.date, lang, { weekday: "short", month: "short", day: "numeric" }) || "—"}
+                          {Object.entries(dayTotals).map(([currency, amount]) => <span key={currency} className="ml-2 text-primary font-medium">{lang === "zh" ? "預計" : "Est."} {currency} {amount.toLocaleString()}</span>)}
                         </div>
                       </div>
                     </div>
@@ -216,7 +210,8 @@ export default function SharedTripPage() {
 
         {/* Footer */}
         <div className="mt-10 text-center text-xs text-muted-foreground">
-          <p>{lang === "zh" ? "由 Travel Planner 分享 · 僅供瀏覽，無法編輯" : "Shared via Travel Planner · Read-only view"}</p>
+          <p>VoyageAI · 旅跡 · {APP_VERSION} · HKT UTC+8</p>
+          <p className="mt-1">{lang === "zh" ? "唯讀瀏覽 · 費用為活動預估，並非實際支出" : "Read only · Activity costs are estimates, not actual spending"}</p>
         </div>
       </div>
     </div>

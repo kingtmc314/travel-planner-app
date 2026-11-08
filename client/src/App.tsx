@@ -17,6 +17,7 @@ import TravelHistory from "./pages/TravelHistory";
 import FlightPassport from "./pages/FlightPassport";
 import SyncPage from "./pages/SyncPage";
 import SharedTripPage from "./pages/SharedTripPage";
+import Analytics from "./pages/Analytics";
 
 function TripRoutes({ tripId }: { tripId: number }) {
   return (
@@ -39,6 +40,7 @@ function Router() {
       <Route path="/" component={Home} />
       <Route path="/join" component={JoinPage} />
       <Route path="/dashboard" component={Dashboard} />
+      <Route path="/analytics" component={Analytics} />
       <Route path="/trips/:tripId/:tab?">
         {(params) => <TripRoutes tripId={Number(params.tripId)} />}
       </Route>

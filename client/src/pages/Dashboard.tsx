@@ -1,7 +1,12 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { trpc } from "@/lib/trpc";
 import GuestDashboard from "@/components/GuestDashboard";
@@ -9,32 +14,55 @@ import GuestMergeBanner from "@/components/GuestMergeBanner";
 import { getGuestTrips } from "@/hooks/useGuestTrips";
 import {
   Calendar,
-  Globe,
   MapPin,
   Plus,
-  Plane,
   Sparkles,
-  Users,
-  Wallet,
   ChevronRight,
   Loader2,
   Edit2,
   Trash2,
   MoreVertical,
 } from "lucide-react";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { useI18n } from "@/hooks/useI18n";
-import TripForm, { EMPTY_TRIP_FORM, TRIP_COVER_IMAGES } from "@/components/TripForm";
-import { formatDateOnlyInHongKong, isValidDateRange } from "@/lib/hongKongDate";
+import TripForm, {
+  EMPTY_TRIP_FORM,
+  TRIP_COVER_IMAGES,
+} from "@/components/TripForm";
+import { formatDateOnlyInHongKong, isValidDateRange, normalizeDateOnly } from "@/lib/hongKongDate";
+import TravelOverview from "@/components/TravelOverview";
 
-function TripCard({ trip, onClick, onEdit, onDelete }: { trip: any; onClick: () => void; onEdit?: () => void; onDelete?: () => void }) {
+function TripCard({
+  trip,
+  onClick,
+  onEdit,
+  onDelete,
+}: {
+  trip: any;
+  onClick: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
+}) {
   const { t, lang } = useI18n();
-  const coverImage = trip.coverImage || TRIP_COVER_IMAGES[trip.id % TRIP_COVER_IMAGES.length];
-  const startDate = formatDateOnlyInHongKong(trip.startDate, lang, { month: "short", day: "numeric" });
-  const endDate = formatDateOnlyInHongKong(trip.endDate, lang, { month: "short", day: "numeric", year: "numeric" });
+  const coverImage =
+    trip.coverImage || TRIP_COVER_IMAGES[trip.id % TRIP_COVER_IMAGES.length];
+  const startDate = formatDateOnlyInHongKong(trip.startDate, lang, {
+    month: "short",
+    day: "numeric",
+  });
+  const endDate = formatDateOnlyInHongKong(trip.endDate, lang, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 
   return (
     <div
@@ -43,7 +71,15 @@ function TripCard({ trip, onClick, onEdit, onDelete }: { trip: any; onClick: () 
       role="button"
       tabIndex={0}
       aria-label={`${t("itinerary")}: ${trip.name}`}
-      onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onClick(); } }}
+      onKeyDown={event => {
+        if (
+          event.target === event.currentTarget &&
+          (event.key === "Enter" || event.key === " ")
+        ) {
+          event.preventDefault();
+          onClick();
+        }
+      }}
     >
       <div className="relative h-44 overflow-hidden">
         <img
@@ -58,22 +94,43 @@ function TripCard({ trip, onClick, onEdit, onDelete }: { trip: any; onClick: () 
           </div>
         )}
         {(onEdit || onDelete) && (
-          <div className="absolute top-3 right-3" onClick={e => e.stopPropagation()}>
+          <div
+            className="absolute top-3 right-3"
+            onClick={e => e.stopPropagation()}
+          >
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button aria-label={t("editTrip")} className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/60 transition-colors">
+                <button
+                  aria-label={t("editTrip")}
+                  className="w-10 h-10 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white hover:bg-black/60 transition-colors"
+                >
                   <MoreVertical className="w-4 h-4" />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {onEdit && <DropdownMenuItem onClick={onEdit}><Edit2 className="w-4 h-4 mr-2" />{t("editTrip")}</DropdownMenuItem>}
-                {onDelete && <DropdownMenuItem onClick={onDelete} className="text-destructive focus:text-destructive"><Trash2 className="w-4 h-4 mr-2" />{t("deleteTrip")}</DropdownMenuItem>}
+                {onEdit && (
+                  <DropdownMenuItem onClick={onEdit}>
+                    <Edit2 className="w-4 h-4 mr-2" />
+                    {t("editTrip")}
+                  </DropdownMenuItem>
+                )}
+                {onDelete && (
+                  <DropdownMenuItem
+                    onClick={onDelete}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    {t("deleteTrip")}
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
         )}
         <div className="absolute bottom-3 left-3 right-3">
-          <h3 className="text-white font-semibold text-lg leading-tight line-clamp-2">{trip.name}</h3>
+          <h3 className="text-white font-semibold text-lg leading-tight line-clamp-2">
+            {trip.name}
+          </h3>
         </div>
       </div>
       <div className="p-4">
@@ -84,7 +141,9 @@ function TripCard({ trip, onClick, onEdit, onDelete }: { trip: any; onClick: () 
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5 text-muted-foreground text-sm">
             <Calendar className="w-3.5 h-3.5 shrink-0" />
-            <span>{startDate} – {endDate}</span>
+            <span>
+              {startDate} – {endDate}
+            </span>
           </div>
           <div className="flex items-center gap-1 text-primary text-sm font-medium">
             <span>{trip.baseCurrency}</span>
@@ -107,26 +166,39 @@ export default function Dashboard() {
   const hasGuestTrips = getGuestTrips().length > 0;
   const [form, setForm] = useState({ ...EMPTY_TRIP_FORM });
 
-  const { data: trips, isLoading: tripsLoading, refetch } = trpc.trips.list.useQuery(undefined, {
+  const utils = trpc.useUtils();
+  const {
+    data: trips,
+    isLoading: tripsLoading,
+    error: tripsError,
+    refetch,
+  } = trpc.trips.list.useQuery(undefined, {
     enabled: !!user,
   });
   const updateTrip = trpc.trips.update.useMutation({
-    onSuccess: () => { toast.success(t("tripUpdated")); setEditingTrip(null); refetch(); },
-    onError: () => toast.error(t("tripUpdateFailed")),
+    onSuccess: () => {
+      toast.success(t("tripUpdated"));
+      setEditingTrip(null);
+      void utils.invalidate();
+    },
+    onError: e => toast.error(e.message || t("tripUpdateFailed")),
   });
   const deleteTrip = trpc.trips.delete.useMutation({
-    onSuccess: () => { toast.success(t("tripDeleted")); refetch(); },
-    onError: (e) => toast.error(e.message || t("tripDeleteFailed")),
+    onSuccess: () => {
+      toast.success(t("tripDeleted"));
+      void utils.invalidate();
+    },
+    onError: e => toast.error(e.message || t("tripDeleteFailed")),
   });
   const createTrip = trpc.trips.create.useMutation({
-    onSuccess: (data) => {
+    onSuccess: data => {
       toast.success(t("tripCreated"));
       setShowCreate(false);
       setForm({ ...EMPTY_TRIP_FORM });
-      refetch();
+      void utils.invalidate();
       setLocation(`/trips/${data.tripId}/itinerary`);
     },
-    onError: () => toast.error(t("tripCreateFailed")),
+    onError: e => toast.error(e.message || t("tripCreateFailed")),
   });
 
   if (authLoading) {
@@ -150,8 +222,8 @@ export default function Dashboard() {
     setEditForm({
       name: trip.name,
       destination: trip.destination,
-      startDate: trip.startDate ?? "",
-      endDate: trip.endDate ?? "",
+      startDate: normalizeDateOnly(trip.startDate),
+      endDate: normalizeDateOnly(trip.endDate),
       baseCurrency: trip.baseCurrency ?? "HKD",
       coverImage: trip.coverImage ?? "",
       description: trip.description ?? "",
@@ -159,22 +231,34 @@ export default function Dashboard() {
   };
 
   const handleUpdate = () => {
-    if (!editingTrip || !editForm.name || !editForm.destination) { toast.error(t("fillRequired")); return; }
-    if (!isValidDateRange(editForm.startDate, editForm.endDate)) { toast.error(t("dateRangeInvalid")); return; }
+    if (updateTrip.isPending) return;
+    if (!editingTrip || !editForm.name || !editForm.destination) {
+      toast.error(t("fillRequired"));
+      return;
+    }
+    if (!isValidDateRange(editForm.startDate, editForm.endDate)) {
+      toast.error(t("dateRangeInvalid"));
+      return;
+    }
     updateTrip.mutate({ tripId: editingTrip.id, ...editForm });
   };
 
   const handleDelete = (trip: any) => {
+    if (deleteTrip.isPending) return;
     if (!confirm(t("confirmDeleteTrip", trip.name))) return;
     deleteTrip.mutate({ tripId: trip.id });
   };
 
   const handleCreate = () => {
+    if (createTrip.isPending) return;
     if (!form.name || !form.destination || !form.startDate || !form.endDate) {
       toast.error(t("fillRequired"));
       return;
     }
-    if (!isValidDateRange(form.startDate, form.endDate)) { toast.error(t("dateRangeInvalid")); return; }
+    if (!isValidDateRange(form.startDate, form.endDate)) {
+      toast.error(t("dateRangeInvalid"));
+      return;
+    }
     createTrip.mutate(form);
   };
 
@@ -183,39 +267,48 @@ export default function Dashboard() {
       {hasGuestTrips && !mergeDismissed && (
         <GuestMergeBanner
           onDismiss={() => setMergeDismissed(true)}
-          onMerged={() => { setMergeDismissed(true); refetch(); }}
+          onMerged={() => {
+            setMergeDismissed(true);
+            void utils.invalidate();
+          }}
         />
       )}
-      <main className="max-w-5xl mx-auto w-full px-4 sm:px-6 py-8 pb-24 lg:pb-8">
+      <main className="max-w-6xl mx-auto w-full px-4 sm:px-6 py-6 pb-28 lg:py-8 lg:pb-8">
         {/* Welcome */}
-        <div className="mb-8">
+        <div className="mb-6">
+          <p className="voyage-eyebrow mb-2">
+            {lang === "zh" ? "從這裡，出發" : "THE NEXT CHAPTER STARTS HERE"}
+          </p>
           <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-1">
-            {t("dashboardGreeting", user.name?.split(" ")[0] ?? (lang === "zh" ? "旅人" : "Traveller"))}
+            {t(
+              "dashboardGreeting",
+              user.name?.split(" ")[0] ?? (lang === "zh" ? "旅人" : "Traveller")
+            )}
           </h1>
-          <p className="text-muted-foreground">{t("dashboardSubtitle")}</p>
+          <p className="text-sm text-muted-foreground">
+            {lang === "zh"
+              ? "行程、共用帳目與旅遊足跡，在這裡連成一頁手記。"
+              : "Your itineraries, shared expenses and travel memories, in one journal."}
+          </p>
         </div>
 
-        {/* Stats row */}
-        <div className="grid grid-cols-3 gap-2 sm:gap-4 mb-8">
-          {[
-            { icon: Globe, label: t("tripCount", trips?.length ?? 0), value: trips?.length ?? 0, color: "text-blue-500 bg-blue-50" },
-            { icon: Users, label: t("tripPartners"), value: "∞", color: "text-green-500 bg-green-50" },
-            { icon: Wallet, label: t("expenseTracking"), value: t("statsRealtime"), color: "text-amber-500 bg-amber-50" },
-          ].map((stat) => (
-            <div key={stat.label} className="bg-card rounded-2xl border border-border p-2.5 sm:p-4 text-center min-w-0">
-              <div className={`w-10 h-10 rounded-xl ${stat.color} flex items-center justify-center mx-auto mb-2`}>
-                <stat.icon className="w-5 h-5" />
-              </div>
-              <div className="text-2xl font-bold text-foreground">{stat.value}</div>
-              <div className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 break-words">{stat.label}</div>
-            </div>
-          ))}
-        </div>
+        <TravelOverview />
 
         {/* Trips section */}
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-xl font-semibold text-foreground">{t("myTrips")}</h2>
-          <Button onClick={() => setShowCreate(true)} size="sm" className="gap-1.5">
+          <div>
+            <p className="voyage-eyebrow mb-1">
+              {lang === "zh" ? "你的旅程收藏" : "YOUR JOURNEY COLLECTION"}
+            </p>
+            <h2 className="voyage-section-title text-xl text-foreground">
+              {t("myTrips")}
+            </h2>
+          </div>
+          <Button
+            onClick={() => setShowCreate(true)}
+            size="sm"
+            className="gap-1.5"
+          >
             <Plus className="w-4 h-4" />
             {t("newTrip")}
           </Button>
@@ -223,8 +316,11 @@ export default function Dashboard() {
 
         {tripsLoading ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {[1, 2, 3].map((i) => (
-              <div key={i} className="rounded-2xl overflow-hidden border border-border">
+            {[1, 2, 3].map(i => (
+              <div
+                key={i}
+                className="rounded-2xl overflow-hidden border border-border"
+              >
                 <Skeleton className="h-44 w-full" />
                 <div className="p-4 space-y-2">
                   <Skeleton className="h-4 w-3/4" />
@@ -233,15 +329,34 @@ export default function Dashboard() {
               </div>
             ))}
           </div>
+        ) : tripsError ? (
+          <div role="alert" className="voyage-panel space-y-3">
+            <p className="text-sm text-destructive">
+              {lang === "zh"
+                ? "未能載入旅程，你的資料並未被刪除。"
+                : "Trips could not load. Your records have not been deleted."}
+            </p>
+            <Button variant="outline" size="sm" onClick={() => refetch()}>
+              {lang === "zh" ? "重試" : "Retry"}
+            </Button>
+          </div>
         ) : trips && trips.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            {trips.map((trip) => (
+            {trips.map(trip => (
               <TripCard
                 key={trip.id}
                 trip={trip}
                 onClick={() => setLocation(`/trips/${trip.id}/itinerary`)}
-                onEdit={() => handleEdit(trip)}
-                onDelete={() => handleDelete(trip)}
+                onEdit={
+                  trip.userRole !== "viewer" && !updateTrip.isPending
+                    ? () => handleEdit(trip)
+                    : undefined
+                }
+                onDelete={
+                  trip.userRole === "owner" && !deleteTrip.isPending
+                    ? () => handleDelete(trip)
+                    : undefined
+                }
               />
             ))}
             {/* Add new trip card */}
@@ -262,7 +377,9 @@ export default function Dashboard() {
             <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center mb-6">
               <Sparkles className="w-10 h-10 text-primary" />
             </div>
-            <h3 className="text-xl font-semibold text-foreground mb-2">{t("startPlanning")}</h3>
+            <h3 className="text-xl font-semibold text-foreground mb-2">
+              {t("startPlanning")}
+            </h3>
             <p className="text-muted-foreground mb-6">{t("clickNewTrip")}</p>
             <Button onClick={() => setShowCreate(true)} className="gap-2">
               <Plus className="w-4 h-4" />
@@ -274,19 +391,58 @@ export default function Dashboard() {
         {/* Create Trip Dialog */}
         <Dialog open={showCreate} onOpenChange={setShowCreate}>
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto pb-24 sm:pb-6">
-            <DialogHeader><DialogTitle className="text-xl">{t("createTripTitle")}</DialogTitle></DialogHeader>
-            <TripForm value={form} onChange={setForm} idPrefix="create-trip" disabled={createTrip.isPending} />
+            <DialogHeader>
+              <DialogTitle className="text-xl">
+                {t("createTripTitle")}
+              </DialogTitle>
+            </DialogHeader>
+            <TripForm
+              value={form}
+              onChange={setForm}
+              idPrefix="create-trip"
+              disabled={createTrip.isPending}
+            />
             <div className="sticky bottom-0 -mx-6 px-6 pt-3 pb-2 bg-background border-t border-border">
-              <Button onClick={handleCreate} className="w-full" disabled={createTrip.isPending}>{createTrip.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}{t("createTrip")}</Button>
+              <Button
+                onClick={handleCreate}
+                className="w-full"
+                disabled={createTrip.isPending}
+              >
+                {createTrip.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : null}
+                {t("createTrip")}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>
-        <Dialog open={!!editingTrip} onOpenChange={(open) => !open && setEditingTrip(null)}>
+        <Dialog
+          open={!!editingTrip}
+          onOpenChange={open => !open && setEditingTrip(null)}
+        >
           <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto pb-24 sm:pb-6">
-            <DialogHeader><DialogTitle className="text-xl">{t("editTripTitle")}</DialogTitle></DialogHeader>
-            <TripForm value={editForm} onChange={setEditForm} idPrefix="edit-trip" disabled={updateTrip.isPending} />
+            <DialogHeader>
+              <DialogTitle className="text-xl">
+                {t("editTripTitle")}
+              </DialogTitle>
+            </DialogHeader>
+            <TripForm
+              value={editForm}
+              onChange={setEditForm}
+              idPrefix="edit-trip"
+              disabled={updateTrip.isPending}
+            />
             <div className="sticky bottom-0 -mx-6 px-6 pt-3 pb-2 bg-background border-t border-border">
-              <Button onClick={handleUpdate} className="w-full" disabled={updateTrip.isPending}>{updateTrip.isPending ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : null}{t("saveChanges")}</Button>
+              <Button
+                onClick={handleUpdate}
+                className="w-full"
+                disabled={updateTrip.isPending}
+              >
+                {updateTrip.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                ) : null}
+                {t("saveChanges")}
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

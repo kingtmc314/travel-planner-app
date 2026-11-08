@@ -13,7 +13,9 @@ import NotificationsPanel from "@/components/NotificationsPanel";
 import { toast } from "sonner";
 import { useI18n } from "@/hooks/useI18n";
 import TripForm, { EMPTY_TRIP_FORM } from "@/components/TripForm";
-import { formatDateOnlyInHongKong, isValidDateRange } from "@/lib/hongKongDate";
+import { formatDateOnlyInHongKong, isValidDateRange, normalizeDateOnly } from "@/lib/hongKongDate";
+import AppLogo from "@/components/AppLogo";
+import { APP_VERSION } from "@/lib/design";
 
 interface TripLayoutProps {
   tripId: number;
@@ -21,7 +23,7 @@ interface TripLayoutProps {
 }
 
 export default function TripLayout({ tripId, children }: TripLayoutProps) {
-  const { t, lang } = useI18n();
+  const { t, lang, setLang } = useI18n();
   const NAV_ITEMS = [
     { key: "itinerary", label: t("itinerary"), icon: Calendar, path: "itinerary" },
     { key: "expenses", label: t("expenses"), icon: DollarSign, path: "expenses" },
@@ -37,14 +39,15 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
   const [showEditTrip, setShowEditTrip] = useState(false);
   const [editForm, setEditForm] = useState({ ...EMPTY_TRIP_FORM });
 
-  const { data: trip, refetch: refetchTrip } = trpc.trips.get.useQuery({ tripId }, { enabled: !!user && !!tripId });
+  const utils = trpc.useUtils();
+  const { data: trip, refetch: refetchTrip, error: tripError } = trpc.trips.get.useQuery({ tripId }, { enabled: !!user && !!tripId });
   const { data: unreadCount } = trpc.notifications.unreadCount.useQuery(undefined, {
     enabled: !!user,
     refetchInterval: 30000,
   });
 
   const updateTrip = trpc.trips.update.useMutation({
-    onSuccess: () => { refetchTrip(); setShowEditTrip(false); toast.success(t("tripUpdated")); },
+    onSuccess: () => { utils.invalidate(); refetchTrip(); setShowEditTrip(false); toast.success(t("tripUpdated")); },
     onError: () => toast.error(t("tripUpdateFailed")),
   });
 
@@ -57,8 +60,8 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
     setEditForm({
       name: trip.name ?? "",
       destination: trip.destination ?? "",
-      startDate: trip.startDate ?? "",
-      endDate: trip.endDate ?? "",
+      startDate: normalizeDateOnly(trip.startDate),
+      endDate: normalizeDateOnly(trip.endDate),
       description: trip.description ?? "",
       coverImage: trip.coverImage ?? "",
       baseCurrency: trip.baseCurrency ?? "HKD",
@@ -85,6 +88,7 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
+      <div className="flex items-center gap-3 px-5 h-20 shrink-0"><AppLogo size={34} /><div><p className="font-semibold text-white">VoyageAI · 旅跡</p><p className="text-[9px] text-white/45 tracking-widest mt-0.5">{APP_VERSION} · CONNECTED TRAVEL</p></div></div>
       {/* Back to dashboard */}
       <div className="p-4 border-b border-sidebar-border">
         <button
@@ -156,6 +160,8 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
 
       {/* AI Assistant button */}
       <div className="p-3 border-t border-sidebar-border">
+        <button onClick={() => setLocation("/analytics")} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-sidebar-foreground/70 hover:bg-sidebar-accent"><DollarSign className="w-4 h-4" />{lang === "zh" ? "旅行分析中心" : "Travel insights"}</button>
+        <button onClick={() => setLocation("/sync")} className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm text-sidebar-foreground/70 hover:bg-sidebar-accent"><Plane className="w-4 h-4" />{lang === "zh" ? "資料連接中心" : "Connections"}</button>
         <button
           onClick={() => { setShowAI(true); setSidebarOpen(false); }}
           className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-sidebar-foreground/70 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-all"
@@ -167,6 +173,7 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
 
       {/* User */}
       <div className="p-4 border-t border-sidebar-border">
+        <div className="flex items-center justify-between mb-3"><span className="text-[9px] text-sidebar-foreground/40">HKT (UTC+8) · {APP_VERSION}</span><button onClick={() => setLang(lang === "zh" ? "en" : "zh")} className="text-xs text-sidebar-foreground/80 p-2 rounded-lg hover:bg-sidebar-accent">{lang === "zh" ? "EN" : "中"}</button></div>
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-sidebar-accent flex items-center justify-center text-sidebar-accent-foreground font-semibold text-sm shrink-0">
             {user.name?.charAt(0).toUpperCase() ?? "U"}
@@ -186,13 +193,13 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
   return (
     <div className="min-h-screen bg-background flex">
       {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col w-64 shrink-0 h-screen sticky top-0 overflow-y-auto" style={{background:"oklch(0.14 0.03 255)"}}>
+      <aside className="hidden lg:flex flex-col w-[244px] shrink-0 h-screen sticky top-0 overflow-y-auto bg-sidebar">
         <SidebarContent />
       </aside>
 
       {/* Mobile Sidebar */}
       <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
-        <SheetContent side="left" className="p-0 w-72" style={{background:"oklch(0.14 0.03 255)"}}>
+        <SheetContent side="left" className="p-0 w-72 bg-sidebar overflow-y-auto">
           <SidebarContent />
         </SheetContent>
       </Sheet>
@@ -207,6 +214,7 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
             </button>
             <div className="flex-1 text-center">
               <h1 className="font-semibold text-foreground text-sm line-clamp-1 px-2">{trip?.name ?? t("itinerary")}</h1>
+              <p className="text-[9px] text-muted-foreground mt-0.5">{APP_VERSION} · HKT UTC+8</p>
             </div>
             <div className="flex items-center gap-1">
               {isOwnerOrEditor && (
@@ -262,7 +270,7 @@ export default function TripLayout({ tripId, children }: TripLayoutProps) {
 
         {/* Page content */}
         <main className="flex-1 overflow-auto pb-20 lg:pb-6 page-enter">
-          {children}
+          {tripError ? <div className="voyage-panel m-6"><h2 className="font-semibold">{lang === "zh" ? "暫時無法載入此行程" : "Unable to load this trip"}</h2><p className="text-sm text-muted-foreground my-3">{tripError.message}</p><Button onClick={() => refetchTrip()}>{lang === "zh" ? "重新載入" : "Retry"}</Button></div> : children}
         </main>
 
         {/* Mobile bottom nav */}

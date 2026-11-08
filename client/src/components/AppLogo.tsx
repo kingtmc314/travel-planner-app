@@ -1,5 +1,5 @@
-// VoyageAI · 旅跡 — App Logo
-// Globe with a flight-path arc — gradient purple-to-cyan
+import { useId } from "react";
+// VoyageAI · 旅跡 — globe and flight path in the connected travel palette.
 
 interface AppLogoProps {
   size?: number;
@@ -7,7 +7,7 @@ interface AppLogoProps {
 }
 
 export default function AppLogo({ size = 32, className = "" }: AppLogoProps) {
-  const id = "voyageai-grad";
+  const id = useId();
   return (
     <svg
       width={size}
@@ -19,9 +19,9 @@ export default function AppLogo({ size = 32, className = "" }: AppLogoProps) {
     >
       <defs>
         <linearGradient id={id} x1="0" y1="0" x2="40" y2="40" gradientUnits="userSpaceOnUse">
-          <stop offset="0%" stopColor="#7c3aed" />
-          <stop offset="50%" stopColor="#2563eb" />
-          <stop offset="100%" stopColor="#06b6d4" />
+          <stop offset="0%" stopColor="#387d6d" />
+          <stop offset="50%" stopColor="#226c5e" />
+          <stop offset="100%" stopColor="#123b37" />
         </linearGradient>
       </defs>
       {/* Background circle */}

@@ -1,165 +1,81 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
-import { Bell, Globe, LogOut, Plane, RefreshCw } from "lucide-react";
+import { BarChart3, Bell, ChevronRight, Compass, Globe, LogOut, Plane, RefreshCw, ShieldCheck } from "lucide-react";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import NotificationsPanel from "@/components/NotificationsPanel";
 import AppLogo from "@/components/AppLogo";
 import { useI18n } from "@/hooks/useI18n";
-
-const APP_VERSION = "v8.4.1";
+import { APP_VERSION } from "@/lib/design";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const [currentPath, setLocation] = useLocation();
   const [showNotifications, setShowNotifications] = useState(false);
   const { t, lang, setLang } = useI18n();
-
-  const { data: unreadCount } = trpc.notifications.unreadCount.useQuery(undefined, {
-    enabled: !!user,
-    refetchInterval: 30000,
-  });
-
+  const { data: unreadCount } = trpc.notifications.unreadCount.useQuery(undefined, { enabled: !!user, refetchInterval: 30000 });
   const navItems = [
-    { path: "/dashboard", label: t("myTrips"), icon: Plane, iconClass: "rotate-45" },
-    { path: "/travel-history", label: t("travelHistory"), icon: Globe, iconClass: "" },
-    { path: "/flight-passport", label: t("flightPassport"), icon: Plane, iconClass: "" },
-    { path: "/sync", label: t("syncCenter"), icon: RefreshCw, iconClass: "" },
+    { path: "/dashboard", label: t("myTrips"), short: lang === "zh" ? "旅程" : "Trips", icon: Compass },
+    { path: "/analytics", label: lang === "zh" ? "旅行分析" : "Travel insights", short: lang === "zh" ? "分析" : "Insights", icon: BarChart3 },
+    { path: "/travel-history", label: t("travelHistory"), short: lang === "zh" ? "足跡" : "Places", icon: Globe },
+    { path: "/flight-passport", label: t("flightPassport"), short: lang === "zh" ? "飛行" : "Flights", icon: Plane },
+    { path: "/sync", label: lang === "zh" ? "資料連接中心" : "Connections", short: lang === "zh" ? "連接" : "Connect", icon: RefreshCw },
   ];
-
-  const LangToggle = () => (
-    <button
-      onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-      className="px-2 py-1 rounded-lg text-xs font-semibold border border-border text-muted-foreground hover:text-foreground hover:border-primary transition-colors"
-      title={lang === "zh" ? "Switch to English" : "切換中文"}
-    >
-      {lang === "zh" ? "EN" : "中"}
+  const activeLabel = navItems.find(item => currentPath === item.path)?.label ?? "VoyageAI";
+  const languageButton = (dark = false) => (
+    <button onClick={() => setLang(lang === "zh" ? "en" : "zh")} className={`h-9 min-w-9 px-2.5 rounded-xl text-xs font-semibold border transition-colors ${dark ? "border-white/15 text-white/80 hover:bg-white/10" : "border-border bg-card hover:bg-accent"}`} aria-label={lang === "zh" ? "Switch to English" : "切換中文"}>{lang === "zh" ? "EN" : "中"}</button>
+  );
+  const notificationButton = (dark = false) => (
+    <button onClick={() => setShowNotifications(true)} className={`relative h-10 w-10 grid place-items-center rounded-xl transition-colors ${dark ? "hover:bg-white/10 text-white/70" : "bg-card border border-border hover:bg-accent text-muted-foreground"}`} aria-label={t("notifications")}>
+      <Bell className="w-[18px] h-[18px]" />
+      {!!unreadCount?.count && <span className="absolute top-1 right-1 rounded-full bg-destructive text-white min-w-4 h-4 text-[9px] grid place-items-center px-0.5">{unreadCount.count > 9 ? "9+" : unreadCount.count}</span>}
     </button>
   );
 
   return (
     <div className="min-h-screen bg-background flex">
-      {/* Desktop Sidebar */}
-      <aside className="hidden lg:flex flex-col w-56 shrink-0 border-r border-border bg-card/50 sticky top-0 h-screen">
-        <div className="flex items-center gap-3 px-5 h-16 border-b border-border">
-          <AppLogo size={32} />
-          <div className="flex flex-col leading-none">
-            <span className="font-bold text-foreground text-sm tracking-tight">VoyageAI</span>
-            <span className="text-[10px] text-muted-foreground tracking-widest">{lang === "zh" ? "旅跡" : "Travel"} · {APP_VERSION}</span>
-          </div>
-        </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {navItems.map(item => {
-            const Icon = item.icon;
-            const active = currentPath === item.path;
-            return (
-              <button
-                key={item.path}
-                onClick={() => setLocation(item.path)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-                  active ? "bg-primary/10 text-primary" : "text-muted-foreground hover:text-foreground hover:bg-accent"
-                }`}
-              >
-                <Icon className={`w-4 h-4 ${item.iconClass}`} />
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
-        <div className="px-3 py-4 border-t border-border space-y-1">
-          <button
-            onClick={() => setShowNotifications(true)}
-            className="relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
-          >
-            <Bell className="w-4 h-4" />
-            {t("notifications")}
-            {unreadCount && unreadCount.count > 0 ? (
-              <span className="ml-auto w-5 h-5 rounded-full bg-destructive text-destructive-foreground text-[10px] flex items-center justify-center font-bold">
-                {unreadCount.count > 9 ? "9+" : unreadCount.count}
-              </span>
-            ) : null}
-          </button>
-          <div className="flex items-center gap-2 px-3 py-2">
-            <LangToggle />
-            <div className="flex items-center gap-2 flex-1 min-w-0">
-              <div className="w-7 h-7 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold text-xs shrink-0">
-                {user?.name?.charAt(0).toUpperCase() ?? "U"}
-              </div>
-              <span className="text-sm text-foreground flex-1 truncate">{user?.name ?? (lang === "zh" ? "旅人" : "Traveller")}</span>
-            </div>
-            <button onClick={logout} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-accent transition-colors shrink-0">
-              <LogOut className="w-3.5 h-3.5 text-muted-foreground" />
+      <aside className="hidden lg:flex flex-col w-[244px] shrink-0 sticky top-0 h-screen text-sidebar-foreground bg-sidebar border-r border-sidebar-border">
+        <button onClick={() => setLocation("/dashboard")} className="flex items-center gap-3 text-left px-6 h-24" aria-label="VoyageAI">
+          <AppLogo size={39} />
+          <div><span className="font-bold text-lg tracking-tight text-white">VoyageAI</span><p className="text-[10px] tracking-[0.16em] text-white/45 mt-0.5">{lang === "zh" ? "旅跡 · 你的旅行日誌" : "YOUR TRAVEL JOURNAL"}</p></div>
+        </button>
+        <p className="px-6 mb-3 text-[10px] tracking-[0.18em] uppercase text-white/35">{lang === "zh" ? "我的旅行空間" : "Your workspace"}</p>
+        <nav className="px-3 space-y-1.5">
+          {navItems.map(item => { const Icon = item.icon; const active = currentPath === item.path; return (
+            <button key={item.path} onClick={() => setLocation(item.path)} aria-current={active ? "page" : undefined} className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-2xl text-sm font-medium transition-colors ${active ? "bg-[#b9ebdc] text-[#123d38] shadow-sm" : "text-white/60 hover:text-white hover:bg-white/5"}`}>
+              <Icon className="w-[18px] h-[18px] shrink-0" /><span className="flex-1 text-left">{item.label}</span>{active && <ChevronRight className="w-3.5 h-3.5" />}
             </button>
+          ); })}
+        </nav>
+        <div className="mx-5 mt-9 p-4 border border-white/10 rounded-2xl bg-white/[0.035]">
+          <ShieldCheck className="w-5 h-5 text-[#a6ddcc] mb-2.5" />
+          <p className="text-xs font-semibold text-white/85">{lang === "zh" ? "資料連接，紀錄保留" : "Connected. Not replaced."}</p>
+          <p className="text-[11px] leading-relaxed text-white/45 mt-1.5">{lang === "zh" ? "沿用你的舊資料，將旅行細節連接起來，毋須再填一次。" : "Keep your records and reuse the details across your journey."}</p>
+        </div>
+        <div className="mt-auto px-5 py-5 border-t border-white/10 space-y-4">
+          <div className="flex justify-between items-center"><span className="text-[11px] font-mono text-white/40">{APP_VERSION} · HKT (UTC+8)</span>{languageButton(true)}</div>
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-white/10 grid place-items-center text-[#b9ebdc] font-semibold shrink-0">{user?.name?.charAt(0).toUpperCase() ?? "V"}</div>
+            <div className="flex-1 min-w-0"><p className="text-xs font-semibold text-white truncate">{user?.name ?? (lang === "zh" ? "旅人" : "Traveller")}</p><p className="text-[10px] text-white/40 mt-0.5">{lang === "zh" ? "好好記錄每一段旅程" : "Make every journey count"}</p></div>
+            <button onClick={logout} aria-label={t("logout")} className="h-9 w-9 grid place-items-center rounded-xl hover:bg-white/10 text-white/50"><LogOut className="w-4 h-4" /></button>
           </div>
         </div>
       </aside>
-
-      {/* Main content area */}
       <div className="flex-1 flex flex-col min-w-0">
-        {/* Mobile Header */}
-        <header className="lg:hidden sticky top-0 z-40 bg-background/95 backdrop-blur-sm border-b border-border">
-          <div className="px-4 sm:px-6 h-16 flex items-center justify-between">
-            <div className="flex items-center gap-2.5">
-              <AppLogo size={30} />
-              <div className="flex flex-col leading-none">
-                <span className="font-bold text-foreground text-sm tracking-tight">VoyageAI</span>
-                <span className="text-[9px] text-muted-foreground tracking-widest">{lang === "zh" ? "旅跡" : "Travel"} · {APP_VERSION}</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <LangToggle />
-              <button
-                onClick={() => setShowNotifications(true)}
-                className="relative w-9 h-9 rounded-lg flex items-center justify-center hover:bg-accent transition-colors"
-              >
-                <Bell className="w-5 h-5 text-muted-foreground" />
-                {unreadCount && unreadCount.count > 0 ? (
-                  <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-destructive" />
-                ) : null}
-              </button>
-              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-semibold text-sm">
-                {user?.name?.charAt(0).toUpperCase() ?? "U"}
-              </div>
-              <button
-                onClick={logout}
-                className="w-9 h-9 rounded-lg flex items-center justify-center hover:bg-accent transition-colors"
-              >
-                <LogOut className="w-4 h-4 text-muted-foreground" />
-              </button>
-            </div>
+        <header className="sticky top-0 z-30 glass border-b border-border/80">
+          <div className="h-[72px] px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-3">
+            <div className="lg:hidden flex items-center gap-2.5"><AppLogo size={33} /><div><p className="font-bold text-sm tracking-tight">VoyageAI</p><p className="text-[9px] text-muted-foreground tracking-widest mt-0.5">旅跡 · {APP_VERSION}</p></div></div>
+            <div className="hidden lg:flex items-center gap-2 text-xs text-muted-foreground"><Compass className="w-4 h-4" /><span>VoyageAI</span><ChevronRight className="w-3 h-3" /><span className="font-medium text-foreground">{activeLabel}</span></div>
+            <div className="flex items-center gap-2 sm:gap-3"><span className="hidden sm:inline text-[10px] tracking-wider text-muted-foreground">HONG KONG · UTC+8</span><span className="lg:hidden">{languageButton()}</span>{notificationButton()}</div>
           </div>
         </header>
-
-        {/* Page content */}
-        <main className="flex-1 pb-20 lg:pb-0">
-          {children}
-        </main>
-
-        {/* Mobile Bottom Navigation */}
-        <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-30 bg-background/95 backdrop-blur-sm border-t border-border">
-          <div className="flex items-center justify-around h-16">
-            {navItems.map(item => {
-              const Icon = item.icon;
-              const active = currentPath === item.path;
-              return (
-                <button
-                key={item.path}
-                onClick={() => setLocation(item.path)}
-                aria-label={item.label}
-                aria-current={active ? "page" : undefined}
-                className={`flex-1 min-w-0 flex flex-col items-center gap-1 px-1 py-2 transition-colors ${
-                    active ? "text-primary" : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  <Icon className={`w-5 h-5 ${item.iconClass}`} />
-                <span className="w-full truncate text-[9px] sm:text-[10px] font-medium">{item.label}</span>
-                </button>
-              );
-            })}
+        <main className="flex-1 pb-24 lg:pb-8 min-w-0">{children}</main>
+        <nav aria-label={lang === "zh" ? "主要導覽" : "Main navigation"} className="lg:hidden fixed bottom-0 inset-x-0 z-40 glass border-t border-border" style={{paddingBottom:"env(safe-area-inset-bottom)"}}>
+          <div className="flex h-[68px] px-2 gap-1 items-center">
+            {navItems.map(item => { const Icon = item.icon; const active = currentPath === item.path; return <button key={item.path} onClick={() => setLocation(item.path)} aria-label={item.label} aria-current={active ? "page" : undefined} className={`flex-1 min-w-0 flex flex-col items-center justify-center gap-1 h-14 rounded-2xl transition-colors ${active ? "bg-primary/8 text-primary" : "text-muted-foreground"}`}><Icon className="w-5 h-5" /><span className="text-[10px] font-semibold truncate max-w-full">{item.short}</span></button>; })}
           </div>
         </nav>
       </div>
-
       <NotificationsPanel open={showNotifications} onClose={() => setShowNotifications(false)} />
     </div>
   );

@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { translations, type Lang } from "@/lib/i18n";
 
 const STORAGE_KEY = "voyageai_lang";
@@ -22,7 +22,7 @@ const _listeners = new Set<() => void>();
 
 function subscribe(fn: () => void) {
   _listeners.add(fn);
-  return () => _listeners.delete(fn);
+  return () => { _listeners.delete(fn); };
 }
 
 function setGlobalLang(lang: Lang) {
@@ -35,10 +35,8 @@ export function useI18n() {
   const [, forceUpdate] = useState(0);
 
   // Subscribe to global lang changes
-  useState(() => {
-    const unsub = subscribe(() => forceUpdate(n => n + 1));
-    return unsub;
-  });
+  useEffect(() => subscribe(() => forceUpdate(n => n + 1)), []);
+  useEffect(() => { document.documentElement.lang = _lang === "zh" ? "zh-HK" : "en-HK"; }, [_lang]);
 
   const t = useCallback(
     (key: keyof typeof translations.zh, ...args: any[]): string => {

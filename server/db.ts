@@ -356,10 +356,35 @@ export async function getVisitedCountries(userId: number) {
   return db.select().from(visitedCountries).where(eq(visitedCountries.userId, userId)).orderBy(asc(visitedCountries.countryCode));
 }
 
+const countryWriteLocks = new Map<string, Promise<void>>();
 export async function upsertVisitedCountry(data: InsertVisitedCountry) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
-  await db.insert(visitedCountries).values(data).onDuplicateKeyUpdate({ set: { status: data.status, visitedAt: data.visitedAt, notes: data.notes } });
+  // The legacy table has no unique user/country key. Read/update explicitly without a migration or deleting any existing rows.
+  const key = `${data.userId}:${data.countryCode}`;
+  const previous = countryWriteLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  const tail = previous.then(() => gate);
+  countryWriteLocks.set(key, tail);
+  await previous;
+  try {
+    const existing = await db.select({ id: visitedCountries.id }).from(visitedCountries)
+      .where(and(eq(visitedCountries.userId, data.userId), eq(visitedCountries.countryCode, data.countryCode)))
+      .orderBy(asc(visitedCountries.id)).limit(1);
+    if (existing.length) {
+      await db.update(visitedCountries).set({
+        ...(data.status !== undefined ? { status: data.status } : {}),
+        ...(data.visitedAt !== undefined ? { visitedAt: data.visitedAt } : {}),
+        ...(data.notes !== undefined ? { notes: data.notes } : {}),
+      }).where(and(eq(visitedCountries.id, existing[0].id), eq(visitedCountries.userId, data.userId)));
+    } else {
+      await db.insert(visitedCountries).values(data);
+    }
+  } finally {
+    release();
+    if (countryWriteLocks.get(key) === tail) countryWriteLocks.delete(key);
+  }
 }
 
 export async function removeVisitedCountry(userId: number, countryCode: string) {

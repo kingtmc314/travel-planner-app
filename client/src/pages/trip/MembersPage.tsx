@@ -13,6 +13,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 export default function MembersPage({ tripId }: { tripId: number }) {
   const { t, lang } = useI18n();
   const { user } = useAuth();
+  const utils = trpc.useUtils();
   const { data: members, refetch, isLoading } = trpc.members.list.useQuery({ tripId }, { refetchInterval: 15000 });
   const { data: trip } = trpc.trips.get.useQuery({ tripId });
   const [showAdd, setShowAdd] = useState(false);
@@ -30,15 +31,15 @@ export default function MembersPage({ tripId }: { tripId: number }) {
   ];
 
   const addMember = trpc.members.add.useMutation({
-    onSuccess: () => { refetch(); setShowAdd(false); setForm({ name: "", email: "", role: "viewer" }); toast.success(t("memberAdded")); },
+    onSuccess: () => { utils.invalidate(); refetch(); setShowAdd(false); setForm({ name: "", email: "", role: "viewer" }); toast.success(t("memberAdded")); },
     onError: (e) => toast.error(e.message || t("addFailed")),
   });
   const updateRole = trpc.members.updateRole.useMutation({
-    onSuccess: () => { refetch(); toast.success(t("roleUpdated")); },
+    onSuccess: () => { utils.invalidate(); refetch(); toast.success(t("roleUpdated")); },
     onError: (e) => toast.error(e.message || t("updateFailed")),
   });
   const removeMember = trpc.members.remove.useMutation({
-    onSuccess: () => { refetch(); toast.success(t("memberRemoved")); },
+    onSuccess: () => { utils.invalidate(); refetch(); toast.success(t("memberRemoved")); },
     onError: (e) => toast.error(e.message || t("deleteFailed")),
   });
 
@@ -56,9 +57,8 @@ export default function MembersPage({ tripId }: { tripId: number }) {
     : null;
   const handleCopyShareLink = async () => {
     if (!shareUrl) return;
-    await navigator.clipboard.writeText(shareUrl);
-    setCopiedShare(true);
-    setTimeout(() => setCopiedShare(false), 2000);
+    try { await navigator.clipboard.writeText(shareUrl); setCopiedShare(true); setTimeout(() => setCopiedShare(false), 2000); }
+    catch { toast.error(lang === "zh" ? "請長按連結複製" : "Please select the link to copy it"); }
   };
 
   const createInviteLink = trpc.members.createInviteLink.useMutation({
@@ -67,9 +67,8 @@ export default function MembersPage({ tripId }: { tripId: number }) {
   });
 
   const handleCopyLink = async () => {
-    await navigator.clipboard.writeText(generatedLink);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    try { await navigator.clipboard.writeText(generatedLink); setCopied(true); setTimeout(() => setCopied(false), 2000); }
+    catch { toast.error(lang === "zh" ? "請長按連結複製" : "Please select the link to copy it"); }
   };
 
   const myRole = trip?.userRole;
@@ -87,16 +86,21 @@ export default function MembersPage({ tripId }: { tripId: number }) {
   );
 
   return (
-    <div className="px-4 sm:px-6 py-6 max-w-2xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+    <div className="px-4 sm:px-6 lg:px-8 py-6 max-w-5xl mx-auto space-y-6">
+      <section className="voyage-hero">
+        <p className="text-[10px] uppercase tracking-[0.16em] text-white/60 mb-3">TRAVEL TOGETHER</p>
+        <div className="flex items-center gap-3"><Users className="w-7 h-7 text-[#b9ebdc]" /><h2 className="text-2xl sm:text-3xl font-semibold">{lang === "zh" ? "一起計劃，一起出發。" : "Plan together. Go together."}</h2></div>
+        <p className="text-sm text-white/65 mt-3 max-w-xl leading-relaxed">{lang === "zh" ? "用邀請連結讓旅伴以自己的帳戶加入；姓名與電郵沿用登入資料，不必再代為填寫。" : "Invite companions with a link. Their name and email come from their own account, without re-entry."}</p>
+      </section>
+      <div className="flex flex-wrap gap-4 items-center justify-between">
         <div>
-          <h2 className="text-xl font-bold text-foreground">{t("membersTitle")}</h2>
+          <h2 className="voyage-section-title">{t("membersTitle")}</h2>
           <p className="text-muted-foreground text-sm mt-0.5">
             {lang === "zh" ? `${members?.length ?? 0} 位成員` : `${members?.length ?? 0} member${(members?.length ?? 0) !== 1 ? "s" : ""}`}
           </p>
         </div>
         {canManage && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button onClick={() => { setShowInviteLink(true); setGeneratedLink(""); }} variant="outline" size="sm" className="gap-1.5">
               <Link2 className="w-4 h-4" />{t("inviteLink")}
             </Button>
@@ -117,6 +121,7 @@ export default function MembersPage({ tripId }: { tripId: number }) {
                 <Icon className="w-4 h-4" />
               </div>
               <p className="text-xs font-semibold text-foreground">{r.label}</p>
+              <p className="text-2xl font-semibold tabular-nums mt-1">{members?.filter(member => member.role === r.value).length ?? 0}</p>
               <p className="text-[10px] text-muted-foreground mt-0.5">{r.desc}</p>
             </div>
           );
@@ -138,7 +143,7 @@ export default function MembersPage({ tripId }: { tripId: number }) {
             const RoleIcon = roleInfo.icon;
             const isMe = member.userId === user?.id;
             return (
-              <div key={member.id} className="bg-card rounded-xl border border-border p-4 flex items-center gap-3">
+              <div key={member.id} className="bg-card rounded-2xl border border-border p-4 flex flex-wrap items-center gap-3">
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold shrink-0">
                   {member.displayName.charAt(0).toUpperCase()}
                 </div>
@@ -180,9 +185,11 @@ export default function MembersPage({ tripId }: { tripId: number }) {
                   )}
                   {canManage && !isMe && (
                     <button
-                      onClick={() => removeMember.mutate({ memberId: member.id, tripId })}
-                      className="p-1.5 rounded-lg hover:bg-destructive/10 transition-colors"
+                      onClick={() => { if (window.confirm(lang === "zh" ? `確定移除 ${member.displayName} 的成員權限？` : `Remove membership for ${member.displayName}?`)) removeMember.mutate({ memberId: member.id, tripId }); }}
+                      disabled={removeMember.isPending}
+                      className="p-2.5 rounded-lg hover:bg-destructive/10 transition-colors"
                       title={t("removeMember")}
+                      aria-label={t("removeMember")}
                     >
                       <Trash2 className="w-4 h-4 text-destructive" />
                     </button>
@@ -286,6 +293,7 @@ export default function MembersPage({ tripId }: { tripId: number }) {
           <DialogHeader>
             <DialogTitle>{t("inviteMember")}</DialogTitle>
           </DialogHeader>
+          <p className="text-xs text-muted-foreground leading-relaxed">{lang === "zh" ? "建議使用邀請連結，由旅伴以自己的帳戶加入。此表格保留作手動成員紀錄。" : "For account access, use an invite link. This form is retained for manual member records."}</p>
           <div className="space-y-4 mt-2">
             <div>
               <Label>{t("memberName")} *</Label>
@@ -300,7 +308,7 @@ export default function MembersPage({ tripId }: { tripId: number }) {
               <Select value={form.role} onValueChange={v => setForm({...form, role: v as any})}>
                 <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {ROLES.map(r => (
+                  {ROLES.filter(r => r.value !== "owner").map(r => (
                     <SelectItem key={r.value} value={r.value}>
                       <div className="flex items-center gap-2">
                         <r.icon className="w-4 h-4" />

@@ -2,7 +2,6 @@
 @import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
-
 @theme inline {
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -23,6 +22,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -40,96 +40,79 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 }
-
 :root {
-  --radius: 0.75rem;
-  --background: oklch(0.98 0.005 60);
-  --foreground: oklch(0.15 0.02 260);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.15 0.02 260);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.15 0.02 260);
-  --primary: oklch(0.42 0.12 255);
-  --primary-foreground: oklch(0.98 0.005 60);
-  --secondary: oklch(0.94 0.015 60);
-  --secondary-foreground: oklch(0.25 0.03 255);
-  --muted: oklch(0.95 0.008 60);
-  --muted-foreground: oklch(0.52 0.02 255);
-  --accent: oklch(0.93 0.025 55);
-  --accent-foreground: oklch(0.25 0.03 255);
-  --destructive: oklch(0.55 0.22 25);
-  --border: oklch(0.90 0.01 60);
-  --input: oklch(0.90 0.01 60);
-  --ring: oklch(0.42 0.12 255);
-  --chart-1: oklch(0.55 0.18 255);
-  --chart-2: oklch(0.65 0.18 160);
-  --chart-3: oklch(0.70 0.18 55);
-  --chart-4: oklch(0.60 0.18 310);
-  --chart-5: oklch(0.65 0.18 25);
-  --sidebar: oklch(0.14 0.03 255);
-  --sidebar-foreground: oklch(0.90 0.01 255);
-  --sidebar-primary: oklch(0.75 0.12 255);
-  --sidebar-primary-foreground: oklch(0.14 0.03 255);
-  --sidebar-accent: oklch(0.22 0.04 255);
-  --sidebar-accent-foreground: oklch(0.90 0.01 255);
-  --sidebar-border: oklch(0.25 0.04 255);
-  --sidebar-ring: oklch(0.55 0.12 255);
+  --radius: 0.85rem;
+  --background: #f5f7f4;
+  --foreground: #18332f;
+  --card: #ffffff;
+  --card-foreground: #18332f;
+  --popover: #ffffff;
+  --popover-foreground: #18332f;
+  --primary: #226c5e;
+  --primary-foreground: #ffffff;
+  --secondary: #e7f1ec;
+  --secondary-foreground: #28594f;
+  --muted: #edf1ed;
+  --muted-foreground: #637870;
+  --accent: #e1efe7;
+  --accent-foreground: #235347;
+  --destructive: #c34845;
+  --destructive-foreground: #ffffff;
+  --border: #dfe7e0;
+  --input: #d9e3dc;
+  --ring: #5b9c88;
+  --chart-1: #2b7f6b;
+  --chart-2: #8bbbac;
+  --chart-3: #dfae6c;
+  --chart-4: #718eaa;
+  --chart-5: #c98676;
+  --sidebar: #112f2e;
+  --sidebar-foreground: #ecf5ef;
+  --sidebar-primary: #b9ebdc;
+  --sidebar-primary-foreground: #183d37;
+  --sidebar-accent: #23443e;
+  --sidebar-accent-foreground: #c9e8dc;
+  --sidebar-border: #2a4741;
+  --sidebar-ring: #81baa7;
 }
-
 @layer base {
   * { @apply border-border outline-ring/50; box-sizing: border-box; }
-  body { @apply bg-background text-foreground antialiased; font-family: 'Inter', system-ui, sans-serif; }
+  body { @apply bg-background text-foreground antialiased; font-family: 'Inter', 'Noto Sans TC', system-ui, sans-serif; }
+  h1, h2, h3 { letter-spacing: -0.035em; text-wrap: balance; }
+  button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+  button:not(:disabled), [role="button"] { cursor: pointer; }
+  :focus-visible { outline: 2px solid var(--ring); outline-offset: 3px; }
+  ::selection { background: #c7e8d9; color: #163c32; }
+  input, textarea, select { font-variant-numeric: tabular-nums; }
 }
-
 @layer utilities {
   .container { @apply mx-auto px-4 sm:px-6 lg:px-8 w-full max-w-7xl; }
   .flex { min-width: 0; min-height: 0; }
+  .voyage-panel { @apply bg-card text-card-foreground border border-border rounded-2xl p-4 sm:p-6; box-shadow: 0 3px 16px -10px #173b3029; }
+  .voyage-hero { @apply relative overflow-hidden text-white rounded-[28px] p-6 sm:p-8; background: linear-gradient(120deg, #133830 0%, #184d46 56%, #28655b 100%); }
+  .voyage-eyebrow { @apply text-[10px] sm:text-[11px] font-semibold uppercase tracking-[0.16em] text-primary; }
+  .voyage-metric { @apply bg-card text-card-foreground border border-border rounded-2xl p-4 sm:p-5; box-shadow: 0 3px 16px -10px #173b3029; font-variant-numeric: tabular-nums; }
+  .voyage-section-title { @apply font-bold text-lg sm:text-xl text-foreground; }
+  .voyage-display { font-family: 'Playfair Display', 'Noto Serif TC', Georgia, serif; }
+  .tabular-nums { font-variant-numeric: tabular-nums; }
 }
-
-/* Trip card hover */
-.trip-card {
-  transition: transform 200ms cubic-bezier(0.23,1,0.32,1), box-shadow 200ms cubic-bezier(0.23,1,0.32,1);
-}
-.trip-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 20px 40px -12px oklch(0.15 0.03 255 / 0.12);
-}
-
-/* Timeline */
-.timeline-connector {
-  position: absolute;
-  left: 1.25rem;
-  top: 2.5rem;
-  bottom: -0.5rem;
-  width: 2px;
-  background: linear-gradient(to bottom, oklch(0.42 0.12 255 / 0.25), transparent);
-}
-
-/* Page enter animation */
-.page-enter { animation: pageEnter 250ms cubic-bezier(0.23,1,0.32,1) forwards; }
-@keyframes pageEnter {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* Glass */
-.glass {
-  background: oklch(1 0 0 / 0.85);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-}
-
-/* Button press */
-button:active:not(:disabled) {
-  transform: scale(0.97);
-  transition: transform 160ms cubic-bezier(0.23,1,0.32,1);
-}
-
-/* Scrollbar */
+.trip-card { transition: transform 200ms cubic-bezier(0.23,1,0.32,1), box-shadow 200ms cubic-bezier(0.23,1,0.32,1); }
+.trip-card:hover { transform: translateY(-3px); box-shadow: 0 20px 40px -12px #163f3026; }
+.timeline-connector { position: absolute; left: 1.25rem; top: 2.5rem; bottom: -0.5rem; width: 2px; background: linear-gradient(to bottom, #226c5e40, transparent); }
+.page-enter { animation: pageEnter 220ms cubic-bezier(0.23,1,0.32,1) forwards; }
+@keyframes pageEnter { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+.glass { background: #f9fbf7ed; backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); }
+button:active:not(:disabled) { transform: scale(0.98); transition: transform 140ms cubic-bezier(0.23,1,0.32,1); }
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: oklch(0.80 0.02 255); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: oklch(0.65 0.04 255); }
-
-/* Bottom nav safe area */
-.pb-safe { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+::-webkit-scrollbar-thumb { background: #afc8bb; border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: #7da38e; }
+.pb-safe { padding-bottom: max(0.5rem, env(safe-area-inset-bottom)); }
+@media (max-width: 640px) {
+  input, textarea, select, [data-slot="input"], [data-slot="textarea"] { font-size: 16px; }
+  [data-slot="dialog-content"] { max-height: 88dvh; overflow-y: auto; overscroll-behavior: contain; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+  .trip-card:hover, button:active:not(:disabled) { transform: none; }
+}
