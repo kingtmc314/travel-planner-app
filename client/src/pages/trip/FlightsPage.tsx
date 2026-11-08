@@ -1,3 +1,4 @@
+import BookingImportDialog from "@/components/BookingImportDialog";
 import { trpc } from "@/lib/trpc";
 import { useI18n } from "@/hooks/useI18n";
 import { Button } from "@/components/ui/button";
@@ -51,6 +52,24 @@ import {
   validateHotelDates,
 } from "@/lib/logisticsInsights";
 
+const bookingMarkerLines = (notes: string | null | undefined) =>
+  (notes ?? "")
+    .split(/\r?\n/)
+    .filter(line => /^\[voyageai:booking:/.test(line.trim()));
+const visibleBookingNotes = (notes: string | null | undefined) =>
+  (notes ?? "")
+    .split(/\r?\n/)
+    .filter(line => !/^\[voyageai:booking:/.test(line.trim()))
+    .join("\n")
+    .trim();
+const preserveBookingMarkers = (
+  notes: string,
+  original: string | null | undefined
+) =>
+  [visibleBookingNotes(notes), ...bookingMarkerLines(original)]
+    .filter(Boolean)
+    .join("\n");
+
 const defaultFlight = {
   flightNumber: "",
   airline: "",
@@ -92,6 +111,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
   const canImportPassport = !tripQuery.isError && Boolean(trip?.userRole);
   const [showAddFlight, setShowAddFlight] = useState(false);
   const [showAddHotel, setShowAddHotel] = useState(false);
+  const [showBookingImport, setShowBookingImport] = useState(false);
   const [editingFlight, setEditingFlight] = useState<
     NonNullable<typeof flights>[number] | null
   >(null);
@@ -108,6 +128,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
   useEffect(() => {
     setShowAddFlight(false);
     setShowAddHotel(false);
+    setShowBookingImport(false);
     setEditingFlight(null);
     setEditingHotel(null);
     setFlightForm(defaultFlight);
@@ -265,7 +286,12 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
     if (!canEdit || busy || !editingFlight) return;
     const payload = validatedFlight();
     if (payload)
-      updateFlight.mutate({ flightId: editingFlight.id, tripId, ...payload });
+      updateFlight.mutate({
+        flightId: editingFlight.id,
+        tripId,
+        ...payload,
+        notes: preserveBookingMarkers(payload.notes, editingFlight.notes),
+      });
   };
   const validatedHotel = () => {
     if (!hotelForm.name.trim()) {
@@ -314,7 +340,12 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
     if (!canEdit || busy || !editingHotel) return;
     const payload = validatedHotel();
     if (payload)
-      updateHotel.mutate({ accId: editingHotel.id, tripId, ...payload });
+      updateHotel.mutate({
+        accId: editingHotel.id,
+        tripId,
+        ...payload,
+        notes: preserveBookingMarkers(payload.notes, editingHotel.notes),
+      });
   };
 
   const flightToForm = (
@@ -330,7 +361,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
     departTime: flight.departTime ?? "",
     arriveTime: flight.arriveTime ?? "",
     duration: flight.duration ?? "",
-    notes: flight.notes ?? "",
+    notes: visibleBookingNotes(flight.notes),
     type: flight.type ?? "outbound",
   });
   const hotelToForm = (
@@ -341,7 +372,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
     checkIn: normalizeLogisticsDate(hotel.checkIn),
     checkOut: normalizeLogisticsDate(hotel.checkOut),
     nights: hotelNightInfo(hotel).nights?.toString() ?? "",
-    notes: hotel.notes ?? "",
+    notes: visibleBookingNotes(hotel.notes),
   });
   const openAddFlight = () => {
     if (!canEdit || busy) return;
@@ -757,6 +788,15 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
 
   return (
     <div className="px-4 sm:px-6 py-5 sm:py-7 max-w-5xl mx-auto space-y-5">
+      <BookingImportDialog
+        key={tripId}
+        tripId={tripId}
+        open={showBookingImport}
+        onOpenChange={setShowBookingImport}
+        canEdit={canEdit}
+        existingFlights={flights ?? []}
+        existingHotels={hotels ?? []}
+      />
       <section className="voyage-hero relative overflow-hidden">
         <Plane
           aria-hidden="true"
@@ -780,6 +820,39 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
         </div>
       </section>
 
+      <section className="voyage-panel flex flex-col sm:flex-row sm:items-center gap-3 sm:justify-between">
+        <div className="min-w-0">
+          <p className="voyage-eyebrow">{copy("預訂匯入", "BOOKING IMPORT")}</p>
+          <p className="mt-1 text-sm font-semibold">
+            {copy(
+              "PDF、電郵檔案或貼上確認電郵",
+              "PDF, email file or pasted confirmation"
+            )}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {copy(
+              "先解析再編輯及確認；不連接郵箱，不建立支出。",
+              "Parse, edit and confirm first. No mailbox connection or expenses created."
+            )}
+          </p>
+          {!canEdit && !tripQuery.isPending && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {copy(
+                "唯讀：只有擁有人或編輯者可匯入。",
+                "Read-only: import requires an owner or editor."
+              )}
+            </p>
+          )}
+        </div>
+        <Button
+          className="gap-2 shrink-0"
+          disabled={!canEdit || busy}
+          onClick={() => setShowBookingImport(true)}
+        >
+          <Plus className="h-4 w-4" />
+          {copy("匯入預訂", "Import booking")}
+        </Button>
+      </section>
       <section
         className="grid grid-cols-3 gap-2 sm:gap-3"
         aria-label={copy("物流摘要", "Logistics summary")}
@@ -1150,9 +1223,14 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
                       )}
                     </p>
                   )}
-                  {flight.notes && (
+                  {bookingMarkerLines(flight.notes).length > 0 && (
+                    <p className="text-xs text-primary">
+                      {copy("從預訂匯入", "Imported from booking")}
+                    </p>
+                  )}
+                  {visibleBookingNotes(flight.notes) && (
                     <p className="text-xs leading-relaxed text-muted-foreground mt-3 break-words">
-                      {flight.notes}
+                      {visibleBookingNotes(flight.notes)}
                     </p>
                   )}
                   {canEdit && (
@@ -1315,9 +1393,14 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
                               )}
                       </p>
                     </div>
-                    {hotel.notes && (
+                    {bookingMarkerLines(hotel.notes).length > 0 && (
+                      <p className="text-xs text-primary">
+                        {copy("從預訂匯入", "Imported from booking")}
+                      </p>
+                    )}
+                    {visibleBookingNotes(hotel.notes) && (
                       <p className="text-xs leading-relaxed text-muted-foreground mt-3 break-words">
-                        {hotel.notes}
+                        {visibleBookingNotes(hotel.notes)}
                       </p>
                     )}
                     {canEdit && (

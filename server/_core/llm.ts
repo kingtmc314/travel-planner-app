@@ -56,6 +56,11 @@ export type ToolChoice =
   | ToolChoiceExplicit;
 
 export type InvokeParams = {
+  model?: string;
+  reasoning?: { effort: string };
+  thinking?: Record<string, unknown>;
+  max_completion_tokens?: number;
+  timeoutMs?: number;
   messages: Message[];
   tools?: Tool[];
   toolChoice?: ToolChoice;
@@ -280,7 +285,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   } = params;
 
   const payload: Record<string, unknown> = {
-    model: "gemini-2.5-flash",
+    model: params.model ?? "gemini-2.5-flash",
     messages: messages.map(normalizeMessage),
   };
 
@@ -296,9 +301,15 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = 32768
-  payload.thinking = {
-    "budget_tokens": 128
+  if (params.max_completion_tokens !== undefined) {
+    payload.max_completion_tokens = params.max_completion_tokens;
+  } else {
+    payload.max_tokens = params.max_tokens ?? params.maxTokens ?? 32768;
+  }
+  if (params.reasoning) payload.reasoning = params.reasoning;
+  if (params.thinking) payload.thinking = params.thinking;
+  if (!params.model && !params.reasoning && !params.thinking) {
+    payload.thinking = { budget_tokens: 128 };
   }
 
   const normalizedResponseFormat = normalizeResponseFormat({
@@ -319,6 +330,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
       authorization: `Bearer ${ENV.forgeApiKey}`,
     },
     body: JSON.stringify(payload),
+    ...(params.timeoutMs || params.model ? { signal: AbortSignal.timeout(params.timeoutMs ?? 120_000) } : {}),
   });
 
   if (!response.ok) {

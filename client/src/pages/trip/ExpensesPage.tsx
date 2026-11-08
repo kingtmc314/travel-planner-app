@@ -12,6 +12,7 @@ import {
   validExpenseAmount,
 } from "@/lib/expenseInsights";
 import ActivityExpenseImport from "@/components/ActivityExpenseImport";
+import { TripBudgetPanel } from "@/components/TripBudgetPanel";
 import SplitSummaryPanel from "./SplitSummaryPanel";
 import { Button } from "@/components/ui/button";
 import {
@@ -1471,6 +1472,7 @@ export default function ExpensesPage({ tripId }: { tripId: number }) {
           </Button>
         )}
       </div>
+      <div className="mb-5"><TripBudgetPanel tripId={tripId} /></div>
       <div className="voyage-panel mb-5">
         <div className="mb-3 flex items-center gap-2">
           <p className="voyage-eyebrow">

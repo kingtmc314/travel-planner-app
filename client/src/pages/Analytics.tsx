@@ -1,11 +1,24 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import AppLayout from "@/components/AppLayout";
 import { OverviewMetrics } from "@/components/TravelOverview";
+import { TripBudgetPanel } from "@/components/TripBudgetPanel";
+import {
+  InsightChartTooltip,
+  categorySharePercentage,
+  formatChartPercentage,
+} from "@/components/InsightChartTooltip";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/hooks/useI18n";
+import {
+  useChartMotion,
+  getChartAnimationKey,
+  CHART_ANIMATION_DURATION,
+  CHART_TOOLTIP_ANIMATION_DURATION,
+  CHART_ANIMATION_EASING,
+} from "@/hooks/useChartMotion";
 import { trpc } from "@/lib/trpc";
 import { formatDateOnlyInHongKong } from "@/lib/hongKongDate";
 import {
@@ -34,6 +47,78 @@ import {
   YAxis,
 } from "recharts";
 import type { TravelOverviewTrip } from "@shared/analytics";
+
+function ChartLoadingSkeleton({
+  kind,
+  zh,
+  reducedMotion,
+}: {
+  kind: "category" | "annual";
+  zh: boolean;
+  reducedMotion: boolean;
+}) {
+  const label =
+    kind === "category"
+      ? zh
+        ? "正在載入分類支出圖…"
+        : "Loading spending categories…"
+      : zh
+        ? "正在載入年度趨勢圖…"
+        : "Loading annual trends…";
+  return (
+    <section className="voyage-panel min-w-0" aria-busy="true">
+      <p role="status" className="text-sm font-medium text-muted-foreground">
+        {label}
+      </p>
+      <div
+        aria-hidden="true"
+        className="relative mt-5 h-52 overflow-hidden rounded-xl bg-muted/30"
+      >
+        <svg
+          viewBox="0 0 320 180"
+          preserveAspectRatio="none"
+          className="h-full w-full text-primary/15"
+        >
+          <path
+            d="M20 25H305 M20 75H305 M20 125H305 M20 160H305"
+            stroke="var(--border)"
+            fill="none"
+          />
+          {kind === "category" ? (
+            <g fill="currentColor">
+              <rect x="40" y="90" width="30" height="70" rx="4" />
+              <rect x="95" y="45" width="30" height="115" rx="4" />
+              <rect x="150" y="75" width="30" height="85" rx="4" />
+              <rect x="205" y="110" width="30" height="50" rx="4" />
+              <rect x="260" y="65" width="30" height="95" rx="4" />
+            </g>
+          ) : (
+            <g
+              stroke="currentColor"
+              strokeWidth="4"
+              strokeLinecap="round"
+              fill="none"
+            >
+              <path d="M25 135L85 105L145 120L205 65L300 40" />
+              <path
+                d="M25 150L85 130L145 135L205 110L300 80"
+                strokeDasharray="6 5"
+              />
+            </g>
+          )}
+        </svg>
+        <div
+          className="analytics-chart-shimmer pointer-events-none absolute inset-y-0 -left-1/2 w-1/2 bg-gradient-to-r from-transparent via-card/70 to-transparent"
+          style={{
+            animation: reducedMotion
+              ? "none"
+              : "analytics-chart-shimmer 1200ms linear infinite",
+          }}
+        />
+      </div>
+    </section>
+  );
+}
 
 function TripProgress({ trip }: { trip: TravelOverviewTrip }) {
   const { lang } = useI18n();
@@ -218,11 +303,25 @@ export default function Analytics() {
   const zh = lang === "zh";
   const [year, setYear] = useState("all");
   const [currency, setCurrency] = useState("HKD");
+  const [budgetTripId, setBudgetTripId] = useState<number | null>(null);
+  const reducedMotion = useChartMotion();
+  // Recharts hover mode supports dragging; click mode keeps a touch tap visible.
+  const [chartTrigger, setChartTrigger] = useState<"hover" | "click">("hover");
+  const chartPointerHandlers = {
+    onPointerDownCapture: (event: React.PointerEvent<HTMLDivElement>) =>
+      setChartTrigger(event.pointerType === "mouse" ? "hover" : "click"),
+    onPointerMoveCapture: (event: React.PointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "mouse") setChartTrigger("hover");
+    },
+    onKeyDownCapture: () => setChartTrigger("hover"),
+  };
   const query = trpc.analytics.overview.useQuery(
     year === "all" ? undefined : { year: Number(year) },
     { enabled: !!user, retry: 1 }
   );
   const data = query.data;
+  // Never carry an inaccessible/out-of-filter trip into the budget query.
+  const budgetTrip = data?.trips.find(trip => trip.id === budgetTripId) ?? data?.trips[0];
   const currencyOptions = data?.actualExpenses.currencies ?? [];
   const selectedCurrency =
     currencyOptions.find(item => item.currency === currency) ??
@@ -235,37 +334,59 @@ export default function Analytics() {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2,
         });
-  const categoryNames: Record<string, string> = {
-    transport: zh ? "交通" : "Transport",
-    food: zh ? "餐飲" : "Food",
-    accommodation: zh ? "住宿" : "Accommodation",
-    attraction: zh ? "景點" : "Attractions",
-    shopping: zh ? "購物" : "Shopping",
-    other: zh ? "其他" : "Other",
-  };
-  const spendingChart =
-    selectedCurrency?.categories.map(row => ({
-      ...row,
-      name: categoryNames[row.category] ?? row.category,
-    })) ?? [];
-  const statusChart = data
-    ? [
-        { name: zh ? "日期已過" : "Past", count: data.counts.pastTrips },
-        { name: zh ? "旅程期間" : "Current", count: data.counts.currentTrips },
-        {
-          name: zh ? "即將出發" : "Upcoming",
-          count: data.counts.upcomingTrips,
-        },
-        {
-          name: zh ? "未有有效日期" : "Undated",
-          count: data.counts.undatedTrips,
-        },
-      ]
-    : [];
+  const spendingChart = useMemo(() => {
+    const categoryNames: Record<string, string> = {
+      transport: zh ? "交通" : "Transport",
+      food: zh ? "餐飲" : "Food",
+      accommodation: zh ? "住宿" : "Accommodation",
+      attraction: zh ? "景點" : "Attractions",
+      shopping: zh ? "購物" : "Shopping",
+      other: zh ? "其他" : "Other",
+    };
+    return (
+      selectedCurrency?.categories.map(row => ({
+        ...row,
+        name: categoryNames[row.category] ?? row.category,
+      })) ?? []
+    );
+  }, [selectedCurrency?.categories, zh]);
+  const spendingChartKey = getChartAnimationKey(
+    `categories:${year}:${selectedCurrency?.currency ?? "none"}`,
+    selectedCurrency?.categories ?? []
+  );
+  const annualChartKey = getChartAnimationKey(
+    `annual:${year}`,
+    data?.annualTrend ?? []
+  );
+  const counts = data?.counts;
+  const statusChart = useMemo(
+    () =>
+      counts
+        ? [
+            { name: zh ? "日期已過" : "Past", count: counts.pastTrips },
+            { name: zh ? "旅程期間" : "Current", count: counts.currentTrips },
+            { name: zh ? "即將出發" : "Upcoming", count: counts.upcomingTrips },
+            {
+              name: zh ? "未有有效日期" : "Undated",
+              count: counts.undatedTrips,
+            },
+          ]
+        : [],
+    [counts, zh]
+  );
 
   return (
     <AppLayout>
       <main className="mx-auto w-full max-w-6xl space-y-6 px-4 py-6 pb-28 sm:px-6 lg:py-8 lg:pb-10">
+        <style>{`
+          @keyframes analytics-chart-shimmer {
+            from { transform: translateX(0); }
+            to { transform: translateX(300%); }
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .analytics-chart-shimmer { animation: none !important; }
+          }
+        `}</style>
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="voyage-eyebrow mb-2">
@@ -288,14 +409,20 @@ export default function Analytics() {
               disabled={query.isFetching}
             >
               <RefreshCw
-                className={`mr-2 h-3.5 w-3.5 ${query.isFetching ? "animate-spin" : ""}`}
+                className={`mr-2 h-3.5 w-3.5 ${query.isFetching && !reducedMotion ? "animate-spin motion-reduce:animate-none" : ""}`}
               />
-              {zh ? "更新分析" : "Refresh"}
+              {query.isFetching
+                ? zh
+                  ? "更新中…"
+                  : "Refreshing…"
+                : zh
+                  ? "更新分析"
+                  : "Refresh"}
             </Button>
           )}
         </header>
         {authLoading ? (
-          <Skeleton className="h-40 rounded-2xl" />
+          <Skeleton className="h-40 rounded-2xl motion-reduce:animate-none" />
         ) : !user ? (
           <section className="voyage-panel py-10">
             <Compass className="mb-4 h-8 w-8 text-primary" />
@@ -362,16 +489,49 @@ export default function Analytics() {
                 </Button>
               </div>
             )}
-            <OverviewMetrics data={data} loading={query.isLoading} />
-            {query.isLoading ? (
+            <div
+              role="status"
+              aria-live="polite"
+              className={
+                query.isFetching && data
+                  ? "text-xs text-muted-foreground"
+                  : "sr-only"
+              }
+            >
+              {query.isFetching && data
+                ? zh
+                  ? "正在更新分析；下方保留上次載入的記錄。"
+                  : "Refreshing insights; previously loaded records remain visible below."
+                : ""}
+            </div>
+            <OverviewMetrics data={data} loading={query.isLoading && !data} />
+            {query.isLoading && !data ? (
               <div className="grid gap-5 lg:grid-cols-2">
-                <Skeleton className="h-72 rounded-2xl" />
-                <Skeleton className="h-72 rounded-2xl" />
-                <Skeleton className="h-72 rounded-2xl" />
-                <Skeleton className="h-72 rounded-2xl" />
+                <ChartLoadingSkeleton
+                  kind="category"
+                  zh={zh}
+                  reducedMotion={reducedMotion}
+                />
+                <ChartLoadingSkeleton
+                  kind="annual"
+                  zh={zh}
+                  reducedMotion={reducedMotion}
+                />
+                <Skeleton className="h-72 rounded-2xl motion-reduce:animate-none" />
+                <Skeleton className="h-72 rounded-2xl motion-reduce:animate-none" />
               </div>
             ) : data ? (
               <>
+                <section className="space-y-3" aria-label={zh ? "旅程預算追蹤" : "Trip budget tracking"}>
+                  <div className="voyage-panel flex flex-wrap items-center gap-3">
+                    <label htmlFor="analytics-budget-trip" className="text-sm font-medium">{zh ? "預算追蹤行程" : "Track a trip budget"}</label>
+                    <select id="analytics-budget-trip" value={budgetTrip?.id ?? "none"} disabled={!data.trips.length} onChange={event => setBudgetTripId(Number(event.target.value))} className="h-10 min-w-0 max-w-full flex-1 rounded-xl border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring">
+                      {data.trips.length ? data.trips.map(trip => <option key={trip.id} value={trip.id}>{trip.name}</option>) : <option value="none">{zh ? "此年份未有行程" : "No trips for this year"}</option>}
+                    </select>
+                    <p className="w-full text-xs leading-relaxed text-muted-foreground">{zh ? "與費用頁共用同一預算，毋須再次輸入。只計已記帳支出；可在此設定門檻，達到門檻以琥珀色提示，達到或超過總預算以紅色提示。" : "Uses the same budget as the expense page, with no re-entry. Only ledger expenses count. Amber warns at your threshold; red indicates the total budget has been reached or exceeded."}</p>
+                  </div>
+                  {budgetTrip && <TripBudgetPanel key={budgetTrip.id} tripId={budgetTrip.id} />}
+                </section>
                 <section className="grid gap-5 lg:grid-cols-[1.35fr_1fr]">
                   <div className="voyage-panel min-w-0">
                     <div className="mb-4 flex items-start justify-between gap-3">
@@ -461,7 +621,10 @@ export default function Analytics() {
                         </div>
                         <div
                           className="mt-5 h-56"
-                          role="img"
+                          role="group"
+                          aria-busy={query.isFetching}
+                          aria-describedby="analytics-category-help"
+                          {...chartPointerHandlers}
                           aria-label={
                             zh
                               ? `${selectedCurrency.currency} 分類支出圖`
@@ -470,7 +633,9 @@ export default function Analytics() {
                         >
                           <ResponsiveContainer width="100%" height="100%">
                             <BarChart
+                              key={spendingChartKey}
                               data={spendingChart}
+                              accessibilityLayer
                               margin={{
                                 top: 8,
                                 right: 4,
@@ -496,13 +661,30 @@ export default function Analytics() {
                                 tickLine={false}
                               />
                               <Tooltip
-                                formatter={(value: number) => [
-                                  `${selectedCurrency.currency} ${formatMoney(value)}`,
-                                  zh ? "已記錄支出" : "Recorded expenses",
-                                ]}
-                                contentStyle={{
-                                  borderRadius: 14,
-                                  fontSize: 12,
+                                trigger={chartTrigger}
+                                content={
+                                  <InsightChartTooltip
+                                    kind="category"
+                                    lang={lang}
+                                    currency={selectedCurrency.currency}
+                                    total={selectedCurrency.total}
+                                    categories={spendingChart}
+                                  />
+                                }
+                                cursor={{
+                                  fill: "var(--primary)",
+                                  fillOpacity: 0.06,
+                                }}
+                                isAnimationActive={!reducedMotion}
+                                animationDuration={
+                                  CHART_TOOLTIP_ANIMATION_DURATION
+                                }
+                                animationEasing={CHART_ANIMATION_EASING}
+                                allowEscapeViewBox={{ x: false, y: false }}
+                                wrapperStyle={{
+                                  outline: "none",
+                                  maxWidth: "calc(100vw - 3rem)",
+                                  zIndex: 10,
                                 }}
                               />
                               <Bar
@@ -510,10 +692,113 @@ export default function Analytics() {
                                 fill="#0d766e"
                                 radius={[5, 5, 0, 0]}
                                 maxBarSize={48}
+                                activeBar={{
+                                  fill: "#145b50",
+                                  stroke: "var(--primary)",
+                                  strokeWidth: 2,
+                                }}
+                                isAnimationActive={!reducedMotion}
+                                animationBegin={0}
+                                animationDuration={CHART_ANIMATION_DURATION}
+                                animationEasing={CHART_ANIMATION_EASING}
                               />
                             </BarChart>
                           </ResponsiveContainer>
                         </div>
+                        <p
+                          id="analytics-category-help"
+                          className="mt-2 text-[11px] text-muted-foreground"
+                        >
+                          {zh
+                            ? "懸停或輕觸查看詳情；也可用下方數據表查看。"
+                            : "Hover or tap for details, or use the data table below."}
+                        </p>
+                        <details className="mt-2 text-xs text-muted-foreground">
+                          <summary className="min-h-11 cursor-pointer rounded-lg py-3 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                            {zh
+                              ? "查看分類圖表數據"
+                              : "View category chart data"}
+                          </summary>
+                          <div
+                            tabIndex={0}
+                            role="region"
+                            aria-label={
+                              zh ? "分類支出數據" : "Category spending data"
+                            }
+                            className="overflow-x-auto rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <table className="mt-2 w-full text-left text-card-foreground">
+                              <caption className="pb-2 text-left text-[11px] text-muted-foreground">
+                                {zh
+                                  ? `${selectedCurrency.currency} 原始幣別淨額 · 所選旅程年份`
+                                  : `${selectedCurrency.currency} original-currency net amounts · selected trip year`}
+                              </caption>
+                              <thead>
+                                <tr className="border-b border-border">
+                                  <th scope="col" className="py-2 pr-3">
+                                    {zh ? "分類" : "Category"}
+                                  </th>
+                                  <th
+                                    scope="col"
+                                    className="py-2 pr-3 text-right"
+                                  >
+                                    {zh ? "金額" : "Amount"} (
+                                    {selectedCurrency.currency})
+                                  </th>
+                                  <th
+                                    scope="col"
+                                    className="py-2 pr-3 text-right"
+                                  >
+                                    {zh ? "支出記錄數" : "Expense count"}
+                                  </th>
+                                  <th scope="col" className="py-2 text-right">
+                                    {zh ? "佔淨額" : "Share of net total"}
+                                  </th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {spendingChart.map(row => {
+                                  const share = categorySharePercentage(
+                                    row.total,
+                                    selectedCurrency.total,
+                                    spendingChart
+                                  );
+                                  return (
+                                    <tr
+                                      key={row.category}
+                                      className="border-b border-border/50"
+                                    >
+                                      <th
+                                        scope="row"
+                                        className="py-2 pr-3 font-medium"
+                                      >
+                                        {row.name}
+                                      </th>
+                                      <td className="whitespace-nowrap py-2 pr-3 text-right tabular-nums">
+                                        {formatMoney(row.total)}
+                                      </td>
+                                      <td className="py-2 pr-3 text-right tabular-nums">
+                                        {row.recordCount.toLocaleString(
+                                          zh ? "zh-HK" : "en-HK"
+                                        )}
+                                      </td>
+                                      <td className="py-2 text-right tabular-nums">
+                                        {share === null
+                                          ? "—"
+                                          : formatChartPercentage(share, lang)}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                          <p className="mt-2 text-[11px] leading-relaxed">
+                            {zh
+                              ? "佔比只在同幣別總額為正數、所有分類淨額非負數時顯示；否則為 —。退款以負數計。"
+                              : "Shares appear only for a positive same-currency total with no negative category net amounts; otherwise —. Refunds reduce totals."}
+                          </p>
+                        </details>
                       </>
                     ) : (
                       <div className="my-10 rounded-2xl bg-muted/60 p-6 text-center">
@@ -602,12 +887,20 @@ export default function Analytics() {
                                   borderRadius: 14,
                                   fontSize: 12,
                                 }}
+                                isAnimationActive={!reducedMotion}
+                                animationDuration={
+                                  CHART_TOOLTIP_ANIMATION_DURATION
+                                }
+                                animationEasing={CHART_ANIMATION_EASING}
                               />
                               <Bar
                                 dataKey="count"
                                 fill="#163c4f"
                                 radius={[0, 5, 5, 0]}
                                 maxBarSize={20}
+                                isAnimationActive={!reducedMotion}
+                                animationDuration={CHART_ANIMATION_DURATION}
+                                animationEasing={CHART_ANIMATION_EASING}
                               />
                             </BarChart>
                           </ResponsiveContainer>
@@ -694,7 +987,10 @@ export default function Analytics() {
                     <>
                       <div
                         className="h-64 sm:h-72"
-                        role="img"
+                        role="group"
+                        aria-busy={query.isFetching}
+                        aria-describedby="analytics-annual-help"
+                        {...chartPointerHandlers}
                         aria-label={
                           zh
                             ? "年度旅程及航班趨勢圖"
@@ -703,7 +999,9 @@ export default function Analytics() {
                       >
                         <ResponsiveContainer width="100%" height="100%">
                           <LineChart
+                            key={annualChartKey}
                             data={data.annualTrend}
+                            accessibilityLayer
                             margin={{ top: 8, right: 15, left: -18, bottom: 4 }}
                           >
                             <CartesianGrid
@@ -724,7 +1022,29 @@ export default function Analytics() {
                               tickLine={false}
                             />
                             <Tooltip
-                              contentStyle={{ borderRadius: 14, fontSize: 12 }}
+                              trigger={chartTrigger}
+                              content={
+                                <InsightChartTooltip
+                                  kind="annual"
+                                  lang={lang}
+                                />
+                              }
+                              cursor={{
+                                stroke: "var(--primary)",
+                                strokeOpacity: 0.3,
+                                strokeDasharray: "4 4",
+                              }}
+                              isAnimationActive={!reducedMotion}
+                              animationDuration={
+                                CHART_TOOLTIP_ANIMATION_DURATION
+                              }
+                              animationEasing={CHART_ANIMATION_EASING}
+                              allowEscapeViewBox={{ x: false, y: false }}
+                              wrapperStyle={{
+                                outline: "none",
+                                maxWidth: "calc(100vw - 3rem)",
+                                zIndex: 10,
+                              }}
                             />
                             <Legend
                               wrapperStyle={{ fontSize: 11, paddingTop: 12 }}
@@ -736,6 +1056,16 @@ export default function Analytics() {
                               stroke="#0d766e"
                               strokeWidth={2.5}
                               dot={{ r: 4 }}
+                              activeDot={{
+                                r: 6,
+                                fill: "#0d766e",
+                                stroke: "var(--card)",
+                                strokeWidth: 2,
+                              }}
+                              isAnimationActive={!reducedMotion}
+                              animationBegin={0}
+                              animationDuration={CHART_ANIMATION_DURATION}
+                              animationEasing={CHART_ANIMATION_EASING}
                             />
                             <Line
                               type="monotone"
@@ -744,6 +1074,16 @@ export default function Analytics() {
                               stroke="#163c4f"
                               strokeWidth={2}
                               dot={{ r: 3 }}
+                              activeDot={{
+                                r: 5,
+                                fill: "#163c4f",
+                                stroke: "var(--card)",
+                                strokeWidth: 2,
+                              }}
+                              isAnimationActive={!reducedMotion}
+                              animationBegin={0}
+                              animationDuration={CHART_ANIMATION_DURATION}
+                              animationEasing={CHART_ANIMATION_EASING}
                             />
                             <Line
                               type="monotone"
@@ -753,22 +1093,56 @@ export default function Analytics() {
                               strokeWidth={2}
                               strokeDasharray="5 4"
                               dot={{ r: 3 }}
+                              activeDot={{
+                                r: 5,
+                                fill: "#bd8736",
+                                stroke: "var(--card)",
+                                strokeWidth: 2,
+                              }}
+                              isAnimationActive={!reducedMotion}
+                              animationBegin={0}
+                              animationDuration={CHART_ANIMATION_DURATION}
+                              animationEasing={CHART_ANIMATION_EASING}
                             />
                           </LineChart>
                         </ResponsiveContainer>
                       </div>
+                      <p
+                        id="analytics-annual-help"
+                        className="mt-2 text-[11px] text-muted-foreground"
+                      >
+                        {zh
+                          ? "懸停或輕觸年份查看三組記錄；也可用方向鍵或下方數據表查看。"
+                          : "Hover or tap a year for all three series; arrow keys and the table below also work."}
+                      </p>
                       <details className="mt-4 text-xs text-muted-foreground">
-                        <summary className="cursor-pointer py-2">
+                        <summary className="min-h-11 cursor-pointer rounded-lg py-3 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                           {zh ? "查看圖表數據" : "View chart data"}
                         </summary>
-                        <div className="overflow-x-auto">
+                        <div
+                          tabIndex={0}
+                          role="region"
+                          aria-label={
+                            zh ? "年度旅遊數據" : "Annual travel data"
+                          }
+                          className="overflow-x-auto rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
                           <table className="mt-2 w-full text-left">
+                            <caption className="sr-only">
+                              {zh
+                                ? "所有年份的旅程及航班記錄數；航班記錄可能重疊，不相加。"
+                                : "Trip and flight record counts for all years; flight series may overlap and are not added together."}
+                            </caption>
                             <thead>
                               <tr className="border-b border-border">
-                                <th className="py-2">{zh ? "年份" : "Year"}</th>
-                                <th>{zh ? "旅程" : "Trips"}</th>
-                                <th>{zh ? "旅程航班" : "Trip flights"}</th>
-                                <th>{zh ? "護照" : "Passport"}</th>
+                                <th scope="col" className="py-2">
+                                  {zh ? "年份" : "Year"}
+                                </th>
+                                <th scope="col">{zh ? "旅程" : "Trips"}</th>
+                                <th scope="col">
+                                  {zh ? "旅程航班" : "Trip flights"}
+                                </th>
+                                <th scope="col">{zh ? "護照" : "Passport"}</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -777,7 +1151,9 @@ export default function Analytics() {
                                   key={row.year}
                                   className="border-b border-border/50"
                                 >
-                                  <td className="py-2">{row.year}</td>
+                                  <th scope="row" className="py-2 font-medium">
+                                    {row.year}
+                                  </th>
                                   <td>{row.trips}</td>
                                   <td>{row.tripFlights}</td>
                                   <td>{row.passportFlights}</td>

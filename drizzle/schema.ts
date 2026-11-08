@@ -237,3 +237,16 @@ export const pastFlights = mysqlTable("past_flights", {
 });
 export type PastFlight = typeof pastFlights.$inferSelect;
 export type InsertPastFlight = typeof pastFlights.$inferInsert;
+
+// ─── Shared Trip Budgets (separate from the shared expense ledger) ─────────────
+// No FK: legacy deployed schemas may not match the current trips definition.
+export const tripBudgets = mysqlTable("trip_budgets", {
+  tripId: int("tripId").primaryKey(),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  currency: varchar("currency", { length: 3 }).notNull(),
+  warningPercent: int("warningPercent").default(80).notNull(),
+  updatedBy: int("updatedBy").notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+export type TripBudget = typeof tripBudgets.$inferSelect;
+export type InsertTripBudget = typeof tripBudgets.$inferInsert;

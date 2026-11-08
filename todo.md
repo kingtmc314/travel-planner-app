@@ -380,3 +380,16 @@
 - Existing travel collection hashes unchanged: 4 trips, 384 expense rows, 46 passport flights and all original itinerary/activity, trip-flight, stay, pin and country records retained. Member counts unchanged; joined-user login timestamps excluded.
 - No SQL migrations, schema changes or cleanup/deletion commands. Known legacy SQL calendar strings normalized on read only, not rewritten.
 - Imports add missing entries and skip existing linked records. No automatic shared-ledger imports or two-way overwrite. Cross-instance simultaneous deduplication remains a limitation of legacy tables without uniqueness constraints.
+
+
+## v9.1 Booking Import, Budget Tracking & Interactive Charts (2026-11-08 HKT)
+- [x] Parse ticket/stay PDF and pasted email/.eml into editable preview; explicit selected import, duplicate checks, no automatic payment entries
+- [x] Validate parse output, booking dates and airport codes; retain existing records and gate all AI/import calls by trip membership/editor role
+- [x] Persist one shared budget per trip; historical original-expense currency conversion, refunds and partial/unsupported FX disclosure
+- [x] Add budget utilization, remaining/overrun, near-limit and overspent visual states in analysis and trip expenses
+- [x] Add chart loading animation, richer hover/tap details and reduced-motion accessibility
+- [x] Regression tests, responsive interaction verification, production build, preserve original data; version v9.1 release ready for checkpoint and immediate GitHub push
+- Validation: TypeScript clean, 24 Vitest files / 433 tests pass, production build passes. Ten routes at mobile 390px and desktop 1440px pass; budget threshold/over/incomplete and annual/category hover tests pass without writes.
+- Full live AI-contract QA recovers the exact synthetic flight and hotel dates from both PDF and email; nothing imported during QA. Only an additive trip_budgets table was created; all existing travel collection fingerprints remain unchanged.
+- PDF/EML limit 3 MB; pasted email 30–50,000 characters. No mailbox is connected or monitored. MIME decoding uses MailParser (https://github.com/nodemailer/mailparser); sources remain memory-only and EML attachments are excluded.
+- Source calendar days are preserved and displayed under the app's Hong Kong date convention; airport-local clocks are explicitly not converted and require review. Stateless signed preview proof expires after one hour. Legacy cross-instance concurrent booking deduplication remains limited; existing records are never overwritten.
