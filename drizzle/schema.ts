@@ -8,6 +8,9 @@ import {
   boolean,
   decimal,
   json,
+  bigint,
+  index,
+  uniqueIndex,
 } from "drizzle-orm/mysql-core";
 
 // ─── Users ───────────────────────────────────────────────────────────────────
@@ -250,3 +253,32 @@ export const tripBudgets = mysqlTable("trip_budgets", {
 });
 export type TripBudget = typeof tripBudgets.$inferSelect;
 export type InsertTripBudget = typeof tripBudgets.$inferInsert;
+
+
+// ─── Flight status watches: opt-in per user, no booking overwrites ─────────────
+export const flightStatusWatches = mysqlTable("flight_status_watches", {
+  id: int("id").autoincrement().primaryKey(),
+  userId: int("userId").notNull(),
+  sourceKind: varchar("sourceKind", {length: 10}).notNull(),
+  sourceId: int("sourceId").notNull(),
+  enabled: boolean("enabled").default(true).notNull(),
+  lastSignature: varchar("lastSignature", {length: 64}),
+  lastObservation: json("lastObservation"),
+  lastCheckedAt: bigint("lastCheckedAt", {mode: "number"}),
+  revision: int("revision").default(0).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [
+  uniqueIndex("flight_status_watch_user_source").on(table.userId, table.sourceKind, table.sourceId),
+  index("flight_status_watch_due").on(table.enabled, table.lastCheckedAt),
+]);
+export type FlightStatusWatch = typeof flightStatusWatches.$inferSelect;
+
+// Dormant until a deployed callback and an explicitly activated platform cron.
+export const flightStatusSchedule = mysqlTable("flight_status_schedule", {
+  id: int("id").primaryKey(),
+  scheduleCronTaskUid: varchar("schedule_cron_task_uid", {length: 65}),
+  enabled: boolean("enabled").default(false).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [uniqueIndex("flight_status_schedule_uid").on(table.scheduleCronTaskUid)]);

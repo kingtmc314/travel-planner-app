@@ -8,6 +8,7 @@ import { registerStorageProxy } from "./storageProxy";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { handleFlightStatusScheduled } from "../flightStatusScheduled";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -36,6 +37,8 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   registerStorageProxy(app);
   registerOAuthRoutes(app);
+  // Only platform-authenticated cron identities may invoke this dormant callback.
+  app.post("/api/scheduled/flight-status", handleFlightStatusScheduled);
 
   // Maps JS SDK proxy - uses server-side key to bypass Origin restriction
   app.get("/api/maps/js", async (req, res) => {

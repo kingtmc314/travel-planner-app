@@ -1,5 +1,6 @@
 import BookingImportDialog from "@/components/BookingImportDialog";
 import FlightLookupPanel from "@/components/FlightLookupPanel";
+import FlightStatusCard from "@/components/FlightStatusCard";
 import { useFlightAutofill } from "@/hooks/useFlightAutofill";
 import { trpc } from "@/lib/trpc";
 import { useI18n } from "@/hooks/useI18n";
@@ -104,6 +105,10 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
   const flightsQuery = trpc.flights.list.useQuery({ tripId });
   const hotelsQuery = trpc.hotels.list.useQuery({ tripId });
   const tripQuery = trpc.trips.get.useQuery({ tripId });
+  const authQuery = trpc.auth.me.useQuery(undefined, {
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
   const flights = flightsQuery.data;
   const hotels = hotelsQuery.data;
   const trip = tripQuery.data;
@@ -1262,6 +1267,21 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
                       {visibleBookingNotes(flight.notes)}
                     </p>
                   )}
+                  <FlightStatusCard
+                    reference={{ kind: "trip", id: flight.id }}
+                    flightNumber={flight.flightNumber}
+                    date={normalizeLogisticsDate(flight.date)}
+                    fromCode={flight.fromCode}
+                    toCode={flight.toCode}
+                    authorized={
+                      Boolean(authQuery.data) &&
+                      !authQuery.isError &&
+                      !tripQuery.isError &&
+                      trip?.id === tripId &&
+                      Boolean(trip?.userRole)
+                    }
+                    lang={lang}
+                  />
                   {canEdit && (
                     <div className="flex flex-wrap gap-1.5 mt-4 pt-3 border-t border-border">
                       <Button

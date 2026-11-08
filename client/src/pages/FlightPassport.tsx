@@ -3,6 +3,7 @@ import AppLayout from "@/components/AppLayout";
 import WorldMap from "@/components/WorldMap";
 import PassportInsights from "@/components/PassportInsights";
 import FlightLookupPanel from "@/components/FlightLookupPanel";
+import FlightStatusCard from "@/components/FlightStatusCard";
 import { useFlightAutofill } from "@/hooks/useFlightAutofill";
 import { Button } from "@/components/ui/button";
 import {
@@ -1029,6 +1030,20 @@ export default function FlightPassport() {
                             {flight.notes}
                           </p>
                         )}
+                        <FlightStatusCard
+                          reference={{ kind: "passport", id: flight.id }}
+                          flightNumber={flight.flightNumber}
+                          date={getPassportFlightDate(flight)}
+                          fromCode={flight.departureAirport}
+                          toCode={flight.arrivalAirport}
+                          authorized={
+                            Boolean(authQuery.data) &&
+                            !authQuery.isError &&
+                            flight.userId === authQuery.data?.id &&
+                            !flightQuery.isError
+                          }
+                          lang={lang}
+                        />
                       </article>
                     );
                   })}
@@ -1059,6 +1074,23 @@ export default function FlightPassport() {
                   : "Dates use Hong Kong UTC+8. Airport codes auto-estimate distance and time; you can edit both."}
               </DialogDescription>
             </DialogHeader>
+            {editingFlight && (
+              <FlightStatusCard
+                key={editingFlight.id}
+                reference={{ kind: "passport", id: editingFlight.id }}
+                flightNumber={editingFlight.flightNumber}
+                date={getPassportFlightDate(editingFlight)}
+                fromCode={editingFlight.departureAirport}
+                toCode={editingFlight.arrivalAirport}
+                authorized={
+                  Boolean(authQuery.data) &&
+                  !authQuery.isError &&
+                  editingFlight.userId === authQuery.data?.id &&
+                  !flightQuery.isError
+                }
+                lang={lang}
+              />
+            )}
             <form
               className="space-y-4"
               onSubmit={event => {

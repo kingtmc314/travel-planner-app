@@ -15,6 +15,7 @@ import { analyticsRouter } from "./analyticsRouter";
 import { budgetRouter } from "./budgetRouter";
 import { bookingImportRouter } from "./bookingImportRouter";
 import { flightLookupRouter } from "./flightLookupRouter";
+import { flightStatusRouter } from "./flightStatusRouter";
 import { makeRequest, GeocodingResult, PlacesSearchResult } from "./_core/map";
 import { storagePut } from "./storage";
 
@@ -1623,9 +1624,9 @@ const notificationsRouter = router({
   }),
 
   markRead: protectedProcedure
-    .input(z.object({ notifId: z.number() }))
+    .input(z.object({ notifId: z.number().int().positive().max(2147483647) }))
     .mutation(async ({ ctx, input }) => {
-      await db.markNotificationRead(input.notifId);
+      await db.markNotificationRead(input.notifId, ctx.user.id);
       return { success: true };
     }),
 
@@ -2194,6 +2195,7 @@ export const appRouter = router({
   budgets: budgetRouter,
   bookingImport: bookingImportRouter,
   flightLookup: flightLookupRouter,
+  flightStatus: flightStatusRouter,
 });
 
 export type AppRouter = typeof appRouter;

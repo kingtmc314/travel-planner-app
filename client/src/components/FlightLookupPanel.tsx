@@ -94,8 +94,8 @@ export function FlightLookupPanelView({
       </p>
       <p className="break-words rounded-lg bg-card/80 p-2 text-[11px] leading-relaxed text-muted-foreground">
         {copy(
-          "尚未設定航空資料 API。現時僅使用已儲存紀錄，並非即時資料；權威線上航班時刻、閘口及延誤資料須經授權接駁 API。",
-          "No aviation data API is configured. Saved records only, not live data. Authoritative online schedules, gates and delays require an authorized API connection."
+          "自動填入只重用已儲存紀錄，並非即時班表。儲存航班後可在航班卡查看香港機場免費資料源；全球航空資料 API 尚未接駁。",
+          "Autofill uses saved records only, not live schedules. Saved flight cards can check the free Hong Kong airport source; no worldwide aviation API is connected."
         )}
       </p>
       <div aria-live="polite" className="space-y-2 text-xs leading-relaxed">

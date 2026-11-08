@@ -18,6 +18,7 @@ import FlightPassport from "./pages/FlightPassport";
 import SyncPage from "./pages/SyncPage";
 import SharedTripPage from "./pages/SharedTripPage";
 import Analytics from "./pages/Analytics";
+import FlightWatchRefresh from "./components/FlightWatchRefresh";
 
 function TripRoutes({ tripId }: { tripId: number }) {
   return (
@@ -60,6 +61,7 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster richColors position="top-right" />
+          <FlightWatchRefresh />
           <Router />
         </TooltipProvider>
       </ThemeProvider>

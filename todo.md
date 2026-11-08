@@ -413,3 +413,18 @@
 Validation: TypeScript clean, 29 Vitest files / 697 tests pass and production build passes. Real browser dry-runs at 390px and 1440px verify screenshot selection, local preview/removal, email compatibility, exact-match fill, retained manual edits and clearing old auto-managed routes. React updater replay is covered separately. No business records were written during QA; all original collection fingerprints remain unchanged (5 trips, 46 passport flights, and all existing expenses/itineraries/stays/pins/countries). No schema changes.
 
 Native AI-contract QA extracts exact synthetic flight and stay fields from PNG, JPEG and WebP. A 12,464,024-byte synthetic PNG is successfully compressed locally without cropping, and never sent to AI. Original images are capped at 20 MiB / 32M pixels; upload and sanitized output at 3 MiB. Image verification, auto-orientation and metadata removal use Sharp: https://github.com/lovell/sharp . Original image sources remain memory-only; only explicitly selected reviewed logistics are saved. Existing cross-server concurrent booking deduplication limitation remains unchanged.
+
+
+## v9.3 Free Airport Status & Flight Alerts (2026-11-09 HKT)
+- [x] Verify no-key open source, true scope/date freshness and reuse terms; no paid accounts/keys or AI-inferred status
+- [x] Add guarded HKIA open-data adapter for HKG passenger flights only, strict date/direction/codeshare matching, bounded fetch/cache and clear source/update/freshness/coverage labels
+- [x] Add authenticated saved-flight status and opt-in watch controls; keep live observations separate from editable bookings, preserve trip/passport permissions
+- [x] Add durable status-change notifications without repeats; clarify in-app refresh vs background/screen-off delivery and follow app scheduling deployment requirements
+- [x] Test provider validation/outages/cache, HKT dates, authorization, deduplication and preserved existing data; mobile/desktop QA and build
+- [x] Version app v9.3; verified release ready for checkpoint and immediate gh auth setup-git && git push github HEAD:main
+
+Validation: 35 Vitest files / 906 tests pass, TypeScript clean, production build passes. Twenty mobile/desktop routes pass; both status-card interaction runs show no overflow, JavaScript errors or unrequested mutations, and foreign source IDs return 404. Unauthenticated scheduled callbacks return 403. Live official provider QA returned exact ZE862 / 2026-11-09 departure state and gate 520 with fresh explicit-offset source time, no bookings written.
+
+All original collection fingerprints remain unchanged (5 trips, 50 passport flights and all existing itinerary/expenses/flights/stays/pins/countries); user/login join metadata excluded. Only two empty additive tables created; no paid accounts, API keys, watch subscriptions or heartbeat schedules created. Single-notification mark-read now also filters current user ID. Watch baseline/change commits and notifications use one row-lock transaction with rollback/idempotent concurrency tests.
+
+Background is intentionally NOT active: the published new callback and explicit deployment confirmation must precede Heartbeat activation. Current in-app checks run only for own opt-in watches while visible, every five minutes. This is not mobile push/email/SMS. References/flight-status-scheduling.md records activation and pause requirements. Official DATA.GOV.HK dataset/spec only guarantee previous-calendar-day history; current-day responses are marked experimental, HKG/passenger/returned-date limited, stale/unknown/missing never interpreted as arrived or cancelled. Free AirLabs/aviationstack require keys and personal/non-commercial restrictions with 1,000/100 monthly requests; none were enrolled.

@@ -355,8 +355,9 @@ describe("flight lookup panel SSR (no RPC, database or network)", () => {
     );
   it("always makes the API limitation and non-live saved provenance clear", () => {
     const html = render({ result: result([candidate]) });
-    expect(html).toContain("No aviation data API is configured");
-    expect(html).toContain("Authoritative online schedules, gates and delays");
+    expect(html).toContain("Autofill uses saved records only, not live schedules");
+    expect(html).toContain("no worldwide aviation API is connected");
+    expect(html).toContain("free Hong Kong airport source");
     expect(html).toContain("Accessible trip record");
     expect(html).toContain("Japan trip");
     expect(html).toContain("not live");
@@ -380,7 +381,7 @@ describe("flight lookup panel SSR (no RPC, database or network)", () => {
       "找不到相同號碼及日期"
     );
     expect(render({ lang: "zh", result: result([]) })).toContain(
-      "權威線上航班時刻、閘口及延誤"
+      "全球航空資料 API 尚未接駁"
     );
     expect(render({ loading: true })).toContain(
       "Looking up exact saved matches"

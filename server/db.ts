@@ -337,10 +337,10 @@ export async function addNotification(data: InsertNotification) {
   await db.insert(notifications).values(data);
 }
 
-export async function markNotificationRead(notifId: number) {
+export async function markNotificationRead(notifId: number, userId: number) {
   const db = await getDb();
   if (!db) return;
-  await db.update(notifications).set({ isRead: true }).where(eq(notifications.id, notifId));
+  await db.update(notifications).set({ isRead: true }).where(and(eq(notifications.id, notifId), eq(notifications.userId, userId)));
 }
 
 export async function markAllNotificationsRead(userId: number) {
