@@ -364,8 +364,8 @@
 - [x] Establish reusable, Hong Kong UTC+8-safe date-only utilities and shared trip metadata form
 - [x] Upgrade mobile dashboard and trip shell with accessible controls and less cramped navigation
 - [x] Reuse trip context in the AI assistant and shared trip metadata flows
-- [ ] Extend derived defaults and cross-feature data reuse to expenses, itinerary, map, members, travel history, passport, and sync flows
-- [ ] Complete a full cross-page visual review, checkpoint, and GitHub deployment
+- [x] Extend derived defaults and cross-feature data reuse to expenses, itinerary, map, members, travel history, passport, and sync flows (v9.0)
+- [x] Complete a full cross-page visual review, checkpoint, and GitHub main release push (v9.0)
 
 
 ## v9.0 Connected Travel & Insights (2026-11-08 Hong Kong)
@@ -374,7 +374,7 @@
 - [x] Add explicit, source-labelled, duplicate-safe flight/itinerary/expense/map reuse actions with permission checks
 - [x] Upgrade expense, itinerary, map, logistics, passport, history and sync interfaces while preserving existing features
 - [x] Validate Hong Kong dates, multi-currency totals, idempotent imports, empty/error states and authorization in regression tests
-- [ ] Complete mobile/desktop visual verification, production build, checkpoint and immediate GitHub main push
+- [x] Complete mobile/desktop visual verification, production build, checkpoint and immediate GitHub main push
 - Validation: TypeScript passes; 19 Vitest files / 289 tests pass; production build passes (existing large-bundle advisory).
 - Read-only Playwright: 10 primary routes at 390px and 1440px pass; no document overflow or application JavaScript errors; preview interactions and language changes submit no mutations.
 - Existing travel collection hashes unchanged: 4 trips, 384 expense rows, 46 passport flights and all original itinerary/activity, trip-flight, stay, pin and country records retained. Member counts unchanged; joined-user login timestamps excluded.
