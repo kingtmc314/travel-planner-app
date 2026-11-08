@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { useI18n } from "@/hooks/useI18n";
 import { Button } from "@/components/ui/button";
@@ -11,8 +11,23 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, FileInput, Plane, Hotel, ShieldCheck } from "lucide-react";
+import {
+  Loader2,
+  FileInput,
+  Plane,
+  Hotel,
+  ShieldCheck,
+  ImagePlus,
+  ClipboardPaste,
+} from "lucide-react";
 import { toast } from "sonner";
+import {
+  BookingImageError,
+  prepareBookingImage,
+  isBookingImageMime,
+  type PreparedBookingImage,
+  type BookingImageMime,
+} from "@/lib/bookingImage";
 import {
   BOOKING_MAX_BYTES,
   BOOKING_MAX_TEXT,
@@ -63,11 +78,21 @@ export default function BookingImportDialog({
   const { lang } = useI18n();
   const copy = (zh: string, en: string) => (lang === "zh" ? zh : en);
   const utils = trpc.useUtils();
-  const [mode, setMode] = useState<"paste" | "file">("paste");
-  const [kind, setKind] = useState<"email" | "pdf" | "eml">("email");
+  const [mode, setMode] = useState<"paste" | "file" | "image">("paste");
+  const [kind, setKind] = useState<"email" | "pdf" | "eml" | "image">("email");
   const [content, setContent] = useState("");
   const [filename, setFilename] = useState("");
   const [size, setSize] = useState(0);
+  const [image, setImage] = useState<Omit<
+    PreparedBookingImage,
+    "base64"
+  > | null>(null);
+  const [imageUrl, setImageUrl] = useState("");
+  const picker = useRef<HTMLInputElement>(null);
+  const generation = useRef(0);
+  const readLock = useRef(false);
+  const current = useRef({ open, tripId, mode, canEdit });
+  current.current = { open, tripId, mode, canEdit };
   const [reading, setReading] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -77,81 +102,306 @@ export default function BookingImportDialog({
     hotelsCreated: number;
     skipped: number;
   } | null>(null);
-  const analyze = trpc.bookingImport.analyze.useMutation({
-    onSuccess: result => {
-      setPreview(result);
-      setSelected(new Set());
-      setError("");
-      setSummary(null);
-    },
-    onError: error => setError(error.message),
-  });
-  const importer = trpc.bookingImport.import.useMutation({
-    onSuccess: result => {
-      setSummary(result);
-      setError("");
-      setSelected(new Set());
-      void utils.invalidate(); // flights/stays, trip, budgets, analytics, itinerary and passport caches
-      toast.success(copy("預訂匯入完成", "Booking import completed"));
-    },
-    onError: error => {
-      setError(error.message);
-      void utils.invalidate();
-    },
-  });
+  // reset() on source changes/close detaches the observer; discard its cached
+  // source variables immediately rather than keeping raw base64 for 5 minutes.
+  const analyze = trpc.bookingImport.analyze.useMutation({ gcTime: 0 });
+  const importer = trpc.bookingImport.import.useMutation({ gcTime: 0 });
   const busy = reading || analyze.isPending || importer.isPending;
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  const stillCurrent = (token: number, source = current.current) =>
+    token === generation.current &&
+    current.current.open &&
+    current.current.canEdit &&
+    current.current.tripId === source.tripId &&
+    current.current.mode === source.mode;
   useEffect(() => {
-    if (!open) {
-      setContent("");
-      setFilename("");
-      setSize(0);
-      setPreview(null);
-      setSelected(new Set());
-      setError("");
-      setSummary(null);
-    }
+    generation.current++;
+    readLock.current = false;
+    setReading(false);
+    analyze.reset();
+    importer.reset();
+    setMode("paste");
+    setKind("email");
+    setContent("");
+    setFilename("");
+    setSize(0);
+    setImage(null);
+    setPreview(null);
+    setSelected(new Set());
+    setError("");
+    setSummary(null);
+    return () => {
+      generation.current++;
+    };
   }, [open, tripId]);
+  useEffect(() => {
+    if (!open || !image) {
+      setImageUrl("");
+      return;
+    }
+    const url = URL.createObjectURL(image.blob);
+    setImageUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [image, open, tripId]);
   const clearDraft = () => {
     setPreview(null);
     setSelected(new Set());
     setSummary(null);
     setError("");
   };
-  const chooseFile = async (file?: File) => {
-    if (!file || busy) return;
-    if (file.size > BOOKING_MAX_BYTES) {
-      setError(copy("檔案不可超過 3 MB", "Files must not exceed 3 MB"));
+  const clearSource = () => {
+    generation.current++;
+    analyze.reset();
+    importer.reset();
+    setContent("");
+    setFilename("");
+    setSize(0);
+    setImage(null);
+    setKind("email");
+    clearDraft();
+  };
+  const switchMode = (next: typeof mode) => {
+    if (busyRef.current || readLock.current) return;
+    clearSource();
+    setMode(next);
+  };
+  const imageError = (cause: unknown) => {
+    if (!(cause instanceof BookingImageError))
+      return copy(
+        "圖片讀取失敗，請重新選擇。",
+        "Could not read the image. Choose it again."
+      );
+    const messages: Record<BookingImageError["code"], [string, string]> = {
+      format: [
+        "只接受真實 PNG、JPEG 或 WebP 圖片（不支援 HEIC／GIF／SVG）。請先轉換格式。",
+        "Choose a real PNG, JPEG or WebP image (not HEIC/GIF/SVG). Convert it first.",
+      ],
+      size: [
+        "圖片原檔需大於 0 並不超過 20 MB。",
+        "The original image must be nonempty and no larger than 20 MB.",
+      ],
+      dimensions: [
+        "圖片尺寸過大或無效：最多 3,200 萬像素，每邊最多 32,768。請先縮小原圖。",
+        "Image dimensions are invalid or too large: max 32 million pixels and 32,768 per edge. Reduce the original first.",
+      ],
+      broken: [
+        "圖片損壞或無法解碼，請重新截圖或另存為 PNG／JPEG／WebP。",
+        "The image is damaged or cannot be decoded. Take another screenshot or save as PNG/JPEG/WebP.",
+      ],
+      animated: [
+        "只接受靜態截圖／相片，不支援動畫 PNG／WebP。",
+        "Use a still screenshot/photo, not animated PNG/WebP.",
+      ],
+      compression: [
+        "無法安全壓縮至 3 MB；請先縮小原圖，但保留完整清晰的預訂內容。",
+        "Could not safely fit the image within 3 MB. Reduce it first, keeping all booking details readable.",
+      ],
+    };
+    return copy(...messages[cause.code]);
+  };
+  const readSource = async (
+    file: File,
+    token: number,
+    source: typeof current.current,
+    imageOnly = false
+  ) => {
+    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+    const isImage =
+      imageOnly ||
+      isBookingImageMime(file.type) ||
+      file.type.startsWith("image/") ||
+      ["png", "jpg", "jpeg", "webp", "heic", "heif", "gif", "svg"].includes(
+        extension
+      );
+    if (isImage) {
+      const prepared = await prepareBookingImage(file);
+      if (!stillCurrent(token, source)) return;
+      const { base64, ...metadata } = prepared;
+      setImage(metadata);
+      setKind("image");
+      setContent(base64);
+      setFilename(file.name.slice(0, 255));
+      setSize(metadata.blob.size);
+      setMode("image");
+      clearDraft();
       return;
     }
-    const extension = file.name.split(".").pop()?.toLowerCase();
-    if (!["pdf", "eml", "txt"].includes(extension ?? "")) {
-      setError(copy("只接受 PDF、EML 或 TXT", "Choose PDF, EML or TXT"));
+    if (file.size > BOOKING_MAX_BYTES)
+      throw new Error(copy("檔案不可超過 3 MB", "Files must not exceed 3 MB"));
+    if (!["pdf", "eml", "txt"].includes(extension))
+      throw new Error(
+        copy(
+          "只接受 PDF、EML、TXT、PNG、JPEG 或 WebP",
+          "Choose PDF, EML, TXT, PNG, JPEG or WebP"
+        )
+      );
+    const next =
+      extension === "txt" ? await file.text() : await base64File(file);
+    if (
+      extension === "txt" &&
+      (next.trim().length < 30 || next.length > BOOKING_MAX_TEXT)
+    )
+      throw new Error(
+        copy("文字需要 30–50,000 字元", "Text requires 30–50,000 characters")
+      );
+    if (!stillCurrent(token, source)) return;
+    setKind(extension === "txt" ? "email" : (extension as "pdf" | "eml"));
+    setContent(next);
+    setFilename(file.name.slice(0, 255));
+    setSize(file.size);
+    setImage(null);
+    clearDraft();
+  };
+  const chooseFile = async (file?: File, imageOnly = mode === "image") => {
+    if (!file || busyRef.current || readLock.current || !open || !canEdit)
       return;
-    }
+    clearSource();
+    const token = generation.current,
+      source = current.current;
+    readLock.current = true;
     setReading(true);
     try {
-      const next =
-        extension === "txt" ? await file.text() : await base64File(file);
-      if (
-        extension === "txt" &&
-        (next.trim().length < 30 || next.length > BOOKING_MAX_TEXT)
-      )
-        throw new Error(
-          copy("文字需要 30–50,000 字元", "Text requires 30–50,000 characters")
-        );
-      setKind(extension === "txt" ? "email" : (extension as "pdf" | "eml"));
-      setContent(next);
-      setFilename(file.name);
-      setSize(file.size);
-      clearDraft();
+      await readSource(file, token, source, imageOnly);
     } catch (cause) {
-      setError(
-        cause instanceof Error
-          ? cause.message
-          : copy("讀取失敗", "File could not be read")
-      );
+      if (stillCurrent(token, source))
+        setError(
+          cause instanceof BookingImageError
+            ? imageError(cause)
+            : cause instanceof Error
+              ? cause.message
+              : imageError(cause)
+        );
     } finally {
-      setReading(false);
+      if (token === generation.current) {
+        readLock.current = false;
+        setReading(false);
+      }
+    }
+  };
+  const pasteClipboardImage = async () => {
+    if (busyRef.current || readLock.current || !open || !canEdit) return;
+    if (!navigator.clipboard?.read) {
+      setError(
+        copy(
+          "瀏覽器不支援讀取圖片剪貼簿，請使用「選擇截圖／相片」。",
+          "Image clipboard reading is unavailable. Use Choose screenshot / photo."
+        )
+      );
+      picker.current?.click();
+      return;
+    }
+    clearSource();
+    const token = generation.current,
+      source = current.current;
+    readLock.current = true;
+    setReading(true);
+    try {
+      // Only called by this button's user gesture; never read on mount or in an effect.
+      const items = await navigator.clipboard.read();
+      if (!stillCurrent(token, source)) return;
+      const item = items.find(item => item.types.some(isBookingImageMime));
+      const mime = item?.types.find(isBookingImageMime) as
+        | BookingImageMime
+        | undefined;
+      if (!item || !mime) throw new BookingImageError("format");
+      const blob = await item.getType(mime);
+      if (!stillCurrent(token, source)) return;
+      const extension = mime === "image/jpeg" ? "jpg" : mime.split("/")[1];
+      await readSource(
+        new File([blob], `clipboard.${extension}`, { type: mime }),
+        token,
+        source,
+        true
+      );
+    } catch (cause) {
+      if (stillCurrent(token, source))
+        setError(
+          cause instanceof BookingImageError
+            ? imageError(cause)
+            : copy(
+                "未能讀取剪貼簿（Safari／權限限制）。請直接貼上圖片或使用「選擇截圖／相片」。",
+                "Clipboard access failed (Safari/permission restrictions). Paste an image directly or use Choose screenshot / photo."
+              )
+        );
+    } finally {
+      if (token === generation.current) {
+        readLock.current = false;
+        setReading(false);
+      }
+    }
+  };
+  const parseBooking = async () => {
+    if (
+      !content ||
+      busyRef.current ||
+      readLock.current ||
+      !canEdit ||
+      !open ||
+      (kind === "image" && !image)
+    )
+      return;
+    const token = generation.current,
+      source = current.current;
+    busyRef.current = true;
+    setError("");
+    try {
+      const result = await analyze.mutateAsync({
+        tripId,
+        kind,
+        content,
+        ...(kind === "image" && image ? { mimeType: image.mimeType } : {}),
+        ...(filename ? { filename } : {}),
+      });
+      if (!stillCurrent(token, source)) return;
+      setPreview(result);
+      setSelected(new Set());
+      setSummary(null);
+    } catch (cause) {
+      if (stillCurrent(token, source))
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : copy("解析失敗", "Parsing failed")
+        );
+    }
+  };
+  const confirmImport = async () => {
+    if (
+      !preview ||
+      invalidSelection ||
+      busyRef.current ||
+      readLock.current ||
+      !canEdit ||
+      !open
+    )
+      return;
+    const token = generation.current,
+      source = current.current;
+    busyRef.current = true;
+    try {
+      const result = await importer.mutateAsync({
+        tripId,
+        sourceHash: preview.sourceHash,
+        previewToken: preview.previewToken,
+        flights: selectedFlights,
+        hotels: selectedHotels,
+      });
+      // Invalidate even if the dialog was externally closed: the server may have saved.
+      void utils.invalidate();
+      if (!stillCurrent(token, source)) return;
+      setSummary(result);
+      setError("");
+      setSelected(new Set());
+      toast.success(copy("預訂匯入完成", "Booking import completed"));
+    } catch (cause) {
+      void utils.invalidate();
+      if (stillCurrent(token, source))
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : copy("匯入失敗", "Import failed")
+        );
     }
   };
   const flightKeys = new Set(
@@ -314,17 +564,28 @@ export default function BookingImportDialog({
     <Dialog
       open={open}
       onOpenChange={next => {
-        if (!busy) onOpenChange(next);
+        if (!busyRef.current && !readLock.current) onOpenChange(next);
       }}
     >
       <DialogContent
         showCloseButton={!busy}
         className="max-w-3xl max-h-[90dvh] overflow-y-auto"
+        onPaste={event => {
+          const file = Array.from(event.clipboardData.items)
+            .find(
+              item => item.kind === "file" && item.type.startsWith("image/")
+            )
+            ?.getAsFile();
+          if (!file) return;
+          event.preventDefault();
+          if (!busyRef.current && !readLock.current && canEdit)
+            void chooseFile(file, true);
+        }}
         onEscapeKeyDown={event => {
-          if (busy) event.preventDefault();
+          if (busyRef.current || readLock.current) event.preventDefault();
         }}
         onInteractOutside={event => {
-          if (busy) event.preventDefault();
+          if (busyRef.current || readLock.current) event.preventDefault();
         }}
       >
         <DialogHeader>
@@ -349,14 +610,14 @@ export default function BookingImportDialog({
           <p className="flex gap-2">
             <ShieldCheck className="h-4 w-4 shrink-0" />
             {copy(
-              "點擊解析會將內容送至 AI，並消耗項目信用額。PDF／EML 只在記憶體處理；不會公開上傳或儲存原始內容。請先移除旅客、護照及付款資料。",
-              "Parse sends content to AI and uses project credits. PDF/EML are processed in memory, never publicly uploaded or stored as source content. Remove traveler, passport and payment details first."
+              "只有點擊「解析預訂」才會將內容送至 AI，並消耗項目信用額。圖片／PDF／EML 只在記憶體處理；不會公開上傳或儲存原始檔案，關閉會清除本地預覽。請先遮蓋或移除旅客姓名、護照及付款資料。",
+              "Only Parse booking sends content to AI and uses project credits. Images/PDF/EML are processed in memory, with no public upload or original-file storage; closing clears the local preview. Cover or remove traveler names, passport and payment details first."
             )}
           </p>
           <p>
             {copy(
-              "只匯入航班與住宿，不建立支出或付款；金額、貨幣及確認編號（如有）只作備註。匯入後旅程受邀成員可見。EML 附件會忽略，請另外上傳 PDF 附件。",
-              "Imports flights/stays only, not expenses or payments. Found prices, currencies and references remain notes only, visible to invited trip members. EML attachments are ignored; upload PDF attachments separately."
+              "只匯入航班與住宿，不建立支出或付款；金額、貨幣及確認編號（如有）只作備註。匯入後旅程受邀成員可見。EML 附件會忽略，請另外選擇 PDF 或圖片附件。",
+              "Imports flights/stays only, not expenses or payments. Found prices, currencies and references remain notes only, visible to invited trip members. EML attachments are ignored; choose PDF or image attachments separately."
             )}
           </p>
         </div>
@@ -369,31 +630,31 @@ export default function BookingImportDialog({
           </p>
         )}
         <fieldset disabled={busy || !canEdit} className="space-y-3 min-w-0">
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Button
               variant={mode === "paste" ? "default" : "outline"}
-              onClick={() => {
-                setMode("paste");
-                setKind("email");
-                setContent("");
-                setFilename("");
-                setSize(0);
-                clearDraft();
-              }}
+              aria-pressed={mode === "paste"}
+              className="h-auto min-h-10 whitespace-normal py-2 text-sm"
+              onClick={() => switchMode("paste")}
             >
               {copy("貼上電郵", "Paste email")}
             </Button>
             <Button
               variant={mode === "file" ? "default" : "outline"}
-              onClick={() => {
-                setMode("file");
-                setContent("");
-                setFilename("");
-                setSize(0);
-                clearDraft();
-              }}
+              aria-pressed={mode === "file"}
+              className="h-auto min-h-10 whitespace-normal py-2 text-sm"
+              onClick={() => switchMode("file")}
             >
               {copy("選擇檔案", "Choose file")}
+            </Button>
+            <Button
+              variant={mode === "image" ? "default" : "outline"}
+              aria-pressed={mode === "image"}
+              className="h-auto min-h-10 gap-2 whitespace-normal py-2 text-sm border-primary/50"
+              onClick={() => switchMode("image")}
+            >
+              <ImagePlus className="h-4 w-4 shrink-0" />
+              {copy("截圖／相片", "Screenshot / photo")}
             </Button>
           </div>
           {mode === "paste" ? (
@@ -418,16 +679,22 @@ export default function BookingImportDialog({
                 {content.length.toLocaleString()} / 50,000
               </p>
             </div>
-          ) : (
+          ) : mode === "file" ? (
             <div>
               <Label htmlFor="booking-file">
                 PDF / EML / TXT · {copy("最大 3 MB", "maximum 3 MB")}
               </Label>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {copy(
+                  "亦接受 PNG／JPEG／WebP 截圖及相片（原檔最多 20 MB）。",
+                  "Also accepts PNG/JPEG/WebP screenshots and photos (original max 20 MB)."
+                )}
+              </p>
               <Input
                 id="booking-file"
                 type="file"
-                className="mt-2"
-                accept=".pdf,.eml,.txt,application/pdf,message/rfc822,text/plain"
+                className="mt-2 h-auto min-h-11 py-2 text-base sm:text-sm"
+                accept=".pdf,.eml,.txt,.png,.jpg,.jpeg,.webp,application/pdf,message/rfc822,text/plain,image/png,image/jpeg,image/webp"
                 onChange={e => {
                   void chooseFile(e.target.files?.[0]);
                   e.target.value = "";
@@ -439,6 +706,104 @@ export default function BookingImportDialog({
                 </p>
               )}
             </div>
+          ) : (
+            <div className="space-y-3 rounded-xl border border-primary/30 bg-primary/5 p-3 min-w-0">
+              <Label htmlFor="booking-image" className="text-sm font-semibold">
+                {copy(
+                  "選擇預訂截圖／相片",
+                  "Choose a booking screenshot / photo"
+                )}
+              </Label>
+              <p className="text-sm leading-relaxed text-muted-foreground">
+                {copy(
+                  "PNG／JPEG／WebP · 原檔最多 20 MB；較大圖片會在本機等比例壓縮至 3 MB，不裁切、不放大。請保留完整且清晰的航班或酒店資料。",
+                  "PNG/JPEG/WebP · original max 20 MB. Larger images are compressed locally to 3 MB, proportionally, without cropping or upscaling. Keep complete flight or hotel details readable."
+                )}
+              </p>
+              <Input
+                ref={picker}
+                id="booking-image"
+                type="file"
+                className="h-auto min-h-11 py-2 text-base sm:text-sm"
+                accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                onChange={event => {
+                  void chooseFile(event.target.files?.[0], true);
+                  event.target.value = "";
+                }}
+              />
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  className="h-auto min-h-10 gap-2 whitespace-normal py-2 text-sm"
+                  onClick={() => void pasteClipboardImage()}
+                >
+                  <ClipboardPaste className="h-4 w-4 shrink-0" />
+                  {copy("貼上剪貼簿圖片", "Paste clipboard image")}
+                </Button>
+                {image && (
+                  <Button
+                    variant="ghost"
+                    className="h-auto min-h-10 whitespace-normal py-2 text-sm"
+                    onClick={clearSource}
+                  >
+                    {copy("移除圖片", "Remove image")}
+                  </Button>
+                )}
+              </div>
+              <p className="text-sm text-muted-foreground">
+                {copy(
+                  "桌面可直接按 Ctrl+V／⌘V 貼上圖片；Safari 或未授權時請用上方檔案選擇器。剪貼簿只會在你貼上或按下按鈕時讀取。",
+                  "On desktop, paste an image with Ctrl+V / ⌘V. Use the picker if Safari or permissions block access. Clipboard is read only when you paste or press the button."
+                )}
+              </p>
+              {image && imageUrl && (
+                <div className="space-y-2">
+                  <p className="break-all text-sm font-medium">{filename}</p>
+                  <p role="status" className="text-sm text-muted-foreground">
+                    {image.compressed
+                      ? copy(
+                          `已在本機壓縮：${(image.originalSize / 1024 / 1024).toFixed(2)} → ${(size / 1024 / 1024).toFixed(2)} MB`,
+                          `Compressed locally: ${(image.originalSize / 1024 / 1024).toFixed(2)} → ${(size / 1024 / 1024).toFixed(2)} MB`
+                        )
+                      : copy(
+                          `保留原圖 · ${(size / 1024).toFixed(1)} KB`,
+                          `Original preserved · ${(size / 1024).toFixed(1)} KB`
+                        )}
+                    {` · ${image.width} × ${image.height}`}
+                  </p>
+                  <a
+                    href={imageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block text-sm text-primary underline"
+                  >
+                    {copy(
+                      "開啟本地完整圖片以核對文字",
+                      "Open the complete local image to check text"
+                    )}
+                    <img
+                      src={imageUrl}
+                      alt={copy(
+                        "待解析的預訂截圖／相片（本地預覽）",
+                        "Booking screenshot/photo to parse (local preview)"
+                      )}
+                      className="mt-2 w-full h-auto rounded-lg border bg-background"
+                    />
+                  </a>
+                  <p className="text-sm leading-relaxed text-muted-foreground">
+                    {image.compressed
+                      ? copy(
+                          "壓縮／縮小可能令細字模糊。請先開啟完整圖片核對；若資料不清楚，重新選擇較清晰圖片。解析後亦須逐項覆核，所有項目預設不選取。",
+                          "Compression/resizing may blur small text. Check the complete image first; choose a clearer image if needed. Review every parsed field; all items start unchecked."
+                        )
+                      : copy(
+                          "請先核對清晰度及遮蓋個人／付款資料；解析後逐項覆核。選擇圖片不會自動解析。",
+                          "Check readability and cover personal/payment details before parsing, then review every field. Selecting an image does not parse it automatically."
+                        )}
+                  </p>
+                </div>
+              )}
+            </div>
           )}
           <Button
             className="gap-2"
@@ -448,15 +813,7 @@ export default function BookingImportDialog({
                 (content.trim().length < 30 ||
                   content.length > BOOKING_MAX_TEXT))
             }
-            onClick={() => {
-              setError("");
-              analyze.mutate({
-                tripId,
-                kind,
-                content,
-                ...(filename ? { filename } : {}),
-              });
-            }}
+            onClick={() => void parseBooking()}
           >
             <FileInput className="h-4 w-4" />
             {copy("解析預訂", "Parse booking")}
@@ -692,16 +1049,7 @@ export default function BookingImportDialog({
             <Button
               className="w-full gap-2"
               disabled={!selected.size || invalidSelection}
-              onClick={() => {
-                if (!preview || invalidSelection || busy || !canEdit) return;
-                importer.mutate({
-                  tripId,
-                  sourceHash: preview.sourceHash,
-                  previewToken: preview.previewToken,
-                  flights: selectedFlights,
-                  hotels: selectedHotels,
-                });
-              }}
+              onClick={() => void confirmImport()}
             >
               <ShieldCheck className="h-4 w-4" />
               {copy(
@@ -722,7 +1070,9 @@ export default function BookingImportDialog({
         <Button
           variant="ghost"
           disabled={busy}
-          onClick={() => onOpenChange(false)}
+          onClick={() => {
+            if (!busyRef.current && !readLock.current) onOpenChange(false);
+          }}
         >
           {copy("關閉", "Close")}
         </Button>

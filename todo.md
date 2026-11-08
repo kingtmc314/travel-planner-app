@@ -393,3 +393,23 @@
 - Full live AI-contract QA recovers the exact synthetic flight and hotel dates from both PDF and email; nothing imported during QA. Only an additive trip_budgets table was created; all existing travel collection fingerprints remain unchanged.
 - PDF/EML limit 3 MB; pasted email 30–50,000 characters. No mailbox is connected or monitored. MIME decoding uses MailParser (https://github.com/nodemailer/mailparser); sources remain memory-only and EML attachments are excluded.
 - Source calendar days are preserved and displayed under the app's Hong Kong date convention; airport-local clocks are explicitly not converted and require review. Stateless signed preview proof expires after one hour. Legacy cross-instance concurrent booking deduplication remains limited; existing records are never overwritten.
+
+
+## v9.2 Screenshot Booking Import (2026-11-08 HKT)
+- [x] Add PNG/JPEG/WebP screenshot/image source to protected booking parse API, verify bytes/dimensions and retain signed review/dedup flow
+- [x] Add iPhone photo-library picker, image preview, clipboard-paste fallback and bounded local compression without cropping
+- [x] Preserve PDF/email import, all existing records, no image source storage or automatic payment entries
+- [x] Test image validation, permissions, UI preparation and native vision parsing; TypeScript/build/data preservation checks
+- [x] Mark v9.2 and prepare verified release for checkpoint and immediate GitHub main push
+
+
+## v9.2 Flight Number & Date Autofill (2026-11-08 HKT)
+- [x] Reuse exact flight-number/date matches from the current user's passport and explicitly invited trips only; expose logistics fields, never private notes or booking/payment details
+- [x] Add shared lookup control to trip flights and passport forms, automatic debounced lookup for valid inputs, candidate selection, provenance and manual-edit protection
+- [x] No AI-guessed routes/times; label existing records non-live. User confirmed no aviation API key: external dated schedules/gates/delays remain deliberately unconnected
+- [x] Verify date matching, authorization, stale response protection, ambiguous results, no duplicate writes and original records preserved
+- [x] Ship screenshot import and flight lookup together as v9.2; validated and ready for checkpoint plus immediate GitHub main push
+
+Validation: TypeScript clean, 29 Vitest files / 697 tests pass and production build passes. Real browser dry-runs at 390px and 1440px verify screenshot selection, local preview/removal, email compatibility, exact-match fill, retained manual edits and clearing old auto-managed routes. React updater replay is covered separately. No business records were written during QA; all original collection fingerprints remain unchanged (5 trips, 46 passport flights, and all existing expenses/itineraries/stays/pins/countries). No schema changes.
+
+Native AI-contract QA extracts exact synthetic flight and stay fields from PNG, JPEG and WebP. A 12,464,024-byte synthetic PNG is successfully compressed locally without cropping, and never sent to AI. Original images are capped at 20 MiB / 32M pixels; upload and sanitized output at 3 MiB. Image verification, auto-orientation and metadata removal use Sharp: https://github.com/lovell/sharp . Original image sources remain memory-only; only explicitly selected reviewed logistics are saved. Existing cross-server concurrent booking deduplication limitation remains unchanged.

@@ -1,4 +1,6 @@
 import BookingImportDialog from "@/components/BookingImportDialog";
+import FlightLookupPanel from "@/components/FlightLookupPanel";
+import { useFlightAutofill } from "@/hooks/useFlightAutofill";
 import { trpc } from "@/lib/trpc";
 import { useI18n } from "@/hooks/useI18n";
 import { Button } from "@/components/ui/button";
@@ -120,6 +122,29 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
   >(null);
   const [flightForm, setFlightForm] = useState(defaultFlight);
   const [hotelForm, setHotelForm] = useState(defaultHotel);
+  const [flightSession, setFlightSession] = useState(0);
+  const autofill = useFlightAutofill({
+    form: flightForm,
+    setForm: setFlightForm,
+    numberField: "flightNumber",
+    dateField: "date",
+    sessionKey: `trip:${tripId}:${flightSession}`,
+    open: (showAddFlight || Boolean(editingFlight)) && trip?.id === tripId,
+    authorized: canEdit,
+    mapCandidate: candidate => ({
+      airline: candidate.airline,
+      fromCode: candidate.fromCode,
+      fromCity: candidate.fromCity,
+      toCode: candidate.toCode,
+      toCity: candidate.toCity,
+      departTime: candidate.departTime,
+      arriveTime: candidate.arriveTime,
+      duration:
+        candidate.durationMinutes === null
+          ? ""
+          : `${Math.floor(candidate.durationMinutes / 60)}h ${candidate.durationMinutes % 60}m`,
+    }),
+  });
   const [passportSummary, setPassportSummary] = useState<ImportSummary | null>(
     null
   );
@@ -132,6 +157,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
     setEditingFlight(null);
     setEditingHotel(null);
     setFlightForm(defaultFlight);
+    setFlightSession(value => value + 1);
     setHotelForm(defaultHotel);
     setPassportSummary(null);
     setSyncSummary(null);
@@ -377,6 +403,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
   const openAddFlight = () => {
     if (!canEdit || busy) return;
     const previous = flights?.[flights.length - 1];
+    setFlightSession(value => value + 1);
     setEditingFlight(null);
     setFlightForm({
       ...defaultFlight,
@@ -390,12 +417,14 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
   const openEditFlight = (flight: NonNullable<typeof flights>[number]) => {
     if (!canEdit || busy) return;
     setShowAddFlight(false);
+    setFlightSession(value => value + 1);
     setEditingFlight(flight);
     setFlightForm(flightToForm(flight));
   };
   const duplicateFlight = (flight: NonNullable<typeof flights>[number]) => {
     if (!canEdit || busy) return;
     setEditingFlight(null);
+    setFlightSession(value => value + 1);
     setFlightForm({
       ...flightToForm(flight),
       date:
@@ -407,6 +436,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
   const addReturnFlight = (flight: NonNullable<typeof flights>[number]) => {
     if (!canEdit || busy) return;
     setEditingFlight(null);
+    setFlightSession(value => value + 1);
     setFlightForm({
       ...defaultFlight,
       ...returnFlightDefaults(flight, trip?.endDate),
@@ -493,53 +523,78 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
 
   const flightFormJSX = (
     <fieldset disabled={!canEdit || busy} className="space-y-4 mt-2 min-w-0">
-      <div className="grid grid-cols-2 gap-3">
-        <div>
+      <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
+        <div className="min-w-0">
           <Label htmlFor="flight-number">{t("flightNumber")}</Label>
           <Input
             id="flight-number"
-            className="mt-1.5"
+            className="mt-1.5 w-full uppercase"
             placeholder="CX100"
+            autoCapitalize="characters"
+            autoCorrect="off"
             value={flightForm.flightNumber}
             onChange={e =>
-              setFlightForm({
-                ...flightForm,
-                flightNumber: e.target.value.toUpperCase(),
-              })
+              autofill.change("flightNumber", e.target.value.toUpperCase())
             }
           />
         </div>
-        <div>
+        <div className="min-w-0">
+          <Label htmlFor="flight-date">{t("flightDate")}</Label>
+          <Input
+            id="flight-date"
+            className="mt-1.5 w-full"
+            type="date"
+            value={flightForm.date}
+            onChange={e => autofill.change("date", e.target.value)}
+          />
+        </div>
+      </div>
+      <FlightLookupPanel
+        flightNumber={flightForm.flightNumber}
+        date={flightForm.date}
+        tripId={tripId}
+        sessionKey={`trip:${tripId}:${flightSession}`}
+        open={(showAddFlight || Boolean(editingFlight)) && trip?.id === tripId}
+        authorized={canEdit}
+        disabled={busy}
+        lang={lang}
+        onApply={autofill.applyCandidate}
+      />
+      <div className="grid grid-cols-1 min-[420px]:grid-cols-2 gap-3">
+        <div className="min-w-0">
           <Label htmlFor="flight-airline">{t("airline")}</Label>
           <Input
             id="flight-airline"
             className="mt-1.5"
             placeholder={copy("國泰航空", "Cathay Pacific")}
             value={flightForm.airline}
-            onChange={e =>
-              setFlightForm({ ...flightForm, airline: e.target.value })
-            }
+            onChange={e => autofill.change("airline", e.target.value)}
           />
         </div>
-      </div>
-      <div>
-        <Label htmlFor="flight-type">{t("flightType")}</Label>
-        <Select
-          disabled={!canEdit || busy}
-          value={flightForm.type}
-          onValueChange={v =>
-            setFlightForm({ ...flightForm, type: v as typeof flightForm.type })
-          }
-        >
-          <SelectTrigger id="flight-type" className="mt-1.5">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="outbound">{t("flightOutbound")}</SelectItem>
-            <SelectItem value="return">{t("flightReturn")}</SelectItem>
-            <SelectItem value="connecting">{t("flightConnecting")}</SelectItem>
-          </SelectContent>
-        </Select>
+        <div className="min-w-0">
+          <Label htmlFor="flight-type">{t("flightType")}</Label>
+          <Select
+            disabled={!canEdit || busy}
+            value={flightForm.type}
+            onValueChange={v =>
+              setFlightForm({
+                ...flightForm,
+                type: v as typeof flightForm.type,
+              })
+            }
+          >
+            <SelectTrigger id="flight-type" className="mt-1.5">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="outbound">{t("flightOutbound")}</SelectItem>
+              <SelectItem value="return">{t("flightReturn")}</SelectItem>
+              <SelectItem value="connecting">
+                {t("flightConnecting")}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
@@ -553,10 +608,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
             maxLength={10}
             value={flightForm.fromCode}
             onChange={e =>
-              setFlightForm({
-                ...flightForm,
-                fromCode: normalizeIata(e.target.value),
-              })
+              autofill.change("fromCode", normalizeIata(e.target.value))
             }
           />
         </div>
@@ -567,9 +619,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
             className="mt-1.5"
             placeholder="Hong Kong"
             value={flightForm.fromCity}
-            onChange={e =>
-              setFlightForm({ ...flightForm, fromCity: e.target.value })
-            }
+            onChange={e => autofill.change("fromCity", e.target.value)}
           />
         </div>
         <div>
@@ -583,10 +633,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
             maxLength={10}
             value={flightForm.toCode}
             onChange={e =>
-              setFlightForm({
-                ...flightForm,
-                toCode: normalizeIata(e.target.value),
-              })
+              autofill.change("toCode", normalizeIata(e.target.value))
             }
           />
         </div>
@@ -597,9 +644,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
             className="mt-1.5"
             placeholder="Tokyo"
             value={flightForm.toCity}
-            onChange={e =>
-              setFlightForm({ ...flightForm, toCity: e.target.value })
-            }
+            onChange={e => autofill.change("toCity", e.target.value)}
           />
         </div>
       </div>
@@ -609,16 +654,6 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
           "Airport codes are normalized to uppercase; departure and arrival must differ."
         )}
       </p>
-      <div>
-        <Label htmlFor="flight-date">{t("flightDate")}</Label>
-        <Input
-          id="flight-date"
-          className="mt-1.5 w-full"
-          type="date"
-          value={flightForm.date}
-          onChange={e => setFlightForm({ ...flightForm, date: e.target.value })}
-        />
-      </div>
       <div className="grid grid-cols-2 gap-3">
         <div>
           <Label htmlFor="flight-depart">{t("departTime")}</Label>
@@ -627,9 +662,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
             className="mt-1.5"
             type="time"
             value={flightForm.departTime}
-            onChange={e =>
-              setFlightForm({ ...flightForm, departTime: e.target.value })
-            }
+            onChange={e => autofill.change("departTime", e.target.value)}
           />
         </div>
         <div>
@@ -639,9 +672,7 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
             className="mt-1.5"
             type="time"
             value={flightForm.arriveTime}
-            onChange={e =>
-              setFlightForm({ ...flightForm, arriveTime: e.target.value })
-            }
+            onChange={e => autofill.change("arriveTime", e.target.value)}
           />
         </div>
       </div>
@@ -653,16 +684,14 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
       </p>
       <div>
         <Label htmlFor="flight-duration">
-          {copy("飛行時長（手動）", "Flight duration (manual)")}
+          {copy("飛行時長（紀錄／手動）", "Flight duration (saved / manual)")}
         </Label>
         <Input
           id="flight-duration"
           className="mt-1.5"
           placeholder={copy("例如：4 小時 30 分鐘", "e.g. 4h 30m")}
           value={flightForm.duration}
-          onChange={e =>
-            setFlightForm({ ...flightForm, duration: e.target.value })
-          }
+          onChange={e => autofill.change("duration", e.target.value)}
         />
       </div>
       <div>
@@ -825,8 +854,8 @@ export default function FlightsPage({ tripId }: { tripId: number }) {
           <p className="voyage-eyebrow">{copy("預訂匯入", "BOOKING IMPORT")}</p>
           <p className="mt-1 text-sm font-semibold">
             {copy(
-              "PDF、電郵檔案或貼上確認電郵",
-              "PDF, email file or pasted confirmation"
+              "截圖／相片、PDF、電郵檔案或貼上確認電郵",
+              "Screenshot / photo, PDF, email file or pasted confirmation"
             )}
           </p>
           <p className="mt-1 text-xs text-muted-foreground">

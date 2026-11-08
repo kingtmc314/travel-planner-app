@@ -2,6 +2,8 @@ import { trpc } from "@/lib/trpc";
 import AppLayout from "@/components/AppLayout";
 import WorldMap from "@/components/WorldMap";
 import PassportInsights from "@/components/PassportInsights";
+import FlightLookupPanel from "@/components/FlightLookupPanel";
+import { useFlightAutofill } from "@/hooks/useFlightAutofill";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -303,6 +305,31 @@ export default function FlightPassport() {
   const [showAdd, setShowAdd] = useState(false);
   const [editingFlight, setEditingFlight] = useState<PastFlight | null>(null);
   const [form, setForm] = useState(defaultForm);
+  const [flightSession, setFlightSession] = useState(0);
+  const authQuery = trpc.auth.me.useQuery(undefined, {
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+  const autofill = useFlightAutofill({
+    form,
+    setForm,
+    numberField: "flightNumber",
+    dateField: "departureDate",
+    sessionKey: `passport:${flightSession}`,
+    open: showAdd || Boolean(editingFlight),
+    authorized: Boolean(authQuery.data) && !authQuery.isError,
+    mapCandidate: candidate => ({
+      airline: candidate.airline,
+      departureAirport: candidate.fromCode,
+      arrivalAirport: candidate.toCode,
+      durationMinutes:
+        candidate.durationMinutes === null
+          ? ""
+          : String(candidate.durationMinutes),
+      distanceKm:
+        candidate.distanceKm === null ? "" : String(candidate.distanceKm),
+    }),
+  });
   const [autoMetrics, setAutoMetrics] = useState({
     distance: false,
     duration: false,
@@ -333,6 +360,7 @@ export default function FlightPassport() {
     toast.error(`${label}: ${error.message}`);
   const resetFlightForm = () => {
     setForm({ ...defaultForm, departureDate: getHongKongDateInput() });
+    setFlightSession(value => value + 1);
     setAutoMetrics({ distance: false, duration: false });
   };
   const syncCountries = trpc.passport.syncCountriesFromFlights.useMutation({
@@ -459,6 +487,7 @@ export default function FlightPassport() {
   const openEditFlight = (flight: PastFlight) => {
     if (busy) return;
     setEditingFlight(flight);
+    setFlightSession(value => value + 1);
     const metrics = getPassportFlightMetrics(flight, estimateDistance);
     setAutoMetrics({
       distance: metrics.distance.source === "estimated",
@@ -486,25 +515,48 @@ export default function FlightPassport() {
     field: "departureAirport" | "arrivalAirport",
     value: string
   ) => {
-    const updated = { ...form, [field]: normalizeIataCode(value) };
-    const estimate = estimateDistance(
-      updated.departureAirport,
-      updated.arrivalAirport
-    );
-    const nextAuto = { ...autoMetrics };
-    // Refresh estimates on route changes, but never overwrite a manually entered metric.
-    if (!form.distanceKm || autoMetrics.distance) {
-      updated.distanceKm = estimate > 0 ? String(estimate) : "";
-      nextAuto.distance = estimate > 0;
-    }
-    if (!form.durationMinutes || autoMetrics.duration) {
-      updated.durationMinutes =
-        estimate > 0 ? String(Math.round((estimate / 800 + 1) * 60)) : "";
-      nextAuto.duration = estimate > 0;
-    }
-    setForm(updated);
-    setAutoMetrics(nextAuto);
+    // Legacy edit defaults stay untouched until an actual route edit.
+    if (autoMetrics.distance)
+      autofill.trackEstimate("distanceKm", form.distanceKm);
+    if (autoMetrics.duration)
+      autofill.trackEstimate("durationMinutes", form.durationMinutes);
+    autofill.change(field, normalizeIataCode(value));
   };
+  useEffect(() => {
+    if (!showAdd && !editingFlight) return;
+    const estimate = estimateDistance(
+      form.departureAirport,
+      form.arrivalAirport
+    );
+    if (estimate <= 0) return;
+    const values: Partial<typeof defaultForm> = {};
+    const nextAuto = { ...autoMetrics };
+    // Keep the existing estimator, but also respect manually cleared fields.
+    if (
+      autofill.canManage("distanceKm") &&
+      (!form.distanceKm || autoMetrics.distance)
+    ) {
+      values.distanceKm = String(estimate);
+      nextAuto.distance = true;
+    }
+    if (
+      autofill.canManage("durationMinutes") &&
+      (!form.durationMinutes || autoMetrics.duration)
+    ) {
+      values.durationMinutes = String(Math.round((estimate / 800 + 1) * 60));
+      nextAuto.duration = true;
+    }
+    if (Object.keys(values).length) {
+      autofill.applyValues(values);
+      setAutoMetrics(nextAuto);
+    }
+  }, [
+    form.departureAirport,
+    form.arrivalAirport,
+    flightSession,
+    showAdd,
+    editingFlight,
+  ]);
   const saveFlight = () => {
     if (busy) return;
     const departureAirport = normalizeIataCode(form.departureAirport);
@@ -1015,6 +1067,61 @@ export default function FlightPassport() {
               }}
             >
               <fieldset disabled={busy} className="space-y-4">
+                <div className="grid grid-cols-1 gap-3 min-[420px]:grid-cols-2">
+                  <div className="min-w-0">
+                    <Label htmlFor="passport-number">{t("flightNumber")}</Label>
+                    <Input
+                      id="passport-number"
+                      className="mt-1.5 w-full uppercase"
+                      placeholder="CX 543"
+                      autoCapitalize="characters"
+                      autoCorrect="off"
+                      value={form.flightNumber}
+                      onChange={event =>
+                        autofill.change("flightNumber", event.target.value)
+                      }
+                    />
+                  </div>
+                  <div className="min-w-0">
+                    <Label htmlFor="passport-date">
+                      {t("departureDate")} *
+                    </Label>
+                    <Input
+                      id="passport-date"
+                      className="mt-1.5 w-full"
+                      type="date"
+                      value={form.departureDate}
+                      onChange={event =>
+                        autofill.change("departureDate", event.target.value)
+                      }
+                      required
+                    />
+                  </div>
+                </div>
+                <FlightLookupPanel
+                  flightNumber={form.flightNumber}
+                  date={form.departureDate}
+                  sessionKey={`passport:${flightSession}`}
+                  open={showAdd || Boolean(editingFlight)}
+                  authorized={Boolean(authQuery.data) && !authQuery.isError}
+                  disabled={busy}
+                  lang={lang}
+                  onApply={candidate => {
+                    setAutoMetrics(previous => ({
+                      distance:
+                        candidate.distanceKm !== null &&
+                        autofill.canManage("distanceKm")
+                          ? false
+                          : previous.distance,
+                      duration:
+                        candidate.durationMinutes !== null &&
+                        autofill.canManage("durationMinutes")
+                          ? false
+                          : previous.duration,
+                    }));
+                    autofill.applyCandidate(candidate);
+                  }}
+                />
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <Label htmlFor="passport-departure">
@@ -1057,18 +1164,6 @@ export default function FlightPassport() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <Label htmlFor="passport-number">{t("flightNumber")}</Label>
-                    <Input
-                      id="passport-number"
-                      className="mt-1.5"
-                      placeholder="CX 543"
-                      value={form.flightNumber}
-                      onChange={event =>
-                        setForm({ ...form, flightNumber: event.target.value })
-                      }
-                    />
-                  </div>
-                  <div>
                     <Label htmlFor="passport-airline">{t("airline")}</Label>
                     <Input
                       id="passport-airline"
@@ -1076,25 +1171,8 @@ export default function FlightPassport() {
                       placeholder="Cathay Pacific"
                       value={form.airline}
                       onChange={event =>
-                        setForm({ ...form, airline: event.target.value })
+                        autofill.change("airline", event.target.value)
                       }
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label htmlFor="passport-date">
-                      {t("departureDate")} *
-                    </Label>
-                    <Input
-                      id="passport-date"
-                      className="mt-1.5"
-                      type="date"
-                      value={form.departureDate}
-                      onChange={event =>
-                        setForm({ ...form, departureDate: event.target.value })
-                      }
-                      required
                     />
                   </div>
                   <div>
@@ -1138,7 +1216,7 @@ export default function FlightPassport() {
                       placeholder={t("autoEstimate")}
                       value={form.distanceKm}
                       onChange={event => {
-                        setForm({ ...form, distanceKm: event.target.value });
+                        autofill.change("distanceKm", event.target.value);
                         setAutoMetrics({ ...autoMetrics, distance: false });
                       }}
                     />
@@ -1165,10 +1243,7 @@ export default function FlightPassport() {
                       placeholder="165"
                       value={form.durationMinutes}
                       onChange={event => {
-                        setForm({
-                          ...form,
-                          durationMinutes: event.target.value,
-                        });
+                        autofill.change("durationMinutes", event.target.value);
                         setAutoMetrics({ ...autoMetrics, duration: false });
                       }}
                     />

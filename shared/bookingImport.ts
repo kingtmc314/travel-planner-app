@@ -3,6 +3,10 @@ import { connectedDate, connectedFlightKey, connectedText } from "./connected";
 
 export const BOOKING_MAX_BYTES = 3 * 1024 * 1024;
 export const BOOKING_MAX_TEXT = 50000;
+export const BOOKING_IMAGE_MIMES = ["image/png", "image/jpeg", "image/webp"] as const;
+export const BOOKING_MAX_IMAGE_INPUT_BYTES = 20 * 1024 * 1024;
+export const BOOKING_MAX_IMAGE_PIXELS = 32000000;
+export const BOOKING_MAX_IMAGE_EDGE = 32768;
 const text = (max: number) => z.string().trim().max(max).default("");
 const airport = text(10).transform(value => value.toUpperCase());
 export const bookingFlightSchema = z
@@ -115,11 +119,18 @@ export const bookingExtractionSchema = z
 export const bookingAnalyzeInput = z
   .object({
     tripId: z.number().int().positive(),
-    kind: z.enum(["pdf", "email", "eml"]),
+    kind: z.enum(["pdf", "email", "eml", "image"]),
     content: z.string().max(Math.ceil(BOOKING_MAX_BYTES / 3) * 4 + 40),
     filename: z.string().max(255).optional(),
+    mimeType: z.enum(BOOKING_IMAGE_MIMES).optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.kind === "image" && !value.mimeType)
+      ctx.addIssue({ code: "custom", path: ["mimeType"], message: "Image MIME type required" });
+    if (value.kind !== "image" && value.mimeType)
+      ctx.addIssue({ code: "custom", path: ["mimeType"], message: "MIME type applies to images only" });
+  });
 export const bookingImportInput = z
   .object({
     tripId: z.number().int().positive(),

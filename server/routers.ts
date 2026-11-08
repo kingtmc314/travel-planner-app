@@ -14,6 +14,7 @@ import { createConnectedRouter } from "./connectedRouter";
 import { analyticsRouter } from "./analyticsRouter";
 import { budgetRouter } from "./budgetRouter";
 import { bookingImportRouter } from "./bookingImportRouter";
+import { flightLookupRouter } from "./flightLookupRouter";
 import { makeRequest, GeocodingResult, PlacesSearchResult } from "./_core/map";
 import { storagePut } from "./storage";
 
@@ -2192,6 +2193,7 @@ export const appRouter = router({
   analytics: analyticsRouter,
   budgets: budgetRouter,
   bookingImport: bookingImportRouter,
+  flightLookup: flightLookupRouter,
 });
 
 export type AppRouter = typeof appRouter;
